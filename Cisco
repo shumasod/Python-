@@ -56,3 +56,67 @@ print '#########################################################################
 data = ET.fromstring(response)
 print(ET.tostring(data, pretty_print=True))
 
+
+
+paramikoを使用した場合
+
+#!/usr/bin/env python
+
+import paramiko
+import time
+
+host = "10.x.x.x"
+port = 22
+
+# login details
+username = "admin"
+password = "admin"
+
+# Create a new Paramiko SSH connection object
+conn = paramiko.SSHClient()
+# Automatically add SSH hosts keys
+conn.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+print("--------------------",host,"--------------------")
+# create a shell session for multiple commands
+conn.connect(host, port, username, password, look_for_keys=False, allow_agent=False)
+remote_shell = conn.invoke_shell()
+time.sleep(2)
+# receive remote host shell output
+output = remote_shell.recv(65535)
+# display the output
+print(output)
+
+# send the command
+remote_shell.send("show version\n")
+time.sleep(1)
+output = remote_shell.recv(65535)
+print(output)
+
+
+Netmikoを使用した場合
+
+#!/usr/bin/env python
+
+from netmiko import ConnectHandler
+import time # used to insert pauses in the script
+
+# a list of the hosts we wish to access
+cisco_ios = {
+    'device_type': 'cisco_ios',
+    'ip':   '10.x.x.x',
+    'username': 'admin',
+    'password': 'admin',
+    'port' : 22,          # optional, defaults to 22
+    'secret': 'admin',     # optional, defaults to ''
+    'verbose': False,       # optional, defaults to False
+}
+
+# Create a new Paramiko SSH connection object
+net_connect = ConnectHandler(**cisco_ios)
+
+# Issue commands
+print("--------------------",cisco_ios['ip'],"--------------------")
+output = net_connect.send_command('show version')
+print(output)
+

@@ -1,0 +1,17 @@
+import random
+
+# 噛む確率
+probability = 0.5
+
+# 噛まれるかどうかを判定
+def bite():
+    if random.random() < probability:
+        return True
+    else:
+        return False
+
+# メイン処理
+if bite():
+    print("パイソンに噛まれました！")
+else:
+    print("パイソンに噛まれませんでした。")

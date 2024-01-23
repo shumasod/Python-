@@ -1,0 +1,52 @@
+import time
+
+def danson(host, username, password):
+  """
+  Ciscoのルータにログインして、コマンドプロンプトにバンビーノのダンソンを表示する
+
+  Args:
+    host: ルータのIPアドレス
+    username: ログインユーザー名
+    password: ログインパスワード
+  """
+
+  # ルータにログイン
+  with open(".netconf-credentials", "r") as f:
+    credentials = f.readlines()
+    host = credentials[0].strip()
+    username = credentials[1].strip()
+    password = credentials[2].strip()
+
+  client = ncclient.connect(host=host, port=830, username=username, password=password, timeout=60)
+  channel = client.invoke_rpc(netconf.get_config())
+  config = channel.data_xml
+
+  # ダンソンの歌詞を取得
+  song = """
+ダンソン、フィーザキー、トゥーザピーサーザ、コンサー、ニーブラー
+ダンソン、フィーザキー、トゥーザピーサーザ、コンサー、ニーブラー
+ダンソン、フィーザキー、トゥーザピーサーザ、コンサー、ニーブラー
+"""
+
+  # 歌詞をコマンドプロンプトに表示
+  for line in song.splitlines():
+    client.send(f"<rpc message-id='1'>
+    <edit-config>
+      <target>
+        <running/>
+      </target>
+      <config>
+        <system>
+          <config-template>
+            <banner>
+              <text>{line}</text>
+            </banner>
+          </config-template>
+        </system>
+      </config>
+    </edit-config>
+    </rpc>")
+    time.sleep(1)
+
+if __name__ == "__main__":
+  danson("192.168.1.1", "admin", "password")

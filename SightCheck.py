@@ -4,7 +4,7 @@ import time
 from bs4 import BeautifulSoup
 
 
-url = "URL"
+url = "https://"
 class_name ='div.newUserPageProfile_info_body.newUserPageProfile_description'
 file = "elems_text.txt"
 

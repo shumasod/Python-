@@ -1,76 +1,77 @@
-[ RESTCONF ]
-RESTCONFのPythonコード
-下記がRESTCONFのスクリプト本体です。
-
-#!/usr/bin/python
+#!/usr/bin/python3
 import requests
 import sys
 import json
 
-# disable warnings from SSL/TLS certificates
+# Disable SSL/TLS certificate warnings
 requests.packages.urllib3.disable_warnings()
 
-# the IP address or hostname of the networking device
-HOST = ''
-
-# use your user credentials to access the networking device
-USER = ''
-PASS = ''
+# Networking device details
+HOST = '192.168.1.1'
+USER = 'admin'
+PASS = 'password'
 PORT = 443
 
-# create a main() method
-def main():
-    """Main method that retrieves the interface details from a
-    networking device via RESTCONF."""
+def configure_routes():
+    """Configure routes on the networking device via RESTCONF."""
+    # RESTCONF URL for configuring routes
+    url = f"https://{HOST}:{PORT}/restconf/data/Cisco-IOS-XE-native:native/ip/route"
 
-    # RESTCONF url of the networking device
-    url = "https://{h}:{p}/restconf/data/Cisco-IOS-XE-native:native/ip/route/ip-route-interface-forwarding-list".format(h=HOST, p=PORT)
-
-    # RESTCONF media types for REST API headers
+    # RESTCONF headers
     headers = {'Content-Type': 'application/yang-data+json',
                'Accept': 'application/yang-data+json'}
 
-
-    # RESTCONF doby
-    body_data = {
-                    "Cisco-IOS-XE-native:ip-route-interface-forwarding-list": [
-                        {
-                            "prefix": "1.1.1.1",
-                            "mask": "255.255.255.255",
-                            "fwd-list": [
-                                {
+    # Route configuration data
+    routes_data = {
+        "Cisco-IOS-XE-native:ip": {
+            "route": {
+                "ip-route-interface-forwarding-list": [
+                    {
+                        "prefix": "192.168.2.0",
+                        "mask": "255.255.255.0",
+                        "fwd-list": [
+                            {
+                                "fwd": "GigabitEthernet0/0"
+                            }
+                        ]
+                    },
+                    {
+                        "prefix": "10.0.0.0",
+                        "mask": "255.0.0.0",
+                        "fwd-list": [
+                            {
                                 "fwd": "Null0"
-                                }
-                            ]
-                        },
-                        {
-                            "prefix": "1.1.1.2",
-                            "mask": "255.255.255.255",
-                            "fwd-list": [
-                                {
-                                "fwd": "Null0"
-                                }
-                            ]
-                        },
-                        {
-                            "prefix": "1.1.1.3",
-                            "mask": "255.255.255.255",
-                            "fwd-list": [
-                                {
-                                "fwd": "Null0"
-                                }
-                            ]
-                        }
-                    ]
-                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
 
-    # this statement performs a PATCH on the specified url
-    response = requests.patch(url, auth=(USER, PASS),
-                            headers=headers, data=json.dumps(body_data), verify=False)
+    try:
+        # Perform a PATCH request to configure routes
+        response = requests.patch(url, auth=(USER, PASS),
+                                  headers=headers, data=json.dumps(routes_data), verify=False)
 
-    # print the json that is returned
-    print(response)
+        # Print the response
+        print("Response:")
+        print(response.status_code)
+        print(response.text)
+
+        # Check if the request was successful
+        if response.status_code == 204:
+            print("Routes configured successfully.")
+        else:
+            print("Failed to configure routes.")
+
+    except Exception as e:
+        print("An error occurred:", e)
+
+def main():
+    """Main method to execute the script."""
+    print("Configuring routes on the networking device...")
+    configure_routes()
 
 if __name__ == '__main__':
     sys.exit(main())
-

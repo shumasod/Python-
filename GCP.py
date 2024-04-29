@@ -4,13 +4,13 @@ import datetime
 from google.cloud import storage
 
 def get_app_engine_endpoint(project_id, service_name, version):
-    """ Get the App Engine endpoint """
+    """ App Engineのエンドポイントを取得する関数"""
     try:
-        # Use gcloud command to get App Engine service info
+        # App Engineのエンドポイントを取得する関数
         command = ['gcloud', 'app', 'services', 'describe', '--project', project_id, service_name]
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         service_info = json.loads(result.stdout)
-        # Get the version info of the service
+        # サービスのバージョン情報を取得
         for v in service_info.get('versions', []):
             if v.get('id') == version:
                 return v.get('versionUrl')

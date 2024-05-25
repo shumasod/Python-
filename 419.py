@@ -1,3 +1,4 @@
+import os
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -30,6 +31,7 @@ def check_for_419_error(url, client_id, client_secret):
                 print("リクエストは成功しました。")
         else:
             print("認証に失敗しました。")
+
     except requests.exceptions.RequestException as e:
         print("リクエスト中にエラーが発生しました:", e)
 
@@ -45,13 +47,19 @@ def update_access_token(url, client_id, client_secret):
         else:
             print("アクセストークンの取得に失敗しました。")
             return None
+
     except requests.exceptions.RequestException as e:
         print("リクエスト中にエラーが発生しました:", e)
         return None
 
-# 検知したいURLとクライアントID、クライアントシークレットを指定して関数を呼び出す
-url_to_check = "https://example.com"
-client_id = "your_client_id"
-client_secret = "your_client_secret"
+if __name__ == "__main__":
+    # 環境変数から値を取得する
+    url_to_check = os.environ.get("URL_TO_CHECK")
+    client_id = os.environ.get("CLIENT_ID")
+    client_secret = os.environ.get("CLIENT_SECRET")
 
-check_for_419_error(url_to_check, client_id, client_secret)
+    # 値が設定されていることを確認する
+    if url_to_check and client_id and client_secret:
+        check_for_419_error(url_to_check, client_id, client_secret)
+    else:
+        print("環境変数が正しく設定されていません。")

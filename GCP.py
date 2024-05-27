@@ -4,10 +4,10 @@ import datetime
 from google.cloud import storage
 
 def get_app_engine_endpoint(project_id, service_name, version):
-    """ App Engineのエンドポイントを取得する関数"""
+    """App Engineのエンドポイントを取得する関数"""
     try:
-        # App Engineのエンドポイントを取得する関数
-        command = ['gcloud', 'app', 'services', 'describe', '--project', project_id, service_name]
+        # App Engineのエンドポイントを取得するコマンドを実行
+        command = ['gcloud', 'app', 'services', 'describe', service_name, '--project', project_id]
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         service_info = json.loads(result.stdout)
         # サービスのバージョン情報を取得
@@ -20,7 +20,7 @@ def get_app_engine_endpoint(project_id, service_name, version):
         return None
 
 def save_log_to_cloud_storage(bucket_name, log_data):
-    """ Save log to Cloud Storage """
+    """Save log to Cloud Storage"""
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     now = datetime.datetime.now()
@@ -30,7 +30,7 @@ def save_log_to_cloud_storage(bucket_name, log_data):
     print(f"Log saved to Cloud Storage: gs://{bucket_name}/{filename}")
 
 def delete_old_logs(bucket_name):
-    """ Delete old logs from the specified Cloud Storage bucket """
+    """Delete old logs from the specified Cloud Storage bucket"""
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
     blobs = bucket.list_blobs()

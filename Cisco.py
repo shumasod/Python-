@@ -1,7 +1,7 @@
 from ncclient import manager
 import lxml.etree as ET
 
-payload = """
+payload = 
 <config xmlns:xc="urn:ietf:params:xml:ns:netconf:base:1.0" xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
   <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
     <ip>

@@ -8,7 +8,7 @@ payload =
       <route>
         <ip-route-interface-forwarding-list>
           <prefix>1.1.1.1</prefix>
-          <mask>255.255.255.255</mask>
+          <mask>255.255.255.0</mask>
           <fwd-list>
             <fwd></fwd>
           </fwd-list>

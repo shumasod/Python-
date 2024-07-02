@@ -10,7 +10,7 @@ payload =
           <prefix>1.1.1.1</prefix>
           <mask>255.255.255.255</mask>
           <fwd-list>
-            <fwd>Null0</fwd>
+            <fwd></fwd>
           </fwd-list>
         </ip-route-interface-forwarding-list>
         <ip-route-interface-forwarding-list>

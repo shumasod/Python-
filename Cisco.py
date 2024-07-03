@@ -8,9 +8,9 @@ payload = """
       <route>
         <ip-route-interface-forwarding-list>
           <prefix>1.1.1.1</prefix>
-          <mask>255.255.255.255</mask>
+          <mask>255.255.255.0</mask>
           <fwd-list>
-            <fwd>Null0</fwd>
+            <fwd></fwd>
           </fwd-list>
         </ip-route-interface-forwarding-list>
         <ip-route-interface-forwarding-list>
@@ -41,7 +41,6 @@ with manager.connect(host='172.16.62.151', port=830, username='cisco', password=
     # Edit configuration
     response = m.edit_config(target='running', config=payload).xml
     print(response)
-
     print('###########################################################################')
     print('### XML Formatted String')
     print('###########################################################################')

@@ -12,7 +12,7 @@
         <label for="枠番">枠番:</label>
         <input type="number" id="枠番" name="枠番" required><br><br>
         
-        <label for="馬番">この馬番:</label>
+        <label for="馬番">馬番:</label>
         <input type="number" id="馬番" name="馬番" required><br><br>
         
         <label for="斤量">斤量:</label>
@@ -73,4 +73,8 @@
         });
     </script>
 </body>
+<<<<<<< HEAD
 </html>
+=======
+</html>
+>>>>>>> b677ac41f2c5b909ef5bdaacbcbaf23176230274

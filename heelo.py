@@ -1,4 +1,4 @@
-print("Hello, world!")
+print("Hello, world!") 
 
 # 文字列の連結
 s1 = 'Hello'
@@ -45,28 +45,16 @@ print(capitals)  # {'Japan': 'Tokyo', 'France': 'Paris', 'China': 'Beijing'}
 # 辞書のキーを元に値を取り出す
 print(capitals['Japan'])  # 'Tokyo' と出力される
 
-
 num = -3
-
 if num > 0:
     print("Positive")
 elif num == 0:
     print("Zero")
 else:
-    print("Negative")
-
-# 結果
-# Negative
-
+    print("Negative")  # 結果: Negative
 
 string = "Hello, World!"
-
 if "World" in string:
     print("Found 'World'!")
 else:
-    print("Did not find 'World'.")
-
-# 結果
-# Found 'World'!
-
-
+    print("Did not find 'World'.")  # 結果: Found 'World'!

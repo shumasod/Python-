@@ -1,15 +1,16 @@
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score
 import time
 import re
+import numpy as np
 
 class JRAPredictionApp:
     def __init__(self):
-        self.model = RandomForestClassifier()
+        self.model = RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)
         self.data = None
 
     def scrape_data(self, base_url, num_pages=5):
@@ -17,16 +18,21 @@ class JRAPredictionApp:
         for page in range(1, num_pages + 1):
             url = f"{base_url}&page={page}"
             print(f"Scraping page {page}...")
-            response = requests.get(url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            race_tables = soup.find_all('table', class_='race_table_01')
-            for table in race_tables:
-                race_data = self.extract_race_data(table)
-                all_data.extend(race_data)
-            
-            time.sleep(1)  # サーバーに負荷をかけないよう待機
-        
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                race_tables = soup.find_all('table', class_='race_table_01')
+                for table in race_tables:
+                    race_data = self.extract_race_data(table)
+                    all_data.extend(race_data)
+                
+                time.sleep(1)  # サーバーに負荷をかけないよう待機
+            except requests.exceptions.RequestException as e:
+                print(f"エラーが発生しました: {e}")
+                continue
+
         self.data = pd.DataFrame(all_data)
         print(f"{len(all_data)}件のデータを取得しました。")
 
@@ -59,11 +65,11 @@ class JRAPredictionApp:
 
     def extract_weight(self, text):
         match = re.search(r'(\d+)', text)
-        return match.group(1) if match else None
+        return int(match.group(1)) if match else None
 
     def extract_weight_change(self, text):
         match = re.search(r'\((.*?)\)', text)
-        return match.group(1) if match else None
+        return int(match.group(1)) if match else 0
 
     def preprocess_data(self):
         # データ型の変換
@@ -80,6 +86,7 @@ class JRAPredictionApp:
         # '増減'の符号を数値に変換
         self.data['増減'] = self.data['増減'].apply(self.sign_to_number)
         
+        # 欠損値の処理
         self.data = self.data.dropna()
         print("データの前処理が完了しました。")
 
@@ -102,12 +109,21 @@ class JRAPredictionApp:
     def train_model(self):
         X = self.data.drop(['着順', '馬名', '着差'], axis=1)
         y = self.data['着順']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
+        # 交差検証を使用してモデルの精度を評価
+        scores = cross_val_score(self.model, X, y, cv=5)
+        print(f"交差検証による精度: {np.mean(scores):.2f}")
+        
+        # モデルの訓練
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         self.model.fit(X_train, y_train)
         y_pred = self.model.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
-        print(f"モデルの精度: {accuracy:.2f}")
+        print(f"テストデータに対するモデルの精度: {accuracy:.2f}")
+
+        # 特徴量の重要度を表示
+        feature_importances = pd.Series(self.model.feature_importances_, index=X.columns)
+        print("特徴量の重要度:\n", feature_importances.sort_values(ascending=False))
 
     def predict(self, horse_data):
         prediction = self.model.predict(horse_data)

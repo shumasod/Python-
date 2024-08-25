@@ -158,6 +158,19 @@ class JRAPredictionApp:
 
         return horse_data
 
+    # 各プロセスを独立して実行するための関数
+    def run_scraping(self, base_url, num_pages):
+        self.scrape_data(base_url, num_pages)
+
+    def run_preprocessing(self):
+        self.preprocess_data()
+
+    def run_training(self):
+        self.train_model()
+
+    def run_prediction(self, horse_data):
+        return self.predict(horse_data)
+
 if __name__ == "__main__":
     app = JRAPredictionApp()
     app.run()

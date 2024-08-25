@@ -73,8 +73,4 @@
         });
     </script>
 </body>
-<<<<<<< HEAD
 </html>
-=======
-</html>
->>>>>>> b677ac41f2c5b909ef5bdaacbcbaf23176230274

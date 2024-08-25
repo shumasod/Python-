@@ -1,7 +1,7 @@
 let someVar
 
 
-<!DOCTYPE html>
+<!DOCTYPE >
 
 <html lang="ja">
 <head>
@@ -73,9 +73,7 @@ let someVar
                         $('#result').text('予測に失敗しました。');
                     }
                 });
-            });
-console.log("Hello");
-        });
+            })
     </script>
 </body>
 </html>

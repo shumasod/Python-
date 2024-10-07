@@ -15,17 +15,22 @@ class JRAPredictionApp:
     def scrape_data(self, base_url, num_pages=5):
         all_data = []
         for page in range(1, num_pages + 1):
-            url = f"{base_url}&page={page}"
+            url = f"{base_url}?page={page}"
             print(f"Scraping page {page}...")
-            response = requests.get(url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            race_tables = soup.find_all('table', class_='race_table_01')
-            for table in race_tables:
-                race_data = self.extract_race_data(table)
-                all_data.extend(race_data)
-            
-            time.sleep(1)  # サーバーに負荷をかけないよう待機
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                race_tables = soup.find_all('table', class_='race_table_01')
+                for table in race_tables:
+                    race_data = self.extract_race_data(table)
+                    all_data.extend(race_data)
+                
+                time.sleep(1)  # サーバーに負荷をかけないよう待機
+            except requests.RequestException as e:
+                print(f"Error scraping page {page}: {e}")
+                continue
         
         self.data = pd.DataFrame(all_data)
         print(f"{len(all_data)}件のデータを取得しました。")
@@ -35,7 +40,7 @@ class JRAPredictionApp:
         rows = table.find_all('tr')
         for row in rows[1:]:  # ヘッダーをスキップ
             cols = row.find_all('td')
-            if len(cols) > 0:
+            if len(cols) > 14:
                 horse_data = {
                     '着順': self.clean_text(cols[0].text),
                     '枠番': self.clean_text(cols[1].text),
@@ -66,6 +71,10 @@ class JRAPredictionApp:
         return match.group(1) if match else None
 
     def preprocess_data(self):
+        if self.data is None or self.data.empty:
+            print("データが存在しません。先にデータを取得してください。")
+            return
+
         # データ型の変換
         numeric_cols = ['着順', '枠番', '馬番', '斤量', '人気', '単勝', '馬体重', '増減']
         for col in numeric_cols:
@@ -84,9 +93,12 @@ class JRAPredictionApp:
         print("データの前処理が完了しました。")
 
     def time_to_seconds(self, time_str):
-        parts = time_str.split(':')
-        if len(parts) == 2:
-            return int(parts[0]) * 60 + float(parts[1])
+        try:
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + float(parts[1])
+        except ValueError:
+            pass
         return None
 
     def sign_to_number(self, value):
@@ -100,6 +112,10 @@ class JRAPredictionApp:
             return 0
 
     def train_model(self):
+        if self.data is None or self.data.empty:
+            print("データが存在しません。先にデータを取得し、前処理を行ってください。")
+            return
+
         X = self.data.drop(['着順', '馬名', '着差'], axis=1)
         y = self.data['着順']
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -110,12 +126,15 @@ class JRAPredictionApp:
         print(f"モデルの精度: {accuracy:.2f}")
 
     def predict(self, horse_data):
+        if self.model is None:
+            print("モデルが訓練されていません。先にモデルを訓練してください。")
+            return None
         prediction = self.model.predict(horse_data)
         return prediction
 
     def run(self):
         print("競馬予想アプリへようこそ！")
-        base_url = input("の結果ページのベースURLを入力してください: ")
+        base_url = "https://db.netkeiba.com/race/"  # netkeiba.comの結果ページを使用
         num_pages = int(input("スクレイピングするページ数を入力してください: "))
         self.scrape_data(base_url, num_pages)
         self.preprocess_data()
@@ -129,7 +148,8 @@ class JRAPredictionApp:
             if choice == '1':
                 horse_data = self.get_horse_input()
                 prediction = self.predict(horse_data)
-                print(f"予測結果: {prediction[0]:.0f}着")
+                if prediction is not None:
+                    print(f"予測結果: {prediction[0]:.0f}着")
             elif choice == '2':
                 print("アプリケーションを終了します。")
                 break

@@ -2,36 +2,72 @@
 import requests
 import sys
 import json
+from urllib3 import disable_warnings
+from urllib3.exceptions import InsecureRequestWarning
 
-# disable warnings from SSL/TLS certificates
-requests.packages.urllib3.disable_warnings()
+# SSL/TLS証明書の警告を無効化
+disable_warnings(InsecureRequestWarning)
 
-# the IP address or hostname of the networking device
-HOST = 'IP'
+# デバイス接続の設定
+class DeviceConfig:
+    HOST = 'IP'  # ネットワークデバイスのIPアドレスまたはホスト名
+    USER = 'cisco'  # ユーザー名
+    PASS = 'cisco'  # パスワード
+    PORT = 443  # HTTPSポート
+    BASE_URL = f"https://{HOST}:{PORT}/restconf"  # ベースURL
 
-# use your user credentials to access the networking device
-USER = 'cisco'
-PASS = 'cisco'
-PORT = 443
+def delete_route(ip_address='1.1.1.1', subnet_mask='255.255.255.255'):
+    """
+    RESTCONFを使用して特定のルートを削除する関数
+    
+    Args:
+        ip_address (str): 削除するルートのIPアドレス
+        subnet_mask (str): サブネットマスク
+    
+    Returns:
+        requests.Response: API応答オブジェクト
+    
+    Raises:
+        requests.exceptions.RequestException: API呼び出しに失敗した場合
+    """
+    try:
+        # RESTCONFエンドポイントURL
+        url = f"{DeviceConfig.BASE_URL}/data/Cisco-IOS-XE-native:native/ip/route/ip-route-interface-forwarding-list={ip_address},{subnet_mask}"
+        
+        # RESTCONFヘッダー
+        headers = {
+            'Content-Type': 'application/yang-data+json',
+            'Accept': 'application/yang-data+json'
+        }
+        
+        # DELETEリクエストの実行
+        response = requests.delete(
+            url,
+            auth=(DeviceConfig.USER, DeviceConfig.PASS),
+            headers=headers,
+            verify=False
+        )
+        
+        # レスポンスコードの確認
+        response.raise_for_status()
+        return response
+        
+    except requests.exceptions.RequestException as e:
+        print(f"エラーが発生しました: {str(e)}")
+        raise
 
-# create a main() method
 def main():
-    """Main method that retrieves the interface details from a
-    networking device via RESTCONF."""
-
-    # RESTCONF url of the networking device
-    url = "https://{h}:{p}/restconf/data/Cisco-IOS-XE-native:native/ip/route/ip-route-interface-forwarding-list=1.1.1.1,255.255.255.255".format(h=HOST, p=PORT)
-
-    # RESTCONF media types for REST API headers
-    headers = {'Content-Type': 'application/yang-data+json',
-               'Accept': 'application/yang-data+json'}
-
-    # this statement performs a PATCH on the specified url
-    response = requests.delete(url, auth=(USER, PASS),
-                            headers=headers, verify=False)
-
-    # print the json that is returned
-    print(response)
+    """
+    メイン関数 - ルート削除を実行し結果を表示
+    """
+    try:
+        response = delete_route()
+        print(f"ステータスコード: {response.status_code}")
+        print(f"レスポンス: {response.text}")
+        return 0
+    except Exception as e:
+        print(f"スクリプトの実行に失敗しました: {str(e)}")
+        return 1
 
 if __name__ == '__main__':
     sys.exit(main())

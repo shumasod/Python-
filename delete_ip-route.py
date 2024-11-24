@@ -7,7 +7,7 @@ import json
 requests.packages.urllib3.disable_warnings()
 
 # the IP address or hostname of the networking device
-HOST = '172.16.62.151'
+HOST = 'IP'
 
 # use your user credentials to access the networking device
 USER = 'cisco'

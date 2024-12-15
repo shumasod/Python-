@@ -1,0 +1,77 @@
+#!/usr/bin/python3
+import requests
+import sys
+import json
+
+# Disable SSL/TLS certificate warnings
+requests.packages.urllib3.disable_warnings()
+
+# Networking device details
+HOST = ''
+USER = ''
+PASS = ''
+PORT = 443
+
+def configure_routes():
+    """Configure routes on the networking device via RESTCONF."""
+    # RESTCONF URL for configuring routes
+    url = f"https://{HOST}:{PORT}/restconf/data/Cisco-IOS-XE-native:native/ip/route"
+
+    # RESTCONF headers
+    headers = {'Content-Type': 'application/yang-data+json',
+               'Accept': 'application/yang-data+json'}
+
+    # Route configuration data
+    routes_data = {
+        "Cisco-IOS-XE-native:ip": {
+            "route": {
+                "ip-route-interface-forwarding-list": [
+                    {
+                        "prefix": "192.168.2.0",
+                        "mask": "255.255.255.0",
+                        "fwd-list": [
+                            {
+                                "fwd": "GigabitEthernet0/0"
+                            }
+                        ]
+                    },
+                    {
+                        "prefix": "10.0.0.0",
+                        "mask": "255.0.0.0",
+                        "fwd-list": [
+                            {
+                                "fwd": "Null0"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+
+    try:
+        # Perform a PATCH request to configure routes
+        response = requests.patch(url, auth=(USER, PASS),
+                                  headers=headers, data=json.dumps(routes_data), verify=False)
+
+        # Print the response
+        print("Response:")
+        print(response.status_code)
+        print(response.text)
+
+        # Check if the request was successful
+        if response.status_code == 204:
+            print("Routes configured successfully.")
+        else:
+            print("Failed to configure routes.")
+
+    except Exception as e:
+        print("An error occurred:", e)
+
+def main():
+    """Main method to execute the script."""
+    print("Configuring routes on the networking device...")
+    configure_routes()
+
+if __name__ == '__main__':
+    sys.exit(main())

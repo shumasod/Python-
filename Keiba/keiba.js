@@ -1,8 +1,12 @@
-<!DOCTYPE html>
+let someVar
+
+
+<!DOCTYPE >
+
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>競馬予想アプリ</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
@@ -10,31 +14,31 @@
     <h1>競馬予想アプリ</h1>
     <form id="prediction-form">
         <label for="枠番">枠番:</label>
-        <input type="number" id="枠番" name="枠番" required><br><br>
+        <input type="number" id="枠番" name="枠番" required /><br /><br />
         
         <label for="馬番">馬番:</label>
-        <input type="number" id="馬番" name="馬番" required><br><br>
+        <input type="number" id="馬番" name="馬番" required /><br /><br />
         
         <label for="斤量">斤量:</label>
-        <input type="number" id="斤量" name="斤量" step="0.1" required><br><br>
+        <input type="number" id="斤量" name="斤量" step="0.1" required /><br /><br />
         
         <label for="人気">人気:</label>
-        <input type="number" id="人気" name="人気" required><br><br>
+        <input type="number" id="人気" name="人気" required /><br /><br />
         
         <label for="単勝">単勝オッズ:</label>
-        <input type="number" id="単勝" name="単勝" step="0.1" required><br><br>
+        <input type="number" id="単勝" name="単勝" step="0.1" required /><br /><br />
         
         <label for="馬体重">馬体重:</label>
-        <input type="number" id="馬体重" name="馬体重" required><br><br>
+        <input type="number" id="馬体重" name="馬体重" required /><br /><br />
         
         <label for="増減">馬体重の増減:</label>
-        <input type="number" id="増減" name="増減" step="0.1" required><br><br>
+        <input type="number" id="増減" name="増減" step="0.1" required /><br /><br />
         
         <label for="性齢">性齢:</label>
-        <input type="text" id="性齢" name="性齢" required><br><br>
+        <input type="text" id="性齢" name="性齢" required /><br /><br />
         
         <label for="騎手">騎手名:</label>
-        <input type="text" id="騎手" name="騎手" required><br><br>
+        <input type="text" id="騎手" name="騎手" required /><br /><br />
         
         <button type="submit">予測</button>
     </form>
@@ -69,12 +73,7 @@
                         $('#result').text('予測に失敗しました。');
                     }
                 });
-            });
-        });
+            })
     </script>
 </body>
-<<<<<<< HEAD
 </html>
-=======
-</html>
->>>>>>> b677ac41f2c5b909ef5bdaacbcbaf23176230274

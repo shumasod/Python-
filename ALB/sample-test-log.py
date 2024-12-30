@@ -8,7 +8,7 @@ def generate_test_log():
     """テスト用のALBログを生成"""
     
     # テストデータのパラメータ
-    ips = ['192.168.1.' + str(i) for i in range(1, 11)]
+    ips = ['192.168.1.0' + str(i) for i in range(1, 11)]
     paths = ['/api/users', '/api/products', '/api/orders', '/api/login', '/']
     status_codes = [200, 200, 200, 200, 301, 404, 500]  # 200が多めになるように
     user_agents = ['Mozilla/5.0', 'Chrome/91.0', 'Safari/537.36']

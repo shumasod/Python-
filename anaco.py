@@ -1,9 +1,22 @@
 from typing import List, Tuple
 import svgwrite
 import random
+import numpy as np
 from dataclasses import dataclass
 
-@dataclass
+@dataclass(frozen=True)
+class DrawingConstants:
+    """描画用の定数"""
+    SEGMENT_COUNT = 7
+    PATTERN_RADIUS = (20, 15)
+    HEAD_RADIUS = (30, 20)
+    EYE_OUTER_RADIUS = 5
+    EYE_INNER_RADIUS = 2
+    TONGUE_LENGTH = 30
+    STROKE_WIDTH = 60
+    HEAD_OFFSET = 10
+
+@dataclass(frozen=True)
 class Colors:
     """アナコンダの描画に使用する色の定数"""
     BACKGROUND = "#2F4F4F"  # ジャングルの背景色
@@ -22,25 +35,29 @@ class AnacondaDrawer:
             filename (str): 出力するSVGファイル名
             size (int): SVGのサイズ（幅・高さ）
         """
-        if size <= 0:
+        if not isinstance(size, int) or size <= 0:
             raise ValueError("サイズは正の整数である必要があります")
             
         self.size = size
         self.dwg = svgwrite.Drawing(filename, size=(size, size))
         self.colors = Colors()
+        self.constants = DrawingConstants()
         self.points: List[Tuple[int, int]] = []
         
     def _generate_body_points(self) -> None:
-        """アナコンダの体の座標を生成"""
-        self.points = [(50, self.size//2)]
-        segment_width = (self.size - 100) // 7
+        """アナコンダの体の座標を生成（NumPyを使用して最適化）"""
+        segment_width = (self.size - 100) // self.constants.SEGMENT_COUNT
         
-        for i in range(1, 8):
-            x = 50 + segment_width * i
-            # より自然な動きのために正弦波を使用
-            y = self.size//2 + int(random.randint(-100, 100) * 
-                                 abs(random.random() * random.random()))
-            self.points.append((x, y))
+        # X座標を一括生成
+        x_coords = np.arange(50, self.size - 50, segment_width)
+        
+        # より自然な動きのために正弦波を使用
+        amplitude = 100
+        phase = random.random() * 2 * np.pi
+        y_coords = self.size//2 + amplitude * np.sin(np.linspace(0, 2*np.pi, self.constants.SEGMENT_COUNT + 1) + phase)
+        
+        # numpy配列をタプルのリストに変換
+        self.points = list(zip(x_coords, y_coords.astype(int)))
             
     def _draw_background(self) -> None:
         """背景を描画"""
@@ -51,72 +68,80 @@ class AnacondaDrawer:
         ))
         
     def _draw_body(self) -> None:
-        """アナコンダの体を描画"""
-        self.dwg.add(self.dwg.polyline(
+        """アナコンダの体を描画（グループ化して最適化）"""
+        body_group = self.dwg.g(stroke=self.colors.BODY, 
+                              stroke_width=self.constants.STROKE_WIDTH,
+                              stroke_linecap="round")
+        
+        body_group.add(self.dwg.polyline(
             points=self.points,
-            fill="none",
-            stroke=self.colors.BODY,
-            stroke_width=60,
-            stroke_linecap="round"  # 端を丸くして自然な見た目に
+            fill="none"
         ))
         
+        self.dwg.add(body_group)
+        
     def _draw_patterns(self) -> None:
-        """体の模様を描画"""
-        for i in range(len(self.points) - 1):
-            x1, y1 = self.points[i]
-            x2, y2 = self.points[i+1]
-            mid_x = (x1 + x2) // 2
-            mid_y = (y1 + y2) // 2
-            
-            # 楕円形の模様でより自然な見た目に
-            self.dwg.add(self.dwg.ellipse(
+        """体の模様を描画（グループ化して最適化）"""
+        pattern_group = self.dwg.g(fill=self.colors.PATTERN)
+        
+        # 中間点を一括計算
+        points_array = np.array(self.points)
+        mid_points = (points_array[:-1] + points_array[1:]) // 2
+        
+        for mid_x, mid_y in mid_points:
+            pattern_group.add(self.dwg.ellipse(
                 center=(mid_x, mid_y),
-                r=(20, 15),
-                fill=self.colors.PATTERN
+                r=self.constants.PATTERN_RADIUS
             ))
             
+        self.dwg.add(pattern_group)
+            
     def _draw_head(self) -> None:
-        """頭部を描画"""
+        """頭部を描画（グループ化して最適化）"""
         head_x, head_y = self.points[0]
+        head_group = self.dwg.g()
         
         # 頭部の形状
-        self.dwg.add(self.dwg.ellipse(
-            center=(head_x-10, head_y),
-            r=(30, 20),
+        head_group.add(self.dwg.ellipse(
+            center=(head_x - self.constants.HEAD_OFFSET, head_y),
+            r=self.constants.HEAD_RADIUS,
             fill=self.colors.BODY
         ))
         
-        # 目
-        self._draw_eye(head_x-25, head_y-10)
+        # 目と舌をグループに追加
+        self._add_eye_to_group(head_group, head_x-25, head_y-10)
+        self._add_tongue_to_group(head_group, head_x-40, head_y)
         
-        # 舌
-        self._draw_tongue(head_x-40, head_y)
+        self.dwg.add(head_group)
         
-    def _draw_eye(self, x: int, y: int) -> None:
-        """目を描画"""
-        self.dwg.add(self.dwg.circle(
+    def _add_eye_to_group(self, group: svgwrite.container.Group, x: int, y: int) -> None:
+        """目をグループに追加"""
+        group.add(self.dwg.circle(
             center=(x, y),
-            r=5,
+            r=self.constants.EYE_OUTER_RADIUS,
             fill=self.colors.EYE_OUTER
         ))
-        self.dwg.add(self.dwg.circle(
+        group.add(self.dwg.circle(
             center=(x, y),
-            r=2,
+            r=self.constants.EYE_INNER_RADIUS,
             fill=self.colors.EYE_INNER
         ))
         
-    def _draw_tongue(self, x: int, y: int) -> None:
-        """舌を描画"""
+    def _add_tongue_to_group(self, group: svgwrite.container.Group, x: int, y: int) -> None:
+        """舌をグループに追加"""
+        tongue_group = self.dwg.g(stroke=self.colors.TONGUE,
+                                stroke_width=3,
+                                fill="none")
+        
         for offset in [-15, 15]:  # 上下の舌の先端
-            self.dwg.add(self.dwg.path(
-                d=f"M {x} {y} Q {x-20} {y+offset//2} {x-30} {y+offset}",
-                stroke=self.colors.TONGUE,
-                stroke_width=3,
-                fill="none"
+            tongue_group.add(self.dwg.path(
+                d=f"M {x} {y} Q {x-20} {y+offset//2} {x-30} {y+offset}"
             ))
             
-    def draw(self) -> None:
-        """アナコンダの全体を描画"""
+        group.add(tongue_group)
+            
+    def draw(self) -> bool:
+        """アナコンダの全体を描画し、成功/失敗を返す"""
         try:
             self._generate_body_points()
             self._draw_background()
@@ -125,19 +150,24 @@ class AnacondaDrawer:
             self._draw_head()
             self.dwg.save()
             print(f"SVGファイルが作成されました: {self.dwg.filename}")
+            return True
         except Exception as e:
             print(f"SVGの生成中にエラーが発生しました: {str(e)}")
+            return False
 
-def create_anaconda_svg(filename: str = "anaconda.svg", size: int = 600) -> None:
+def create_anaconda_svg(filename: str = "anaconda.svg", size: int = 600) -> bool:
     """
     アナコンダのSVGを生成する関数
     
     Args:
         filename (str): 出力するSVGファイル名
         size (int): SVGのサイズ（幅・高さ）
+    
+    Returns:
+        bool: 生成が成功した場合はTrue、失敗した場合はFalse
     """
     drawer = AnacondaDrawer(filename, size)
-    drawer.draw()
+    return drawer.draw()
 
 if __name__ == "__main__":
     create_anaconda_svg()

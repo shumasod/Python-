@@ -8,7 +8,7 @@ TEST_LOG_FILE = 'test_alb.log'
 LOG_ENTRIES = 100
 IPS = [f'192.168.1.{i:03d}' for i in range(1, 11)]
 PATHS = ['/api/users', '/api/products', '/api/orders', '/api/login', '/']
-STATUS_CODES = [200] * 7 + [301, 404, 500]  # 70% success rate
+STATUS_CODES = [200] * 7 + [301, 404, 503]  # 70% success rate
 USER_AGENTS = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
     'Chrome/91.0.4472.124',

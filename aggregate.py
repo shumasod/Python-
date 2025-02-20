@@ -15,7 +15,10 @@ import hashlib
 import aiofiles
 
 # 非同期ループの最適化
-asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy() if os.name == 'nt' else asyncio.DefaultEventLoopPolicy())
+if os.name == 'nt':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+else:
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 # ログ設定
 logging.basicConfig(
@@ -114,11 +117,22 @@ class DataCollector:
                         content = await response.text()
                         await self.cache.set(url, content)
                         return content
-            except Exception as e:
+            except aiohttp.ClientError as e:
                 logger.error(f"ページ取得エラー {url}: {str(e)}")
                 if attempt == self.config.max_retries - 1:
                     return None
                 await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+            except asyncio.TimeoutError:
+                logger.error(f"タイムアウトエラー {url}")
+                if attempt == self.config.max_retries - 1:
+                    return None
+                await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+            except Exception as e:
+                logger.error(f"予期しないエラー {url}: {str(e)}")
+                if attempt == self.config.max_retries - 1:
+                    return None
+                await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+
 
     @staticmethod
     def _parse_page(content: str) -> Dict[str, Any]:

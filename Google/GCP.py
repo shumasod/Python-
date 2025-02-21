@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-GCP App Engine モニタリングスクリプト
-エンドポイントの監視とログ管理を行います。
-"""
 
 import json
 import logging

@@ -54,7 +54,7 @@ class AnacondaDrawer:
         # より自然な動きのために正弦波を使用
         amplitude = 100
         phase = random.random() * 2 * np.pi
-        y_coords = self.size//2 + amplitude * np.sin(np.linspace(0, 2*np.pi, self.constants.SEGMENT_COUNT + 1) + phase)
+        y_coords = self.size // 2 + amplitude * np.sin(np.linspace(0, 2 * np.pi, self.constants.SEGMENT_COUNT + 1) + phase)
         
         # numpy配列をタプルのリストに変換
         self.points = list(zip(x_coords, y_coords.astype(int)))
@@ -109,11 +109,48 @@ class AnacondaDrawer:
         ))
         
         # 目と舌をグループに追加
-        self._add_eye_to_group(head_group, head_x-25, head_y-10)
-        self._add_tongue_to_group(head_group, head_x-40, head_y)
+        self._add_eye_to_group(head_group, head_x - 25, head_y - 10)
+        self._add_tongue_to_group(head_group, head_x - 40, head_y)
         
         self.dwg.add(head_group)
         
+    def _add_eye_to_group(self, group, x, y) -> None:
+        """目をグループに追加"""
+        group.add(self.dwg.circle(
+            center=(x, y),
+            r=self.constants.EYE_OUTER_RADIUS,
+            fill=self.colors.EYE_OUTER
+        ))
+        group.add(self.dwg.circle(
+            center=(x, y),
+            r=self.constants.EYE_INNER_RADIUS,
+            fill=self.colors.EYE_INNER
+        ))
+        
+    def _add_tongue_to_group(self, group, x, y) -> None:
+        """舌をグループに追加"""
+        group.add(self.dwg.line(
+            start=(x, y),
+            end=(x - self.constants.TONGUE_LENGTH, y),
+            stroke=self.colors.TONGUE,
+            stroke_width=2
+        ))
+
+    def save(self) -> None:
+        """SVGファイルを保存"""
+        try:
+            self.dwg.save()
+        except IOError as e:
+            print(f"ファイル保存エラー: {e}")
+
+# 使用例
+drawer = AnacondaDrawer()
+drawer._generate_body_points()
+drawer._draw_background()
+drawer._draw_body()
+drawer._draw_patterns()
+drawer._draw_head()
+drawer.save()     
     def _add_eye_to_group(self, group: svgwrite.container.Group, x: int, y: int) -> None:
         """目をグループに追加"""
         group.add(self.dwg.circle(

@@ -9,22 +9,18 @@ import seaborn as sns
 from typing import List, Dict, Any, Optional, Set
 import logging
 from dataclasses import dataclass
-import time
-import json
 import os
-from functools import lru_cache
+import json
 import hashlib
-from io import StringIO
-import dask.dataframe as dd
-from concurrent.futures import ThreadPoolExecutor
 import aiofiles
-import uvloop
-from memory_profiler import profile
 
 # 非同期ループの最適化
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+if os.name == 'nt':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+else:
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-# ログ設定の最適化
+# ログ設定
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -121,16 +117,26 @@ class DataCollector:
                         content = await response.text()
                         await self.cache.set(url, content)
                         return content
-            except Exception as e:
+            except aiohttp.ClientError as e:
                 logger.error(f"ページ取得エラー {url}: {str(e)}")
                 if attempt == self.config.max_retries - 1:
                     return None
                 await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+            except asyncio.TimeoutError:
+                logger.error(f"タイムアウトエラー {url}")
+                if attempt == self.config.max_retries - 1:
+                    return None
+                await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+            except Exception as e:
+                logger.error(f"予期しないエラー {url}: {str(e)}")
+                if attempt == self.config.max_retries - 1:
+                    return None
+                await asyncio.sleep(2 ** attempt)  # 指数バックオフ
+
 
     @staticmethod
-    @lru_cache(maxsize=128)
     def _parse_page(content: str) -> Dict[str, Any]:
-        """ページの解析（キャッシュ付き）"""
+        """ページの解析"""
         try:
             soup = BeautifulSoup(content, 'html.parser')
             data = {
@@ -172,33 +178,28 @@ class DataAnalyzer:
     """データ分析クラス"""
     def __init__(self, data: List[Dict[str, Any]], config: ScrapingConfig):
         self.config = config
-        self.ddf = self._create_dask_dataframe(data)
-
-    def _create_dask_dataframe(self, data: List[Dict[str, Any]]) -> dd.DataFrame:
-        """Daskデータフレームの作成"""
-        pdf = pd.DataFrame(data)
-        return dd.from_pandas(pdf, npartitions=self.config.max_workers)
+        self.df = pd.DataFrame(data)
 
     def prepare_data(self) -> None:
         """データの前処理"""
-        if 'date' in self.ddf.columns:
-            self.ddf['date'] = dd.to_datetime(self.ddf['date'], errors='coerce')
+        if 'date' in self.df.columns:
+            self.df['date'] = pd.to_datetime(self.df['date'], errors='coerce')
         
-        self.ddf = self.ddf.dropna(subset=['title', 'content'])
+        self.df = self.df.dropna(subset=['title', 'content'])
         
-        if 'content' in self.ddf.columns:
-            self.ddf['content_length'] = self.ddf['content'].str.len()
+        if 'content' in self.df.columns:
+            self.df['content_length'] = self.df['content'].str.len()
 
     def generate_basic_stats(self) -> Dict[str, Any]:
         """基本的な統計情報の生成"""
         stats = {
-            'total_articles': len(self.ddf.compute()),
-            'unique_dates': self.ddf['date'].nunique().compute() if 'date' in self.ddf.columns else 0,
-            'avg_content_length': self.ddf['content_length'].mean().compute() if 'content_length' in self.ddf.columns else 0,
+            'total_articles': len(self.df),
+            'unique_dates': self.df['date'].nunique() if 'date' in self.df.columns else 0,
+            'avg_content_length': self.df['content_length'].mean() if 'content_length' in self.df.columns else 0,
         }
         
-        if 'date' in self.ddf.columns:
-            date_stats = self.ddf['date'].agg(['min', 'max']).compute()
+        if 'date' in self.df.columns:
+            date_stats = self.df['date'].agg(['min', 'max'])
             stats['date_range'] = {
                 'start': date_stats['min'],
                 'end': date_stats['max']
@@ -208,11 +209,11 @@ class DataAnalyzer:
 
     def plot_time_series(self, save_path: str) -> None:
         """時系列データの可視化"""
-        if 'date' not in self.ddf.columns:
+        if 'date' not in self.df.columns:
             return
 
         plt.figure(figsize=(12, 6))
-        daily_counts = self.ddf.groupby('date').size().compute()
+        daily_counts = self.df.groupby(self.df['date'].dt.date).size()
         
         with plt.style.context('seaborn'):
             sns.lineplot(data=daily_counts)
@@ -224,19 +225,19 @@ class DataAnalyzer:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
             plt.close()
 
-    async def export_data(self, output_dir: str) -> None:
-        """データの非同期エクスポート"""
+    def export_data(self, output_dir: str) -> None:
+        """データのエクスポート"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # CSVとして保存
         csv_path = os.path.join(output_dir, f'data_{timestamp}.csv')
-        self.ddf.to_csv(csv_path, single_file=True, encoding='utf-8')
+        self.df.to_csv(csv_path, index=False, encoding='utf-8')
         
         # 基本統計をJSONとして保存
         stats_path = os.path.join(output_dir, f'stats_{timestamp}.json')
         stats = self.generate_basic_stats()
-        async with aiofiles.open(stats_path, 'w', encoding='utf-8') as f:
-            await f.write(json.dumps(stats, indent=2, default=str))
+        with open(stats_path, 'w', encoding='utf-8') as f:
+            json.dump(stats, f, indent=2, default=str)
         
         # グラフの保存
         plot_path = os.path.join(output_dir, f'timeline_{timestamp}.png')
@@ -270,7 +271,7 @@ async def main():
     # データ分析
     analyzer = DataAnalyzer(collected_data, config)
     analyzer.prepare_data()
-    await analyzer.export_data(config.output_dir)
+    analyzer.export_data(config.output_dir)
     
     logger.info("データ分析が完了しました")
     
@@ -280,5 +281,4 @@ async def main():
     print(json.dumps(stats, indent=2, default=str))
 
 if __name__ == "__main__":
-    uvloop.install()
     asyncio.run(main())

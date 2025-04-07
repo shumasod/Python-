@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import svgwrite
 import random
 import numpy as np
@@ -27,6 +27,10 @@ class Colors:
     TONGUE = "red"         # 舌の色
 
 class AnacondaDrawer:
+    """
+    アナコンダのSVG描画を行うクラス
+    """
+    
     def __init__(self, filename: str = "anaconda.svg", size: int = 600):
         """
         アナコンダSVG描画クラスの初期化
@@ -34,6 +38,9 @@ class AnacondaDrawer:
         Args:
             filename (str): 出力するSVGファイル名
             size (int): SVGのサイズ（幅・高さ）
+        
+        Raises:
+            ValueError: サイズが正の整数でない場合
         """
         if not isinstance(size, int) or size <= 0:
             raise ValueError("サイズは正の整数である必要があります")
@@ -45,7 +52,9 @@ class AnacondaDrawer:
         self.points: List[Tuple[int, int]] = []
         
     def _generate_body_points(self) -> None:
-        """アナコンダの体の座標を生成（NumPyを使用して最適化）"""
+        """
+        アナコンダの体の座標を生成（NumPyを使用して最適化）
+        """
         segment_width = (self.size - 100) // self.constants.SEGMENT_COUNT
         
         # X座標を一括生成
@@ -54,7 +63,7 @@ class AnacondaDrawer:
         # より自然な動きのために正弦波を使用
         amplitude = 100
         phase = random.random() * 2 * np.pi
-        y_coords = self.size // 2 + amplitude * np.sin(np.linspace(0, 2 * np.pi, self.constants.SEGMENT_COUNT + 1) + phase)
+        y_coords = self.size // 2 + amplitude * np.sin(np.linspace(0, 2 * np.pi, len(x_coords)) + phase)
         
         # numpy配列をタプルのリストに変換
         self.points = list(zip(x_coords, y_coords.astype(int)))
@@ -69,6 +78,9 @@ class AnacondaDrawer:
         
     def _draw_body(self) -> None:
         """アナコンダの体を描画（グループ化して最適化）"""
+        if not self.points:
+            self._generate_body_points()
+            
         body_group = self.dwg.g(stroke=self.colors.BODY, 
                               stroke_width=self.constants.STROKE_WIDTH,
                               stroke_linecap="round")
@@ -82,22 +94,32 @@ class AnacondaDrawer:
         
     def _draw_patterns(self) -> None:
         """体の模様を描画（グループ化して最適化）"""
+        if not self.points:
+            self._generate_body_points()
+            
         pattern_group = self.dwg.g(fill=self.colors.PATTERN)
         
         # 中間点を一括計算
         points_array = np.array(self.points)
-        mid_points = (points_array[:-1] + points_array[1:]) // 2
-        
-        for mid_x, mid_y in mid_points:
-            pattern_group.add(self.dwg.ellipse(
-                center=(mid_x, mid_y),
-                r=self.constants.PATTERN_RADIUS
-            ))
+        if len(points_array) > 1:
+            mid_points = (points_array[:-1] + points_array[1:]) // 2
             
-        self.dwg.add(pattern_group)
+            for mid_x, mid_y in mid_points:
+                pattern_group.add(self.dwg.ellipse(
+                    center=(mid_x, mid_y),
+                    r=self.constants.PATTERN_RADIUS
+                ))
+                
+            self.dwg.add(pattern_group)
             
     def _draw_head(self) -> None:
         """頭部を描画（グループ化して最適化）"""
+        if not self.points:
+            self._generate_body_points()
+            
+        if not self.points:  # 念のため確認
+            return
+            
         head_x, head_y = self.points[0]
         head_group = self.dwg.g()
         
@@ -114,45 +136,15 @@ class AnacondaDrawer:
         
         self.dwg.add(head_group)
         
-    def _add_eye_to_group(self, group, x, y) -> None:
-        """目をグループに追加"""
-        group.add(self.dwg.circle(
-            center=(x, y),
-            r=self.constants.EYE_OUTER_RADIUS,
-            fill=self.colors.EYE_OUTER
-        ))
-        group.add(self.dwg.circle(
-            center=(x, y),
-            r=self.constants.EYE_INNER_RADIUS,
-            fill=self.colors.EYE_INNER
-        ))
-        
-    def _add_tongue_to_group(self, group, x, y) -> None:
-        """舌をグループに追加"""
-        group.add(self.dwg.line(
-            start=(x, y),
-            end=(x - self.constants.TONGUE_LENGTH, y),
-            stroke=self.colors.TONGUE,
-            stroke_width=2
-        ))
-
-    def save(self) -> None:
-        """SVGファイルを保存"""
-        try:
-            self.dwg.save()
-        except IOError as e:
-            print(f"ファイル保存エラー: {e}")
-
-# 使用例
-drawer = AnacondaDrawer()
-drawer._generate_body_points()
-drawer._draw_background()
-drawer._draw_body()
-drawer._draw_patterns()
-drawer._draw_head()
-drawer.save()     
     def _add_eye_to_group(self, group: svgwrite.container.Group, x: int, y: int) -> None:
-        """目をグループに追加"""
+        """
+        目をグループに追加
+        
+        Args:
+            group: SVGグループ要素
+            x: 目のX座標
+            y: 目のY座標
+        """
         group.add(self.dwg.circle(
             center=(x, y),
             r=self.constants.EYE_OUTER_RADIUS,
@@ -165,7 +157,14 @@ drawer.save()
         ))
         
     def _add_tongue_to_group(self, group: svgwrite.container.Group, x: int, y: int) -> None:
-        """舌をグループに追加"""
+        """
+        分岐した舌をグループに追加
+        
+        Args:
+            group: SVGグループ要素
+            x: 舌の付け根のX座標
+            y: 舌の付け根のY座標
+        """
         tongue_group = self.dwg.g(stroke=self.colors.TONGUE,
                                 stroke_width=3,
                                 fill="none")
@@ -178,19 +177,37 @@ drawer.save()
         group.add(tongue_group)
             
     def draw(self) -> bool:
-        """アナコンダの全体を描画し、成功/失敗を返す"""
+        """
+        アナコンダの全体を描画し、成功/失敗を返す
+        
+        Returns:
+            bool: 生成が成功した場合はTrue、失敗した場合はFalse
+        """
         try:
             self._generate_body_points()
             self._draw_background()
             self._draw_body()
             self._draw_patterns()
             self._draw_head()
-            self.dwg.save()
-            print(f"SVGファイルが作成されました: {self.dwg.filename}")
+            self.save()
             return True
         except Exception as e:
             print(f"SVGの生成中にエラーが発生しました: {str(e)}")
             return False
+            
+    def save(self) -> None:
+        """
+        SVGファイルを保存
+        
+        Raises:
+            IOError: ファイルの保存に失敗した場合
+        """
+        try:
+            self.dwg.save()
+            print(f"SVGファイルが作成されました: {self.dwg.filename}")
+        except IOError as e:
+            print(f"ファイル保存エラー: {e}")
+            raise
 
 def create_anaconda_svg(filename: str = "anaconda.svg", size: int = 600) -> bool:
     """

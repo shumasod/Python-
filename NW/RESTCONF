@@ -1,77 +1,343 @@
 #!/usr/bin/python3
-import requests
-import sys
+"""
+Cisco IOS-XE デバイスにRESTCONFを使用してルート設定を行うスクリプト
+"""
+import argparse
 import json
+import logging
+import os
+import sys
+from typing import Dict, Any, Optional
 
-# Disable SSL/TLS certificate warnings
-requests.packages.urllib3.disable_warnings()
+import requests
+import urllib3
+from requests.exceptions import RequestException, Timeout, ConnectionError
 
-# Networking device details
-HOST = ''
-USER = ''
-PASS = ''
-PORT = 443
+# SSL/TLS証明書の警告を無効化
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def configure_routes():
-    """Configure routes on the networking device via RESTCONF."""
-    # RESTCONF URL for configuring routes
-    url = f"https://{HOST}:{PORT}/restconf/data/Cisco-IOS-XE-native:native/ip/route"
+# ロギングの設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("restconf_config.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-    # RESTCONF headers
-    headers = {'Content-Type': 'application/yang-data+json',
-               'Accept': 'application/yang-data+json'}
+# 環境変数からデフォルト値を取得するか、空文字列を使用
+DEFAULT_HOST = os.environ.get('NETWORK_HOST', '')
+DEFAULT_USER = os.environ.get('NETWORK_USER', '')
+DEFAULT_PASS = os.environ.get('NETWORK_PASS', '')
+DEFAULT_PORT = int(os.environ.get('NETWORK_PORT', '443'))
 
-    # Route configuration data
-    routes_data = {
-        "Cisco-IOS-XE-native:ip": {
-            "route": {
-                "ip-route-interface-forwarding-list": [
-                    {
-                        "prefix": "192.168.2.0",
-                        "mask": "255.255.255.0",
-                        "fwd-list": [
-                            {
-                                "fwd": "GigabitEthernet0/0"
-                            }
-                        ]
-                    },
-                    {
-                        "prefix": "10.0.0.0",
-                        "mask": "255.0.0.0",
-                        "fwd-list": [
-                            {
-                                "fwd": "Null0"
-                            }
-                        ]
-                    }
-                ]
-            }
+class RestconfClient:
+    """RESTCONFを使用してCisco IOS-XEデバイスと通信するクライアント"""
+    
+    def __init__(self, host: str, username: str, password: str, port: int = 443, timeout: int = 30):
+        """
+        RESTCONFクライアントを初期化
+        
+        Args:
+            host: ネットワークデバイスのホスト名またはIPアドレス
+            username: 認証用ユーザー名
+            password: 認証用パスワード
+            port: RESTCONFのポート（デフォルト: 443）
+            timeout: リクエストタイムアウト（秒）
+        """
+        self.host = host
+        self.username = username
+        self.password = password
+        self.port = port
+        self.timeout = timeout
+        self.base_url = f"https://{host}:{port}/restconf"
+        self.headers = {
+            'Content-Type': 'application/yang-data+json',
+            'Accept': 'application/yang-data+json'
+        }
+    
+    def _send_request(self, method: str, endpoint: str, data: Optional[Dict[str, Any]] = None) -> requests.Response:
+        """
+        RESTCONFエンドポイントにリクエストを送信
+        
+        Args:
+            method: HTTPメソッド（'GET', 'POST', 'PATCH', 'PUT', 'DELETE'）
+            endpoint: ベースURLに追加するエンドポイントパス
+            data: リクエストに含めるJSONデータ（オプション）
+            
+        Returns:
+            requests.Response: レスポンスオブジェクト
+            
+        Raises:
+            RequestException: リクエスト処理中にエラーが発生した場合
+        """
+        url = f"{self.base_url}/{endpoint}"
+        logger.debug(f"Sending {method} request to {url}")
+        
+        if data:
+            logger.debug(f"Request data: {json.dumps(data, indent=2)}")
+            
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                auth=(self.username, self.password),
+                headers=self.headers,
+                json=data if data else None,
+                verify=False,
+                timeout=self.timeout
+            )
+            
+            logger.debug(f"Response status: {response.status_code}")
+            if response.text:
+                logger.debug(f"Response body: {response.text}")
+                
+            return response
+            
+        except Timeout:
+            logger.error(f"Request timeout ({self.timeout}s) for {url}")
+            raise
+        except ConnectionError:
+            logger.error(f"Connection error for {url}")
+            raise
+        except RequestException as e:
+            logger.error(f"Request error: {e}")
+            raise
+    
+    def get_routes(self) -> Dict[str, Any]:
+        """
+        現在設定されているルートを取得
+        
+        Returns:
+            Dict: 現在のルート設定
+        """
+        try:
+            response = self._send_request('GET', 'data/Cisco-IOS-XE-native:native/ip/route')
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get routes: {e}")
+            return {}
+    
+    def configure_routes(self, routes_data: Dict[str, Any]) -> bool:
+        """
+        ネットワークデバイスにルートを設定
+        
+        Args:
+            routes_data: ルート設定データ
+            
+        Returns:
+            bool: 設定が成功した場合はTrue、それ以外はFalse
+        """
+        try:
+            response = self._send_request(
+                'PATCH', 
+                'data/Cisco-IOS-XE-native:native/ip/route',
+                data=routes_data
+            )
+            
+            # 成功の場合、Cisco IOS-XEは通常204を返す
+            if response.status_code in [200, 201, 204]:
+                logger.info("Routes configured successfully")
+                return True
+            else:
+                logger.error(f"Failed to configure routes. Status: {response.status_code}, Response: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error configuring routes: {e}")
+            return False
+    
+    def validate_connection(self) -> bool:
+        """
+        デバイスへの接続を検証
+        
+        Returns:
+            bool: 接続が成功した場合はTrue、それ以外はFalse
+        """
+        try:
+            # 基本的なエンドポイントにGETリクエストを送信して接続をテスト
+            response = self._send_request('GET', 'data?depth=1')
+            return response.status_code in [200, 204]
+        except Exception as e:
+            logger.error(f"Connection validation failed: {e}")
+            return False
+
+
+def load_routes_from_file(file_path: str) -> Dict[str, Any]:
+    """
+    JSONファイルからルート設定をロード
+    
+    Args:
+        file_path: ルート設定を含むJSONファイルのパス
+        
+    Returns:
+        Dict: ロードされたルート設定データ
+    """
+    try:
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        logger.error(f"Failed to load routes from {file_path}: {e}")
+        return {}
+
+
+def get_sample_routes() -> Dict[str, Any]:
+    """
+    サンプルルート設定を返す
+    
+    Returns:
+        Dict: サンプルルート設定
+    """
+    return {
+        "Cisco-IOS-XE-native:route": {
+            "ip-route-interface-forwarding-list": [
+                {
+                    "prefix": "192.168.2.0",
+                    "mask": "255.255.255.0",
+                    "fwd-list": [
+                        {
+                            "fwd": "GigabitEthernet0/0"
+                        }
+                    ]
+                },
+                {
+                    "prefix": "10.0.0.0",
+                    "mask": "255.0.0.0",
+                    "fwd-list": [
+                        {
+                            "fwd": "Null0"
+                        }
+                    ]
+                }
+            ]
         }
     }
 
-    try:
-        # Perform a PATCH request to configure routes
-        response = requests.patch(url, auth=(USER, PASS),
-                                  headers=headers, data=json.dumps(routes_data), verify=False)
 
-        # Print the response
-        print("Response:")
-        print(response.status_code)
-        print(response.text)
+def parse_arguments():
+    """
+    コマンドライン引数をパースする
+    
+    Returns:
+        argparse.Namespace: パースされた引数
+    """
+    parser = argparse.ArgumentParser(
+        description='Configure routes on Cisco IOS-XE devices using RESTCONF'
+    )
+    
+    parser.add_argument('--host', default=DEFAULT_HOST,
+                        help='Network device hostname or IP address')
+    parser.add_argument('--port', type=int, default=DEFAULT_PORT,
+                        help='RESTCONF port number')
+    parser.add_argument('--username', default=DEFAULT_USER,
+                        help='Authentication username')
+    parser.add_argument('--password', default=DEFAULT_PASS,
+                        help='Authentication password')
+    parser.add_argument('--timeout', type=int, default=30,
+                        help='Request timeout in seconds')
+    parser.add_argument('--routes-file', help='JSON file containing route configurations')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose logging')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Validate connection and show route data without applying changes')
+    
+    return parser.parse_args()
 
-        # Check if the request was successful
-        if response.status_code == 204:
-            print("Routes configured successfully.")
-        else:
-            print("Failed to configure routes.")
-
-    except Exception as e:
-        print("An error occurred:", e)
 
 def main():
-    """Main method to execute the script."""
-    print("Configuring routes on the networking device...")
-    configure_routes()
+    """
+    メイン実行関数
+    
+    Returns:
+        int: 終了コード（成功: 0, 失敗: 1）
+    """
+    args = parse_arguments()
+    
+    # 詳細ログが有効な場合、ログレベルをDEBUGに設定
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        # すべてのハンドラのログレベルを設定
+        for handler in logger.handlers:
+            handler.setLevel(logging.DEBUG)
+    
+    # 必須パラメータの検証
+    if not args.host:
+        logger.error("Host is required")
+        print("Error: Host is required. Use --host or set NETWORK_HOST environment variable.")
+        return 1
+    
+    if not args.username or not args.password:
+        logger.error("Username and password are required")
+        print("Error: Username and password are required. Use --username/--password or set environment variables.")
+        return 1
+    
+    # RESTCONFクライアントのインスタンス化
+    client = RestconfClient(
+        host=args.host,
+        username=args.username,
+        password=args.password,
+        port=args.port,
+        timeout=args.timeout
+    )
+    
+    # 接続検証
+    logger.info(f"Validating connection to {args.host}:{args.port}...")
+    if not client.validate_connection():
+        logger.error("Connection validation failed")
+        print(f"Error: Could not connect to {args.host}:{args.port}. Please check credentials and network connectivity.")
+        return 1
+    
+    logger.info("Connection validation successful")
+    
+    # ルート設定データの準備
+    if args.routes_file:
+        # ファイルからルート設定を読み込む
+        logger.info(f"Loading routes from {args.routes_file}")
+        routes_data = load_routes_from_file(args.routes_file)
+        if not routes_data:
+            logger.error("Failed to load valid route data")
+            print(f"Error: Could not load valid route data from {args.routes_file}")
+            return 1
+    else:
+        # デフォルトのサンプルルート設定を使用
+        logger.info("Using sample route configuration")
+        routes_data = {"Cisco-IOS-XE-native:ip": get_sample_routes()}
+    
+    # 現在のルート設定を取得
+    current_routes = client.get_routes()
+    if current_routes:
+        logger.info("Current routes configuration:")
+        logger.info(json.dumps(current_routes, indent=2))
+    
+    # Dry-runモードの場合は変更を適用しない
+    if args.dry_run:
+        logger.info("Dry run mode - changes will not be applied")
+        print("Dry run completed. New routes configuration would be:")
+        print(json.dumps(routes_data, indent=2))
+        return 0
+    
+    # ルート設定の適用
+    logger.info("Applying route configuration...")
+    if client.configure_routes(routes_data):
+        print("Routes configured successfully")
+        return 0
+    else:
+        print("Failed to configure routes")
+        return 1
+
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        exit_code = main()
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        print("\nOperation cancelled")
+        sys.exit(130)  # 130はシグナル終了のための標準的な終了コード
+    except Exception as e:
+        logger.exception("Unhandled exception")
+        print(f"Error: {e}")
+        sys.exit(1)

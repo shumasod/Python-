@@ -1,0 +1,86 @@
+# Component（コンポーネント）- 基底クラス
+class Component
+  def operation
+    raise NotImplementedError, "#{self.class} has not implemented method '#{__method__}'"
+  end
+  
+  def add(component)
+    raise NotImplementedError, "#{self.class} has not implemented method '#{__method__}'"
+  end
+  
+  def remove(component)
+    raise NotImplementedError, "#{self.class} has not implemented method '#{__method__}'"
+  end
+  
+  def get_child(index)
+    raise NotImplementedError, "#{self.class} has not implemented method '#{__method__}'"
+  end
+end
+
+# Leaf（葉）- 個別のオブジェクト
+class Leaf < Component
+  def initialize(name)
+    @name = name
+  end
+  
+  def operation
+    puts "Leaf #{@name} operation"
+  end
+  
+  def add(component)
+    puts "Cannot add to a leaf"
+  end
+  
+  def remove(component)
+    puts "Cannot remove from a leaf"
+  end
+  
+  def get_child(index)
+    nil
+  end
+end
+
+# Composite（複合体）- コンポーネントのコレクション
+class Composite < Component
+  def initialize(name)
+    @name = name
+    @children = []
+  end
+  
+  def operation
+    puts "Composite #{@name} operation"
+    # 子コンポーネントに処理を委譲
+    @children.each do |child|
+      child.operation
+    end
+  end
+  
+  def add(component)
+    @children << component
+  end
+  
+  def remove(component)
+    @children.delete(component)
+  end
+  
+  def get_child(index)
+    @children[index]
+  end
+end
+
+# クライアント
+leaf1 = Leaf.new("A")
+leaf2 = Leaf.new("B")
+leaf3 = Leaf.new("C")
+
+composite1 = Composite.new("X")
+composite2 = Composite.new("Y")
+
+composite1.add(leaf1)
+composite1.add(leaf2)
+
+composite2.add(leaf3)
+composite2.add(composite1)
+
+# 複合オブジェクトに対する操作
+composite2.operation

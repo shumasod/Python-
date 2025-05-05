@@ -1,0 +1,97 @@
+package main
+
+import (
+    "fmt"
+)
+
+// Component（コンポーネント）- インターフェース
+type Component interface {
+    Operation()
+    Add(c Component)
+    Remove(c Component)
+    GetChild(index int) Component
+}
+
+// Leaf（葉）- 個別のオブジェクト
+type Leaf struct {
+    name string
+}
+
+func NewLeaf(name string) *Leaf {
+    return &Leaf{name: name}
+}
+
+func (l *Leaf) Operation() {
+    fmt.Printf("Leaf %s operation\n", l.name)
+}
+
+func (l *Leaf) Add(c Component) {
+    fmt.Println("Cannot add to a leaf")
+}
+
+func (l *Leaf) Remove(c Component) {
+    fmt.Println("Cannot remove from a leaf")
+}
+
+func (l *Leaf) GetChild(index int) Component {
+    return nil
+}
+
+// Composite（複合体）- コンポーネントのコレクション
+type Composite struct {
+    name     string
+    children []Component
+}
+
+func NewComposite(name string) *Composite {
+    return &Composite{
+        name:     name,
+        children: make([]Component, 0),
+    }
+}
+
+func (c *Composite) Operation() {
+    fmt.Printf("Composite %s operation\n", c.name)
+    // 子コンポーネントに処理を委譲
+    for _, child := range c.children {
+        child.Operation()
+    }
+}
+
+func (c *Composite) Add(component Component) {
+    c.children = append(c.children, component)
+}
+
+func (c *Composite) Remove(component Component) {
+    for i, child := range c.children {
+        if child == component {
+            c.children = append(c.children[:i], c.children[i+1:]...)
+            break
+        }
+    }
+}
+
+func (c *Composite) GetChild(index int) Component {
+    if index >= 0 && index < len(c.children) {
+        return c.children[index]
+    }
+    return nil
+}
+
+func main() {
+    leaf1 := NewLeaf("A")
+    leaf2 := NewLeaf("B")
+    leaf3 := NewLeaf("C")
+
+    composite1 := NewComposite("X")
+    composite2 := NewComposite("Y")
+
+    composite1.Add(leaf1)
+    composite1.Add(leaf2)
+
+    composite2.Add(leaf3)
+    composite2.Add(composite1)
+
+    // 複合オブジェクトに対する操作
+    composite2.Operation()
+}

@@ -1,0 +1,84 @@
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <algorithm>
+
+// Component（コンポーネント）- 基底クラス
+class Component {
+public:
+    virtual ~Component() {}
+    virtual void operation() const = 0;
+    virtual void add(std::shared_ptr<Component> component) {}
+    virtual void remove(std::shared_ptr<Component> component) {}
+    virtual std::shared_ptr<Component> getChild(int index) { return nullptr; }
+};
+
+// Leaf（葉）- 個別のオブジェクト
+class Leaf : public Component {
+private:
+    std::string name;
+    
+public:
+    Leaf(const std::string& name) : name(name) {}
+    
+    void operation() const override {
+        std::cout << "Leaf " << name << " operation" << std::endl;
+    }
+};
+
+// Composite（複合体）- コンポーネントのコレクション
+class Composite : public Component {
+private:
+    std::string name;
+    std::vector<std::shared_ptr<Component>> children;
+    
+public:
+    Composite(const std::string& name) : name(name) {}
+    
+    void operation() const override {
+        std::cout << "Composite " << name << " operation" << std::endl;
+        // 子コンポーネントに処理を委譲
+        for (const auto& child : children) {
+            child->operation();
+        }
+    }
+    
+    void add(std::shared_ptr<Component> component) override {
+        children.push_back(component);
+    }
+    
+    void remove(std::shared_ptr<Component> component) override {
+        auto it = std::find(children.begin(), children.end(), component);
+        if (it != children.end()) {
+            children.erase(it);
+        }
+    }
+    
+    std::shared_ptr<Component> getChild(int index) override {
+        if (index >= 0 && index < children.size()) {
+            return children[index];
+        }
+        return nullptr;
+    }
+};
+
+// クライアント
+int main() {
+    auto leaf1 = std::make_shared<Leaf>("A");
+    auto leaf2 = std::make_shared<Leaf>("B");
+    auto leaf3 = std::make_shared<Leaf>("C");
+    
+    auto composite1 = std::make_shared<Composite>("X");
+    auto composite2 = std::make_shared<Composite>("Y");
+    
+    composite1->add(leaf1);
+    composite1->add(leaf2);
+    
+    composite2->add(leaf3);
+    composite2->add(composite1);
+    
+    // 複合オブジェクトに対する操作
+    composite2->operation();
+    
+    return 0;
+}

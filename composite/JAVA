@@ -1,0 +1,94 @@
+// Component（コンポーネント）- 共通インターフェース
+interface Component {
+    void operation();
+    void add(Component component);
+    void remove(Component component);
+    Component getChild(int index);
+}
+
+// Leaf（葉）- 個別のオブジェクト
+class Leaf implements Component {
+    private String name;
+    
+    public Leaf(String name) {
+        this.name = name;
+    }
+    
+    @Override
+    public void operation() {
+        System.out.println("Leaf " + name + " operation");
+    }
+    
+    @Override
+    public void add(Component component) {
+        // 葉ノードには子を追加できない
+        System.out.println("Cannot add to a leaf");
+    }
+    
+    @Override
+    public void remove(Component component) {
+        // 葉ノードには子がない
+        System.out.println("Cannot remove from a leaf");
+    }
+    
+    @Override
+    public Component getChild(int index) {
+        // 葉ノードには子がない
+        return null;
+    }
+}
+
+// Composite（複合体）- コンポーネントのコレクション
+class Composite implements Component {
+    private String name;
+    private List<Component> children = new ArrayList<>();
+    
+    public Composite(String name) {
+        this.name = name;
+    }
+    
+    @Override
+    public void operation() {
+        System.out.println("Composite " + name + " operation");
+        // 子コンポーネントに処理を委譲
+        for (Component component : children) {
+            component.operation();
+        }
+    }
+    
+    @Override
+    public void add(Component component) {
+        children.add(component);
+    }
+    
+    @Override
+    public void remove(Component component) {
+        children.remove(component);
+    }
+    
+    @Override
+    public Component getChild(int index) {
+        return children.get(index);
+    }
+}
+
+// クライアント
+public class Client {
+    public static void main(String[] args) {
+        Component leaf1 = new Leaf("A");
+        Component leaf2 = new Leaf("B");
+        Component leaf3 = new Leaf("C");
+        
+        Composite composite1 = new Composite("X");
+        Composite composite2 = new Composite("Y");
+        
+        composite1.add(leaf1);
+        composite1.add(leaf2);
+        
+        composite2.add(leaf3);
+        composite2.add(composite1);
+        
+        // 複合オブジェクトに対する操作
+        composite2.operation();
+    }
+}

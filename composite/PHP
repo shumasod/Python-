@@ -1,0 +1,85 @@
+<?php
+// Component（コンポーネント）- インターフェース
+interface Component {
+    public function operation(): void;
+    public function add(Component $component): void;
+    public function remove(Component $component): void;
+    public function getChild(int $index): ?Component;
+}
+
+// Leaf（葉）- 個別のオブジェクト
+class Leaf implements Component {
+    private string $name;
+    
+    public function __construct(string $name) {
+        $this->name = $name;
+    }
+    
+    public function operation(): void {
+        echo "Leaf {$this->name} operation\n";
+    }
+    
+    public function add(Component $component): void {
+        echo "Cannot add to a leaf\n";
+    }
+    
+    public function remove(Component $component): void {
+        echo "Cannot remove from a leaf\n";
+    }
+    
+    public function getChild(int $index): ?Component {
+        return null;
+    }
+}
+
+// Composite（複合体）- コンポーネントのコレクション
+class Composite implements Component {
+    private string $name;
+    private array $children = [];
+    
+    public function __construct(string $name) {
+        $this->name = $name;
+    }
+    
+    public function operation(): void {
+        echo "Composite {$this->name} operation\n";
+        // 子コンポーネントに処理を委譲
+        foreach ($this->children as $child) {
+            $child->operation();
+        }
+    }
+    
+    public function add(Component $component): void {
+        $this->children[] = $component;
+    }
+    
+    public function remove(Component $component): void {
+        $index = array_search($component, $this->children, true);
+        if ($index !== false) {
+            unset($this->children[$index]);
+            $this->children = array_values($this->children);
+        }
+    }
+    
+    public function getChild(int $index): ?Component {
+        return $this->children[$index] ?? null;
+    }
+}
+
+// クライアント
+$leaf1 = new Leaf("A");
+$leaf2 = new Leaf("B");
+$leaf3 = new Leaf("C");
+
+$composite1 = new Composite("X");
+$composite2 = new Composite("Y");
+
+$composite1->add($leaf1);
+$composite1->add($leaf2);
+
+$composite2->add($leaf3);
+$composite2->add($composite1);
+
+// 複合オブジェクトに対する操作
+$composite2->operation();
+?>

@@ -1,0 +1,89 @@
+// Component（コンポーネント）- インターフェース
+interface Component {
+    operation(): void;
+    add(component: Component): void;
+    remove(component: Component): void;
+    getChild(index: number): Component | null;
+}
+
+// Leaf（葉）- 個別のオブジェクト
+class Leaf implements Component {
+    private name: string;
+    
+    constructor(name: string) {
+        this.name = name;
+    }
+    
+    operation(): void {
+        console.log(`Leaf ${this.name} operation`);
+    }
+    
+    add(component: Component): void {
+        console.log("Cannot add to a leaf");
+    }
+    
+    remove(component: Component): void {
+        console.log("Cannot remove from a leaf");
+    }
+    
+    getChild(index: number): Component | null {
+        return null;
+    }
+}
+
+// Composite（複合体）- コンポーネントのコレクション
+class Composite implements Component {
+    private name: string;
+    private children: Component[] = [];
+    
+    constructor(name: string) {
+        this.name = name;
+    }
+    
+    operation(): void {
+        console.log(`Composite ${this.name} operation`);
+        // 子コンポーネントに処理を委譲
+        for (const child of this.children) {
+            child.operation();
+        }
+    }
+    
+    add(component: Component): void {
+        this.children.push(component);
+    }
+    
+    remove(component: Component): void {
+        const index = this.children.indexOf(component);
+        if (index !== -1) {
+            this.children.splice(index, 1);
+        }
+    }
+    
+    getChild(index: number): Component | null {
+        if (index >= 0 && index < this.children.length) {
+            return this.children[index];
+        }
+        return null;
+    }
+}
+
+// クライアント
+function clientCode(): void {
+    const leaf1 = new Leaf("A");
+    const leaf2 = new Leaf("B");
+    const leaf3 = new Leaf("C");
+    
+    const composite1 = new Composite("X");
+    const composite2 = new Composite("Y");
+    
+    composite1.add(leaf1);
+    composite1.add(leaf2);
+    
+    composite2.add(leaf3);
+    composite2.add(composite1);
+    
+    // 複合オブジェクトに対する操作
+    composite2.operation();
+}
+
+clientCode();

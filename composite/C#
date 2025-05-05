@@ -1,0 +1,99 @@
+using System;
+using System.Collections.Generic;
+
+// Component（コンポーネント）- 抽象基底クラス
+public abstract class Component
+{
+    public abstract void Operation();
+    
+    public virtual void Add(Component component)
+    {
+        throw new NotImplementedException();
+    }
+    
+    public virtual void Remove(Component component)
+    {
+        throw new NotImplementedException();
+    }
+    
+    public virtual Component GetChild(int index)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+// Leaf（葉）- 個別のオブジェクト
+public class Leaf : Component
+{
+    private string name;
+    
+    public Leaf(string name)
+    {
+        this.name = name;
+    }
+    
+    public override void Operation()
+    {
+        Console.WriteLine($"Leaf {name} operation");
+    }
+}
+
+// Composite（複合体）- コンポーネントのコレクション
+public class Composite : Component
+{
+    private string name;
+    private List<Component> children = new List<Component>();
+    
+    public Composite(string name)
+    {
+        this.name = name;
+    }
+    
+    public override void Operation()
+    {
+        Console.WriteLine($"Composite {name} operation");
+        // 子コンポーネントに処理を委譲
+        foreach (var component in children)
+        {
+            component.Operation();
+        }
+    }
+    
+    public override void Add(Component component)
+    {
+        children.Add(component);
+    }
+    
+    public override void Remove(Component component)
+    {
+        children.Remove(component);
+    }
+    
+    public override Component GetChild(int index)
+    {
+        return children[index];
+    }
+}
+
+// クライアント
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        Component leaf1 = new Leaf("A");
+        Component leaf2 = new Leaf("B");
+        Component leaf3 = new Leaf("C");
+        
+        Composite composite1 = new Composite("X");
+        Composite composite2 = new Composite("Y");
+        
+        composite1.Add(leaf1);
+        composite1.Add(leaf2);
+        
+        composite2.Add(leaf3);
+        composite2.Add(composite1);
+        
+        // 複合オブジェクトに対する操作
+        composite2.Operation();
+    }
+}

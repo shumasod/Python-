@@ -1,6 +1,4 @@
-# より可用性を高めるためのコード修正
 
-```python
 import os
 import requests
 from requests.auth import HTTPBasicAuth

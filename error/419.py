@@ -241,7 +241,6 @@ if __name__ == "__main__":
         logger.error("必要な環境変数が設定されていません。API_BASE_URL, CLIENT_ID, CLIENT_SECRETが必要です。")
         print("エラー: 必要な環境変数が設定されていません")
         exit(3)
-```
 
 ## 主な改善点
 

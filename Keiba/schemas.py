@@ -1,5 +1,5 @@
 # schemas.py
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 import re
 
@@ -18,22 +18,22 @@ class HorseDataInput(BaseModel):
     性齢: str = Field(..., description="馬の性別と年齢（例: 牡3）")
     騎手: str = Field(..., description="騎手名")
 
-    @validator('性齢')
+    @field_validator('性齢')
     def validate_gender_age(cls, v):
         """性齢のフォーマットを検証"""
         if not re.match(r'^(牡|牝|セ)[2-9]$', v):
             raise ValueError("性齢は「牡/牝/セ」と「2-9」の組み合わせである必要があります（例: 牡3）")
         return v
 
-    @validator('騎手')
+    @field_validator('騎手')
     def validate_jockey(cls, v):
         """騎手名が空でないことを確認"""
         if not v.strip():
             raise ValueError("騎手名は必須です")
         return v.strip()
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "枠番": 1,
                 "馬番": 1,
@@ -46,6 +46,7 @@ class HorseDataInput(BaseModel):
                 "騎手": "福永祐一"
             }
         }
+    }
 
 class PredictionResponse(BaseModel):
     """予測結果のレスポンススキーマ
@@ -56,8 +57,8 @@ class PredictionResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0, description="予測の信頼度（0.0〜1.0）")
     details: Optional[Dict[str, Any]] = Field(None, description="予測の詳細情報（オプション）")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "prediction": 1,
                 "confidence": 0.75,
@@ -69,3 +70,4 @@ class PredictionResponse(BaseModel):
                 }
             }
         }
+    }

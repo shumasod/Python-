@@ -1,246 +1,140 @@
-
 import os
 import requests
 from requests.auth import HTTPBasicAuth
 import time
-from functools import wraps
 import logging
-import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# ロギングの設定を改善
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
-    handlers=[
-        logging.FileHandler("api_client.log"),
-        logging.StreamHandler()
-    ]
-)
+# シンプルなログ設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-def retry_decorator(max_retries=3, backoff_factor=0.3, allowed_exceptions=(requests.exceptions.RequestException,)):
-    """改善されたリトライデコレータ - タイムアウトと例外タイプを拡張"""
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            retries = 0
-            while retries < max_retries:
-                try:
-                    return func(*args, **kwargs)
-                except allowed_exceptions as e:
-                    retries += 1
-                    if retries == max_retries:
-                        logger.error(f"リトライ上限に達しました。エラー: {e}", exc_info=True)
-                        raise
-                    wait_time = backoff_factor * (2 ** (retries - 1))
-                    logger.warning(f"リトライ {retries}/{max_retries} - {wait_time:.2f}秒後に再試行します。エラー: {str(e)}")
-                    time.sleep(wait_time)
-        return wrapper
-    return decorator
 
 class APIClient:
     def __init__(self, base_url, client_id, client_secret, timeout=10):
         self.base_url = base_url
         self.client_id = client_id
         self.client_secret = client_secret
+        self.timeout = timeout
         self.access_token = None
         self.token_expiry = None
-        self.timeout = timeout
-        # 接続プーリングのためのセッションを使用
         self.session = requests.Session()
-        # デフォルトのHTTPヘッダー
         self.session.headers.update({'Content-Type': 'application/json'})
     
-    def __del__(self):
-        """リソースのクリーンアップ"""
-        if hasattr(self, 'session'):
-            self.session.close()
+    def _retry_request(self, func, *args, **kwargs):
+        """シンプルなリトライ機能"""
+        for attempt in range(3):
+            try:
+                return func(*args, **kwargs)
+            except requests.RequestException as e:
+                if attempt == 2:  # 最後の試行
+                    raise
+                logger.warning(f"リトライ {attempt + 1}/3: {e}")
+                time.sleep(0.5 * (2 ** attempt))  # 指数的バックオフ
     
-    @retry_decorator(max_retries=5, backoff_factor=0.5)
     def get_access_token(self):
-        """アクセストークンの取得と有効期限の管理"""
-        # トークンが既に有効か確認
+        """トークン取得（有効期限チェック付き）"""
         if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
-            logger.debug("既存のトークンが有効です")
             return self.access_token
-            
-        logger.info("新しいアクセストークンを取得しています")
+        
+        logger.info("新しいトークンを取得中...")
         auth = HTTPBasicAuth(self.client_id, self.client_secret)
-        try:
+        
+        def _get_token():
             response = self.session.post(
-                f"{self.base_url}/oauth/token", 
-                auth=auth, 
+                f"{self.base_url}/oauth/token",
+                auth=auth,
                 data={'grant_type': 'client_credentials', 'scope': '*'},
                 timeout=self.timeout
             )
             response.raise_for_status()
-            token_data = response.json()
-            self.access_token = token_data['access_token']
-            
-            # トークンの有効期限を設定（データに含まれている場合）
-            if 'expires_in' in token_data:
-                # 安全マージンとして10秒引く
-                expiry_seconds = int(token_data['expires_in']) - 10
-                self.token_expiry = datetime.now().replace(microsecond=0) + \
-                                   datetime.timedelta(seconds=expiry_seconds)
-                logger.info(f"トークンの有効期限: {self.token_expiry}")
-            
-            return self.access_token
-        except requests.exceptions.RequestException as e:
-            logger.error(f"トークン取得エラー: {str(e)}", exc_info=True)
-            raise
-
-    @retry_decorator(max_retries=4, backoff_factor=0.5)
-    def make_api_request(self, endpoint, method='GET', data=None, params=None):
-        """改善されたAPI要求メソッド - より良いエラー処理と検証を含む"""
-        if not self.access_token:
-            self.get_access_token()
-
-        # リクエストごとに新しいヘッダーを設定
-        headers = {'Authorization': f'Bearer {self.access_token}'}
-        url = f"{self.base_url}{endpoint}"
+            return response.json()
         
-        # リクエスト試行をログに記録
-        logger.info(f"APIリクエスト: {method} {url}")
-        if data:
-            logger.debug(f"リクエストデータ: {json.dumps(data, ensure_ascii=False)[:500]}")
-
-        try:
+        token_data = self._retry_request(_get_token)
+        self.access_token = token_data['access_token']
+        
+        # トークン有効期限設定
+        if 'expires_in' in token_data:
+            self.token_expiry = datetime.now() + timedelta(seconds=token_data['expires_in'] - 10)
+        
+        return self.access_token
+    
+    def request(self, endpoint, method='GET', data=None, params=None):
+        """APIリクエスト実行"""
+        self.get_access_token()
+        
+        def _make_request():
             response = self.session.request(
-                method, 
-                url, 
-                headers=headers, 
+                method,
+                f"{self.base_url}{endpoint}",
+                headers={'Authorization': f'Bearer {self.access_token}'},
                 json=data,
                 params=params,
                 timeout=self.timeout
             )
             
-            # 認証関連エラーの詳細なハンドリング
+            # 認証エラーの場合、トークン再取得
             if response.status_code in (401, 403, 419):
-                logger.warning(f"認証エラー ({response.status_code}): アクセストークンを更新します")
-                self.access_token = None  # トークンをリセット
+                logger.warning("認証エラー: トークンを再取得")
+                self.access_token = None
                 self.get_access_token()
-                headers['Authorization'] = f'Bearer {self.access_token}'
-                # リトライ
                 response = self.session.request(
-                    method, 
-                    url, 
-                    headers=headers, 
+                    method,
+                    f"{self.base_url}{endpoint}",
+                    headers={'Authorization': f'Bearer {self.access_token}'},
                     json=data,
                     params=params,
                     timeout=self.timeout
                 )
             
-            # その他のエラーチェック
             response.raise_for_status()
-            
-            # レスポンスの検証
-            result = response.json()
-            logger.debug(f"レスポンス: {json.dumps(result, ensure_ascii=False)[:500]} ...")
-            return result
-            
-        except requests.exceptions.Timeout:
-            logger.error(f"APIリクエストがタイムアウトしました: {url}", exc_info=True)
-            raise
-        except requests.exceptions.ConnectionError:
-            logger.error(f"API接続エラー: {url}", exc_info=True)
-            raise
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTPエラー: {e} - {url}", exc_info=True)
-            # レスポンスボディをログに記録（可能な場合）
-            try:
-                logger.error(f"エラーレスポンス: {e.response.text}")
-            except:
-                pass
-            raise
-        except requests.exceptions.RequestException as e:
-            logger.error(f"APIリクエストエラー: {str(e)}", exc_info=True)
-            raise
-        except json.JSONDecodeError:
-            logger.error(f"JSONデコードエラー。有効なJSONレスポンスではありません: {url}", exc_info=True)
-            raise
-
-def check_api_health(client):
-    """拡張されたAPIヘルスチェック機能"""
-    health_status = {
-        "status": "error",
-        "timestamp": datetime.now().isoformat(),
-        "checks": {}
-    }
+            return response.json()
+        
+        return self._retry_request(_make_request)
     
-    try:
-        # アクセストークン取得テスト
-        start_time = time.time()
-        client.get_access_token()
-        token_time = time.time() - start_time
-        health_status["checks"]["auth"] = {
-            "status": "ok",
-            "response_time": token_time
-        }
-        
-        # APIエンドポイントテスト
-        endpoints_to_check = [
-            ('/api/user', 'GET'),
-            # 他のエンドポイントを必要に応じて追加
-        ]
-        
-        for endpoint, method in endpoints_to_check:
-            start_time = time.time()
+    def health_check(self):
+        """シンプルなヘルスチェック"""
+        try:
+            # トークン取得テスト
+            self.get_access_token()
+            
+            # APIエンドポイントテスト（必要に応じてエンドポイントを変更）
             try:
-                result = client.make_api_request(endpoint, method=method)
-                response_time = time.time() - start_time
-                
-                health_status["checks"][endpoint] = {
-                    "status": "ok",
-                    "response_time": response_time
-                }
-                logger.info(f"ヘルスチェック成功: {endpoint} - レスポンスタイム: {response_time:.2f}秒")
+                self.request('/api/user')
+                return {"status": "ok", "timestamp": datetime.now().isoformat()}
             except Exception as e:
-                health_status["checks"][endpoint] = {
-                    "status": "error",
-                    "error": str(e)
-                }
-                logger.error(f"ヘルスチェック失敗: {endpoint} - エラー: {str(e)}")
-        
-        # 全体のステータスを設定
-        errors = [check for check in health_status["checks"].values() if check["status"] == "error"]
-        health_status["status"] = "error" if errors else "ok"
-        
-        return health_status
-    except Exception as e:
-        logger.error(f"ヘルスチェック中の予期しないエラー: {str(e)}", exc_info=True)
-        health_status["error"] = str(e)
-        return health_status
+                return {"status": "error", "error": str(e), "timestamp": datetime.now().isoformat()}
+        except Exception as e:
+            return {"status": "error", "error": f"認証失敗: {str(e)}", "timestamp": datetime.now().isoformat()}
+    
+    def close(self):
+        """セッションクローズ"""
+        self.session.close()
 
-if __name__ == "__main__":
-    # 環境変数から設定を読み込み
-    url_to_check = os.environ.get("API_BASE_URL")
+def main():
+    """メイン実行関数"""
+    # 環境変数取得
+    base_url = os.environ.get("API_BASE_URL")
     client_id = os.environ.get("CLIENT_ID")
     client_secret = os.environ.get("CLIENT_SECRET")
-    
-    # タイムアウト設定（オプション）
     timeout = int(os.environ.get("API_TIMEOUT", 10))
+    
+    if not all([base_url, client_id, client_secret]):
+        logger.error("必要な環境変数が設定されていません: API_BASE_URL, CLIENT_ID, CLIENT_SECRET")
+        exit(1)
+    
+    try:
+        client = APIClient(base_url, client_id, client_secret, timeout)
+        result = client.health_check()
+        
+        logger.info(f"ヘルスチェック結果: {result}")
+        print(result)
+        
+        client.close()
+        exit(0 if result["status"] == "ok" else 1)
+        
+    except Exception as e:
+        logger.error(f"エラー: {e}")
+        exit(2)
 
-    if all([url_to_check, client_id, client_secret]):
-        try:
-            client = APIClient(url_to_check, client_id, client_secret, timeout=timeout)
-            health_result = check_api_health(client)
-            
-            # 結果をログと標準出力に出力
-            logger.info(f"APIヘルスチェック結果: {json.dumps(health_result, ensure_ascii=False, indent=2)}")
-            print(json.dumps(health_result, ensure_ascii=False, indent=2))
-            
-            # 終了ステータスの設定
-            exit_code = 0 if health_result.get("status") == "ok" else 1
-            exit(exit_code)
-        except Exception as e:
-            logger.critical(f"クリティカルエラー: {str(e)}", exc_info=True)
-            exit(2)
-    else:
-        logger.error("必要な環境変数が設定されていません。API_BASE_URL, CLIENT_ID, CLIENT_SECRETが必要です。")
-        print("エラー: 必要な環境変数が設定されていません")
-        exit(3)
-
-
-
+if __name__ == "__main__":
+    main()

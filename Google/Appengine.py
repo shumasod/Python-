@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Google App Engine デプロイメントスクリプト
-App Engine にアプリケーションをデプロイするための自動化スクリプトです。
-"""
+
 import logging
 import os
 import subprocess

@@ -21,7 +21,7 @@ class APIClient:
         self.session.headers.update({'Content-Type': 'application/json'})
     
     def _retry_request(self, func, *args, **kwargs):
-        """シンプルなリトライ機能"""
+        """リトライ機能"""
         for attempt in range(3):
             try:
                 return func(*args, **kwargs)

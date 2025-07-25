@@ -1,97 +1,344 @@
 package main
 
 import (
-    "fmt"
+“errors”
+“fmt”
+“strings”
 )
 
 // Component（コンポーネント）- インターフェース
 type Component interface {
-    Operation()
-    Add(c Component)
-    Remove(c Component)
-    GetChild(index int) Component
+Operation()
+Add(c Component) error
+Remove(c Component) error
+GetChild(index int) (Component, error)
+GetChildCount() int
+IsComposite() bool
+GetName() string
+String() string
+}
+
+// ComponentType は型の判別に使用
+type ComponentType int
+
+const (
+LeafType ComponentType = iota
+CompositeType
+)
+
+// BaseComponent は共通機能を提供
+type BaseComponent struct {
+name string
+cType ComponentType
+}
+
+func (b *BaseComponent) GetName() string {
+return b.name
+}
+
+func (b *BaseComponent) IsComposite() bool {
+return b.cType == CompositeType
 }
 
 // Leaf（葉）- 個別のオブジェクト
 type Leaf struct {
-    name string
+BaseComponent
 }
 
-func NewLeaf(name string) *Leaf {
-    return &Leaf{name: name}
+func NewLeaf(name string) (*Leaf, error) {
+if name == “” {
+return nil, errors.New(“leaf name cannot be empty”)
+}
+return &Leaf{
+BaseComponent: BaseComponent{
+name:  name,
+cType: LeafType,
+},
+}, nil
 }
 
 func (l *Leaf) Operation() {
-    fmt.Printf("Leaf %s operation\n", l.name)
+fmt.Printf(“Leaf ‘%s’ operation\n”, l.name)
 }
 
-func (l *Leaf) Add(c Component) {
-    fmt.Println("Cannot add to a leaf")
+func (l *Leaf) Add(c Component) error {
+return errors.New(“cannot add component to leaf”)
 }
 
-func (l *Leaf) Remove(c Component) {
-    fmt.Println("Cannot remove from a leaf")
+func (l *Leaf) Remove(c Component) error {
+return errors.New(“cannot remove component from leaf”)
 }
 
-func (l *Leaf) GetChild(index int) Component {
-    return nil
+func (l *Leaf) GetChild(index int) (Component, error) {
+return nil, errors.New(“leaf has no children”)
+}
+
+func (l *Leaf) GetChildCount() int {
+return 0
+}
+
+func (l *Leaf) String() string {
+return fmt.Sprintf(“Leaf: %s”, l.name)
 }
 
 // Composite（複合体）- コンポーネントのコレクション
 type Composite struct {
-    name     string
-    children []Component
+BaseComponent
+children []Component
 }
 
-func NewComposite(name string) *Composite {
-    return &Composite{
-        name:     name,
-        children: make([]Component, 0),
-    }
+func NewComposite(name string) (*Composite, error) {
+if name == “” {
+return nil, errors.New(“composite name cannot be empty”)
+}
+return &Composite{
+BaseComponent: BaseComponent{
+name:  name,
+cType: CompositeType,
+},
+children: make([]Component, 0),
+}, nil
 }
 
 func (c *Composite) Operation() {
-    fmt.Printf("Composite %s operation\n", c.name)
-    // 子コンポーネントに処理を委譲
-    for _, child := range c.children {
-        child.Operation()
-    }
+fmt.Printf(“Composite ‘%s’ operation\n”, c.name)
+// 子コンポーネントに処理を委譲
+for _, child := range c.children {
+if child != nil {  // nil チェック
+child.Operation()
+}
+}
 }
 
-func (c *Composite) Add(component Component) {
-    c.children = append(c.children, component)
+func (c *Composite) Add(component Component) error {
+if component == nil {
+return errors.New(“cannot add nil component”)
 }
 
-func (c *Composite) Remove(component Component) {
-    for i, child := range c.children {
-        if child == component {
-            c.children = append(c.children[:i], c.children[i+1:]...)
-            break
-        }
-    }
+```
+// 循環参照のチェック
+if err := c.checkCircularReference(component); err != nil {
+	return err
 }
 
-func (c *Composite) GetChild(index int) Component {
-    if index >= 0 && index < len(c.children) {
-        return c.children[index]
-    }
-    return nil
+c.children = append(c.children, component)
+return nil
+```
+
+}
+
+func (c *Composite) Remove(component Component) error {
+if component == nil {
+return errors.New(“cannot remove nil component”)
+}
+
+```
+for i, child := range c.children {
+	if child == component {
+		// スライスから要素を削除
+		c.children = append(c.children[:i], c.children[i+1:]...)
+		return nil
+	}
+}
+
+return errors.New("component not found in children")
+```
+
+}
+
+func (c *Composite) GetChild(index int) (Component, error) {
+if index < 0 || index >= len(c.children) {
+return nil, fmt.Errorf(“index %d is out of range (size: %d)”, index, len(c.children))
+}
+return c.children[index], nil
+}
+
+func (c *Composite) GetChildCount() int {
+return len(c.children)
+}
+
+func (c *Composite) String() string {
+return fmt.Sprintf(“Composite: %s (Children: %d)”, c.name, len(c.children))
+}
+
+// GetChildren は子コンポーネントのコピーを返す（読み取り専用アクセス）
+func (c *Composite) GetChildren() []Component {
+result := make([]Component, len(c.children))
+copy(result, c.children)
+return result
+}
+
+// 循環参照をチェックするメソッド
+func (c *Composite) checkCircularReference(component Component) error {
+// 自分自身を追加しようとしている場合
+if component == c {
+return errors.New(“cannot add self as child (circular reference)”)
+}
+
+```
+// コンポーネントがCompositeの場合、その子に自分が含まれていないかチェック
+if component.IsComposite() {
+	if comp, ok := component.(*Composite); ok {
+		if c.containsInDescendants(comp, c) {
+			return errors.New("adding this component would create a circular reference")
+		}
+	}
+}
+
+return nil
+```
+
+}
+
+// 指定されたコンポーネントの子孫に特定のコンポーネントが含まれているかチェック
+func (c *Composite) containsInDescendants(parent *Composite, target Component) bool {
+for _, child := range parent.children {
+if child == target {
+return true
+}
+
+```
+	if child.IsComposite() {
+		if childComp, ok := child.(*Composite); ok {
+			if c.containsInDescendants(childComp, target) {
+				return true
+			}
+		}
+	}
+}
+
+return false
+```
+
+}
+
+// 木構造を可視化するヘルパー関数
+func PrintStructure(component Component, depth int) {
+indent := strings.Repeat(”  “, depth)
+fmt.Printf(”%s- %s\n”, indent, component.String())
+
+```
+if component.IsComposite() {
+	if comp, ok := component.(*Composite); ok {
+		for i := 0; i < comp.GetChildCount(); i++ {
+			if child, err := comp.GetChild(i); err == nil {
+				PrintStructure(child, depth+1)
+			}
+		}
+	}
+}
+```
+
+}
+
+// エラーハンドリングを簡単にするヘルパー関数
+func mustCreateLeaf(name string) *Leaf {
+leaf, err := NewLeaf(name)
+if err != nil {
+panic(err)
+}
+return leaf
+}
+
+func mustCreateComposite(name string) *Composite {
+composite, err := NewComposite(name)
+if err != nil {
+panic(err)
+}
+return composite
 }
 
 func main() {
-    leaf1 := NewLeaf("A")
-    leaf2 := NewLeaf("B")
-    leaf3 := NewLeaf("C")
+fmt.Println(”=== Composite Pattern Demo ===\n”)
 
-    composite1 := NewComposite("X")
-    composite2 := NewComposite("Y")
+```
+// 基本的な使用例
+leaf1 := mustCreateLeaf("A")
+leaf2 := mustCreateLeaf("B")
+leaf3 := mustCreateLeaf("C")
 
-    composite1.Add(leaf1)
-    composite1.Add(leaf2)
+composite1 := mustCreateComposite("X")
+composite2 := mustCreateComposite("Y")
 
-    composite2.Add(leaf3)
-    composite2.Add(composite1)
+// エラーハンドリングと共に要素を追加
+if err := composite1.Add(leaf1); err != nil {
+	fmt.Printf("Error adding leaf1: %v\n", err)
+	return
+}
 
-    // 複合オブジェクトに対する操作
-    composite2.Operation()
+if err := composite1.Add(leaf2); err != nil {
+	fmt.Printf("Error adding leaf2: %v\n", err)
+	return
+}
+
+if err := composite2.Add(leaf3); err != nil {
+	fmt.Printf("Error adding leaf3: %v\n", err)
+	return
+}
+
+if err := composite2.Add(composite1); err != nil {
+	fmt.Printf("Error adding composite1: %v\n", err)
+	return
+}
+
+fmt.Println("Tree structure:")
+PrintStructure(composite2, 0)
+
+fmt.Println("\nExecuting operations:")
+composite2.Operation()
+
+// エラーハンドリングのデモ
+fmt.Println("\n=== Error Handling Demo ===")
+
+// 1. 循環参照のテスト
+fmt.Println("\n1. Testing circular reference prevention:")
+if err := composite1.Add(composite2); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 2. 範囲外アクセスのテスト
+fmt.Println("\n2. Testing out of range access:")
+if _, err := composite1.GetChild(10); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 3. Leafに子を追加しようとするテスト
+fmt.Println("\n3. Testing invalid operation on Leaf:")
+if err := leaf1.Add(leaf2); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 4. nil値のテスト
+fmt.Println("\n4. Testing nil component addition:")
+if err := composite1.Add(nil); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 5. 存在しない要素の削除テスト
+fmt.Println("\n5. Testing removal of non-existent component:")
+newLeaf := mustCreateLeaf("NotInTree")
+if err := composite1.Remove(newLeaf); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 6. 無効な名前でのコンポーネント作成テスト
+fmt.Println("\n6. Testing invalid component creation:")
+if _, err := NewLeaf(""); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 7. 自己参照のテスト
+fmt.Println("\n7. Testing self-reference prevention:")
+if err := composite1.Add(composite1); err != nil {
+	fmt.Printf("✓ Prevented: %v\n", err)
+}
+
+// 正常ケースの最終確認
+fmt.Println("\n=== Final Structure ===")
+PrintStructure(composite2, 0)
+
+fmt.Printf("\ncomposite1 has %d children\n", composite1.GetChildCount())
+fmt.Printf("composite2 has %d children\n", composite2.GetChildCount())
+```
+
 }

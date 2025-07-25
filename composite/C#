@@ -1,85 +1,172 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 // Component（コンポーネント）- 抽象基底クラス
 public abstract class Component
 {
-    public abstract void Operation();
-    
-    public virtual void Add(Component component)
-    {
-        throw new NotImplementedException();
-    }
-    
-    public virtual void Remove(Component component)
-    {
-        throw new NotImplementedException();
-    }
-    
-    public virtual Component GetChild(int index)
-    {
-        throw new NotImplementedException();
-    }
+public string Name { get; protected set; }
+
+```
+protected Component(string name)
+{
+    Name = name ?? throw new ArgumentNullException(nameof(name));
+}
+
+public abstract void Operation();
+
+public virtual void Add(Component component)
+{
+    throw new NotSupportedException($"{GetType().Name} does not support adding components");
+}
+
+public virtual void Remove(Component component)
+{
+    throw new NotSupportedException($"{GetType().Name} does not support removing components");
+}
+
+public virtual Component GetChild(int index)
+{
+    throw new NotSupportedException($"{GetType().Name} does not have children");
+}
+
+public virtual int ChildCount => 0;
+
+public virtual bool IsComposite => false;
+```
+
 }
 
 // Leaf（葉）- 個別のオブジェクト
 public class Leaf : Component
 {
-    private string name;
-    
-    public Leaf(string name)
-    {
-        this.name = name;
-    }
-    
-    public override void Operation()
-    {
-        Console.WriteLine($"Leaf {name} operation");
-    }
+public Leaf(string name) : base(name)
+{
+}
+
+```
+public override void Operation()
+{
+    Console.WriteLine($"Leaf '{Name}' operation");
+}
+
+public override string ToString()
+{
+    return $"Leaf: {Name}";
+}
+```
+
 }
 
 // Composite（複合体）- コンポーネントのコレクション
 public class Composite : Component
 {
-    private string name;
-    private List<Component> children = new List<Component>();
-    
-    public Composite(string name)
+private readonly List<Component> children = new List<Component>();
+
+```
+public Composite(string name) : base(name)
+{
+}
+
+public override void Operation()
+{
+    Console.WriteLine($"Composite '{Name}' operation");
+    // 子コンポーネントに処理を委譲
+    foreach (var component in children)
     {
-        this.name = name;
+        component.Operation();
+    }
+}
+
+public override void Add(Component component)
+{
+    if (component == null)
+        throw new ArgumentNullException(nameof(component));
+        
+    // 循環参照のチェック
+    if (WouldCreateCircularReference(component))
+        throw new InvalidOperationException("Adding this component would create a circular reference");
+        
+    children.Add(component);
+}
+
+public override void Remove(Component component)
+{
+    if (component == null)
+        throw new ArgumentNullException(nameof(component));
+        
+    if (!children.Remove(component))
+        throw new ArgumentException("Component not found in children", nameof(component));
+}
+
+public override Component GetChild(int index)
+{
+    if (index < 0 || index >= children.Count)
+        throw new ArgumentOutOfRangeException(nameof(index), 
+            $"Index must be between 0 and {children.Count - 1}");
+    return children[index];
+}
+
+public override int ChildCount => children.Count;
+
+public override bool IsComposite => true;
+
+// 循環参照をチェックするメソッド
+private bool WouldCreateCircularReference(Component component)
+{
+    // 自分自身を追加しようとしている場合
+    if (component == this)
+        return true;
+        
+    // コンポーネントがCompositeの場合、その子に自分が含まれていないかチェック
+    if (component.IsComposite && ContainsInDescendants(component, this))
+        return true;
+        
+    return false;
+}
+
+// 指定されたコンポーネントの子孫に特定のコンポーネントが含まれているかチェック
+private bool ContainsInDescendants(Component parent, Component target)
+{
+    if (!parent.IsComposite)
+        return false;
+        
+    var composite = parent as Composite;
+    for (int i = 0; i < composite.ChildCount; i++)
+    {
+        var child = composite.GetChild(i);
+        if (child == target || ContainsInDescendants(child, target))
+            return true;
     }
     
-    public override void Operation()
-    {
-        Console.WriteLine($"Composite {name} operation");
-        // 子コンポーネントに処理を委譲
-        foreach (var component in children)
-        {
-            component.Operation();
-        }
-    }
-    
-    public override void Add(Component component)
-    {
-        children.Add(component);
-    }
-    
-    public override void Remove(Component component)
-    {
-        children.Remove(component);
-    }
-    
-    public override Component GetChild(int index)
-    {
-        return children[index];
-    }
+    return false;
+}
+
+// 子コンポーネントの一覧を取得
+public IEnumerable<Component> GetChildren()
+{
+    return children.AsReadOnly();
+}
+
+public override string ToString()
+{
+    return $"Composite: {Name} (Children: {ChildCount})";
+}
+```
+
 }
 
 // クライアント
 public class Program
 {
-    public static void Main(string[] args)
-    {
+public static void Main(string[] args)
+{
+try
+{
+Console.WriteLine(”=== Composite Pattern Demo ===\n”);
+
+```
+        // 基本的な使用例
         Component leaf1 = new Leaf("A");
         Component leaf2 = new Leaf("B");
         Component leaf3 = new Leaf("C");
@@ -93,7 +180,81 @@ public class Program
         composite2.Add(leaf3);
         composite2.Add(composite1);
         
-        // 複合オブジェクトに対する操作
+        Console.WriteLine("Tree structure:");
+        PrintStructure(composite2, 0);
+        
+        Console.WriteLine("\nExecuting operations:");
         composite2.Operation();
+        
+        // エラーハンドリングのデモ
+        Console.WriteLine("\n=== Error Handling Demo ===");
+        
+        // 1. 循環参照のテスト
+        Console.WriteLine("\n1. Testing circular reference prevention:");
+        try
+        {
+            composite1.Add(composite2); // これは循環参照を作成する
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"✓ Prevented: {ex.Message}");
+        }
+        
+        // 2. 範囲外アクセスのテスト
+        Console.WriteLine("\n2. Testing out of range access:");
+        try
+        {
+            composite1.GetChild(10); // 存在しないインデックス
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            Console.WriteLine($"✓ Prevented: {ex.Message}");
+        }
+        
+        // 3. Leafに子を追加しようとするテスト
+        Console.WriteLine("\n3. Testing invalid operation on Leaf:");
+        try
+        {
+            leaf1.Add(leaf2); // Leafは子を持てない
+        }
+        catch (NotSupportedException ex)
+        {
+            Console.WriteLine($"✓ Prevented: {ex.Message}");
+        }
+        
+        // 4. null値のテスト
+        Console.WriteLine("\n4. Testing null component addition:");
+        try
+        {
+            composite1.Add(null);
+        }
+        catch (ArgumentNullException ex)
+        {
+            Console.WriteLine($"✓ Prevented: {ex.ParameterName} cannot be null");
+        }
+        
     }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Unexpected error: {ex.Message}");
+    }
+}
+
+// 木構造を可視化するヘルパーメソッド
+private static void PrintStructure(Component component, int depth)
+{
+    string indent = new string(' ', depth * 2);
+    Console.WriteLine($"{indent}- {component}");
+    
+    if (component.IsComposite)
+    {
+        var composite = component as Composite;
+        for (int i = 0; i < composite.ChildCount; i++)
+        {
+            PrintStructure(composite.GetChild(i), depth + 1);
+        }
+    }
+}
+```
+
 }

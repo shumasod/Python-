@@ -1,4 +1,4 @@
-// Component（コンポーネント）- 共通インターフェース
+// Component（コンポーネント）
 interface Component {
     void operation();
     void add(Component component);

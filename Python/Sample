@@ -1,0 +1,87 @@
+# Pythonのfor文の書き方 - 10個のサンプル
+
+# 1. 基本的なリストの繰り返し
+fruits = ["りんご", "バナナ", "オレンジ"]
+print("1. 基本的なリストの繰り返し:")
+for fruit in fruits:
+    print(f"  {fruit}")
+
+print()
+
+# 2. range()を使った数値の繰り返し
+print("2. range()を使った数値の繰り返し:")
+for i in range(5):
+    print(f"  数値: {i}")
+
+print()
+
+# 3. range()で開始値、終了値、ステップを指定
+print("3. range()で開始値、終了値、ステップを指定:")
+for i in range(2, 11, 2):  # 2から10まで、2つずつ増加
+    print(f"  偶数: {i}")
+
+print()
+
+# 4. enumerate()でインデックスと値を同時に取得
+colors = ["赤", "青", "緑", "黄"]
+print("4. enumerate()でインデックスと値を同時に取得:")
+for index, color in enumerate(colors):
+    print(f"  {index}: {color}")
+
+print()
+
+# 5. 辞書の繰り返し（キーのみ）
+student_scores = {"田中": 85, "佐藤": 92, "山田": 78}
+print("5. 辞書の繰り返し（キーのみ）:")
+for name in student_scores:
+    print(f"  学生: {name}")
+
+print()
+
+# 6. 辞書の繰り返し（キーと値）
+print("6. 辞書の繰り返し（キーと値）:")
+for name, score in student_scores.items():
+    print(f"  {name}: {score}点")
+
+print()
+
+# 7. 文字列の各文字を繰り返し
+word = "Python"
+print("7. 文字列の各文字を繰り返し:")
+for char in word:
+    print(f"  文字: {char}")
+
+print()
+
+# 8. ネストしたfor文（二重ループ）
+print("8. ネストしたfor文（二重ループ）:")
+for i in range(3):
+    for j in range(3):
+        print(f"  ({i}, {j})")
+
+print()
+
+# 9. zip()を使って複数のリストを同時に繰り返し
+names = ["太郎", "花子", "次郎"]
+ages = [25, 30, 22]
+print("9. zip()を使って複数のリストを同時に繰り返し:")
+for name, age in zip(names, ages):
+    print(f"  {name}は{age}歳です")
+
+print()
+
+# 10. リスト内包表記（for文を使った簡潔な書き方）
+print("10. リスト内包表記:")
+# 通常のfor文
+squares_normal = []
+for x in range(5):
+    squares_normal.append(x**2)
+print(f"  通常のfor文: {squares_normal}")
+
+# リスト内包表記
+squares_comprehension = [x**2 for x in range(5)]
+print(f"  リスト内包表記: {squares_comprehension}")
+
+# 条件付きリスト内包表記
+even_squares = [x**2 for x in range(10) if x % 2 == 0]
+print(f"  偶数の二乗: {even_squares}")

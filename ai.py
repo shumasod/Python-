@@ -10,7 +10,6 @@ import json
 import time
 import hashlib
 import jwt
-import redis
 import aiofiles
 import httpx
 from datetime import datetime, timedelta

@@ -14,7 +14,6 @@ import aiofiles
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 import logging
-from io import BytesIO
 import base64
 
 # ロギング設定

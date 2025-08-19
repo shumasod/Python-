@@ -11,11 +11,9 @@ import time
 import hashlib
 import jwt
 import aiofiles
-import httpx
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 import logging
-import uuid
 from io import BytesIO
 import base64
 

@@ -1,0 +1,41 @@
+---
+# 共通設定
+timezone: "Asia/Tokyo"
+ntp_servers:
+  - "ntp.nict.jp"
+  - "ntp.jst.mfeed.ad.jp"
+
+# セキュリティ設定
+ssh_port: 22
+allow_ssh_groups:
+  - "admin"
+  - "developers"
+
+# ログ設定
+log_level: "INFO"
+log_retention_days: 30
+
+# 環境固有の設定
+environment: "production"
+domain_name: "example.com"
+
+# 監視設定
+monitoring_enabled: true
+alerting_enabled: true
+
+# バックアップ設定
+backup_enabled: true
+backup_retention_days: 7
+backup_schedule: "0 2 * * *"
+
+# 共通パッケージ
+common_packages:
+  - curl
+  - wget
+  - vim
+  - git
+  - htop
+  - unzip
+  - rsync
+  - fail2ban
+  - ufw

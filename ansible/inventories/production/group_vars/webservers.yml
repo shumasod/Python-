@@ -1,0 +1,29 @@
+---
+# Nginx設定
+nginx_worker_processes: "auto"
+nginx_worker_connections: 1024
+nginx_keepalive_timeout: 65
+nginx_client_max_body_size: "64M"
+
+# SSL設定
+ssl_enabled: true
+ssl_cert_path: "/etc/ssl/certs/{{ domain_name }}.crt"
+ssl_key_path: "/etc/ssl/private/{{ domain_name }}.key"
+
+# アプリケーション設定
+app_name: "webapp"
+app_user: "www-data"
+app_root: "/var/www/{{ app_name }}"
+app_port: 8000
+
+# PHP設定（必要に応じて）
+php_version: "8.1"
+php_memory_limit: "256M"
+php_max_execution_time: 30
+php_upload_max_filesize: "64M"
+php_post_max_size: "64M"
+
+# 負荷分散設定
+upstream_servers:
+  - { name: "web01", address: "192.168.1.10:{{ app_port }}" }
+  - { name: "web02", address: "192.168.1.11:{{ app_port }}" }

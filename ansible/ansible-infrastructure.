@@ -1,0 +1,39 @@
+ansible-infrastructure/
+├── .github/
+│   └── workflows/
+│       ├── ansible-lint.yml
+│       ├── ansible-test.yml
+│       └── deploy.yml
+├── inventories/
+│   ├── production/
+│   │   ├── hosts.yml
+│   │   └── group_vars/
+│   │       ├── all.yml
+│   │       ├── webservers.yml
+│   │       └── databases.yml
+│   ├── staging/
+│   │   ├── hosts.yml
+│   │   └── group_vars/
+│   └── development/
+│       ├── hosts.yml
+│       └── group_vars/
+├── roles/
+│   ├── common/
+│   ├── webserver/
+│   ├── database/
+│   └── monitoring/
+├── playbooks/
+│   ├── site.yml
+│   ├── webservers.yml
+│   ├── databases.yml
+│   └── maintenance.yml
+├── group_vars/
+├── host_vars/
+├── collections/
+│   └── requirements.yml
+├── ansible.cfg
+├── requirements.yml
+├── .gitignore
+├── .ansible-lint
+├── README.md
+└── vault-password.txt.example

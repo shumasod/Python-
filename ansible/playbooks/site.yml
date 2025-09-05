@@ -1,0 +1,40 @@
+---
+- name: Configure all servers
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  pre_tasks:
+    - name: Update package cache
+      package:
+        update_cache: yes
+      when: ansible_os_family in ['Debian', 'RedHat']
+      
+    - name: Ensure Python is installed
+      raw: test -e /usr/bin/python3 || (apt -y update && apt install -y python3)
+      changed_when: false
+      failed_when: false
+
+  roles:
+    - common
+
+- name: Configure web servers
+  hosts: webservers
+  become: yes
+  roles:
+    - webserver
+    - monitoring
+
+- name: Configure database servers
+  hosts: databases
+  become: yes
+  roles:
+    - database
+    - monitoring
+
+- name: Configure load balancers
+  hosts: loadbalancers
+  become: yes
+  roles:
+    - loadbalancer
+    - monitoring

@@ -6,7 +6,7 @@ from .config import Config
 from .app import create_app
 
 def parse_arguments():
-    """コマンドライン引数をパースする"""
+   
     parser = argparse.ArgumentParser(description='JRA予測アプリケーション')
     parser.add_argument('--base-url', help='スクレイピング対象のベースURL')
     parser.add_argument('--num-pages', type=int, help='スクレイピングするページ数')

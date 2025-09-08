@@ -1,0 +1,63 @@
+---
+- name: Install Nginx
+  package:
+    name: nginx
+    state: present
+  notify: restart nginx
+
+- name: Create nginx user
+  user:
+    name: "{{ app_user }}"
+    system: yes
+    shell: /bin/false
+    create_home: no
+
+- name: Create application directory
+  file:
+    path: "{{ app_root }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Configure nginx main config
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    backup: yes
+  notify: restart nginx
+
+- name: Configure site
+  template:
+    src: site.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name }}"
+  notify: restart nginx
+
+- name: Enable site
+  file:
+    src: "/etc/nginx/sites-available/{{ app_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ app_name }}"
+    state: link
+  notify: restart nginx
+
+- name: Remove default site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart nginx
+
+- name: Configure firewall for web traffic
+  ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "{{ http_port }}"
+    - "{{ https_port }}"
+  when: ufw_enabled | default(true)
+
+- name: Start and enable nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes

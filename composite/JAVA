@@ -1,86 +1,285 @@
-// Component（コンポーネント）- 共通インターフェース
+import java.util.*;
+
+// Component（コンポーネント）- インターフェース
 interface Component {
-    void operation();
-    void add(Component component);
-    void remove(Component component);
-    Component getChild(int index);
+void operation();
+void add(Component component);
+void remove(Component component);
+Component getChild(int index);
+int getChildCount();
+boolean isComposite();
+String getName();
+}
+
+// AbstractComponent（抽象コンポーネント）- 共通機能を提供
+abstract class AbstractComponent implements Component {
+protected final String name;
+
+```
+protected AbstractComponent(String name) {
+    if (name == null || name.trim().isEmpty()) {
+        throw new IllegalArgumentException("Component name cannot be null or empty");
+    }
+    this.name = name.trim();
+}
+
+@Override
+public String getName() {
+    return name;
+}
+
+@Override
+public int getChildCount() {
+    return 0;
+}
+
+@Override
+public boolean isComposite() {
+    return false;
+}
+
+// デフォルト実装：子を持たないコンポーネント用
+@Override
+public void add(Component component) {
+    throw new UnsupportedOperationException(
+        getClass().getSimpleName() + " does not support adding components");
+}
+
+@Override
+public void remove(Component component) {
+    throw new UnsupportedOperationException(
+        getClass().getSimpleName() + " does not support removing components");
+}
+
+@Override
+public Component getChild(int index) {
+    throw new UnsupportedOperationException(
+        getClass().getSimpleName() + " does not have children");
+}
+
+@Override
+public String toString() {
+    return getClass().getSimpleName() + ": " + name;
+}
+```
+
 }
 
 // Leaf（葉）- 個別のオブジェクト
-class Leaf implements Component {
-    private String name;
-    
-    public Leaf(String name) {
-        this.name = name;
-    }
-    
-    @Override
-    public void operation() {
-        System.out.println("Leaf " + name + " operation");
-    }
-    
-    @Override
-    public void add(Component component) {
-        // 葉ノードには子を追加できない
-        System.out.println("Cannot add to a leaf");
-    }
-    
-    @Override
-    public void remove(Component component) {
-        // 葉ノードには子がない
-        System.out.println("Cannot remove from a leaf");
-    }
-    
-    @Override
-    public Component getChild(int index) {
-        // 葉ノードには子がない
-        return null;
-    }
+class Leaf extends AbstractComponent {
+
+```
+public Leaf(String name) {
+    super(name);
+}
+
+@Override
+public void operation() {
+    System.out.println("Leaf '" + name + "' operation");
+}
+
+@Override
+public String toString() {
+    return "Leaf: " + name;
+}
+```
+
 }
 
 // Composite（複合体）- コンポーネントのコレクション
-class Composite implements Component {
-    private String name;
-    private List<Component> children = new ArrayList<>();
-    
-    public Composite(String name) {
-        this.name = name;
-    }
-    
-    @Override
-    public void operation() {
-        System.out.println("Composite " + name + " operation");
-        // 子コンポーネントに処理を委譲
-        for (Component component : children) {
+class Composite extends AbstractComponent {
+private final List<Component> children = new ArrayList<>();
+
+```
+public Composite(String name) {
+    super(name);
+}
+
+@Override
+public void operation() {
+    System.out.println("Composite '" + name + "' operation");
+    // 子コンポーネントに処理を委譲
+    for (Component component : children) {
+        if (component != null) {  // null チェック
             component.operation();
         }
     }
+}
+
+@Override
+public void add(Component component) {
+    Objects.requireNonNull(component, "Cannot add null component");
     
-    @Override
-    public void add(Component component) {
-        children.add(component);
+    // 循環参照のチェック
+    if (wouldCreateCircularReference(component)) {
+        throw new IllegalArgumentException("Adding this component would create a circular reference");
     }
     
-    @Override
-    public void remove(Component component) {
-        children.remove(component);
+    children.add(component);
+}
+
+@Override
+public void remove(Component component) {
+    Objects.requireNonNull(component, "Cannot remove null component");
+    
+    if (!children.remove(component)) {
+        throw new IllegalArgumentException("Component not found in children");
+    }
+}
+
+@Override
+public Component getChild(int index) {
+    if (index < 0 || index >= children.size()) {
+        throw new IndexOutOfBoundsException(
+            "Index " + index + " is out of range (size: " + children.size() + ")");
+    }
+    return children.get(index);
+}
+
+@Override
+public int getChildCount() {
+    return children.size();
+}
+
+@Override
+public boolean isComposite() {
+    return true;
+}
+
+// 子コンポーネントの読み取り専用リストを返す
+public List<Component> getChildren() {
+    return Collections.unmodifiableList(children);
+}
+
+@Override
+public String toString() {
+    return "Composite: " + name + " (Children: " + children.size() + ")";
+}
+
+// 循環参照をチェックするメソッド
+private boolean wouldCreateCircularReference(Component component) {
+    // 自分自身を追加しようとしている場合
+    if (component == this) {
+        return true;
     }
     
-    @Override
-    public Component getChild(int index) {
-        return children.get(index);
+    // コンポーネントがCompositeの場合、その子に自分が含まれていないかチェック
+    if (component.isComposite() && component instanceof Composite) {
+        return containsInDescendants((Composite) component, this);
     }
+    
+    return false;
+}
+
+// 指定されたコンポーネントの子孫に特定のコンポーネントが含まれているかチェック
+private boolean containsInDescendants(Composite parent, Component target) {
+    for (Component child : parent.children) {
+        if (child == target) {
+            return true;
+        }
+        
+        if (child.isComposite() && child instanceof Composite) {
+            if (containsInDescendants((Composite) child, target)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+```
+
+}
+
+// ComponentFactory - ファクトリーパターンの適用
+class ComponentFactory {
+public static Leaf createLeaf(String name) {
+return new Leaf(name);
+}
+
+```
+public static Composite createComposite(String name) {
+    return new Composite(name);
+}
+```
+
+}
+
+// TreePrinter - 木構造を可視化するユーティリティ
+class TreePrinter {
+public static void printStructure(Component component) {
+printStructure(component, 0);
+}
+
+```
+private static void printStructure(Component component, int depth) {
+    String indent = "  ".repeat(depth);
+    System.out.println(indent + "- " + component.toString());
+    
+    if (component.isComposite()) {
+        Composite composite = (Composite) component;
+        for (int i = 0; i < composite.getChildCount(); i++) {
+            try {
+                Component child = composite.getChild(i);
+                printStructure(child, depth + 1);
+            } catch (IndexOutOfBoundsException e) {
+                System.err.println(indent + "  Error: " + e.getMessage());
+            }
+        }
+    }
+}
+```
+
+}
+
+// CompositeBuilder - ビルダーパターンの適用
+class CompositeBuilder {
+private final Composite composite;
+
+```
+public CompositeBuilder(String name) {
+    this.composite = ComponentFactory.createComposite(name);
+}
+
+public CompositeBuilder addLeaf(String name) {
+    try {
+        composite.add(ComponentFactory.createLeaf(name));
+    } catch (Exception e) {
+        System.err.println("Failed to add leaf '" + name + "': " + e.getMessage());
+    }
+    return this;
+}
+
+public CompositeBuilder addComposite(Composite comp) {
+    try {
+        composite.add(comp);
+    } catch (Exception e) {
+        System.err.println("Failed to add composite '" + comp.getName() + "': " + e.getMessage());
+    }
+    return this;
+}
+
+public Composite build() {
+    return composite;
+}
+```
+
 }
 
 // クライアント
 public class Client {
-    public static void main(String[] args) {
-        Component leaf1 = new Leaf("A");
-        Component leaf2 = new Leaf("B");
-        Component leaf3 = new Leaf("C");
+public static void main(String[] args) {
+System.out.println(”=== Composite Pattern Demo ===\n”);
+
+```
+    try {
+        // 基本的な使用例
+        Component leaf1 = ComponentFactory.createLeaf("A");
+        Component leaf2 = ComponentFactory.createLeaf("B");
+        Component leaf3 = ComponentFactory.createLeaf("C");
         
-        Composite composite1 = new Composite("X");
-        Composite composite2 = new Composite("Y");
+        Composite composite1 = ComponentFactory.createComposite("X");
+        Composite composite2 = ComponentFactory.createComposite("Y");
         
         composite1.add(leaf1);
         composite1.add(leaf2);
@@ -88,7 +287,99 @@ public class Client {
         composite2.add(leaf3);
         composite2.add(composite1);
         
-        // 複合オブジェクトに対する操作
+        System.out.println("Tree structure:");
+        TreePrinter.printStructure(composite2);
+        
+        System.out.println("\nExecuting operations:");
         composite2.operation();
+        
+        // ビルダーパターンを使用した例
+        System.out.println("\n=== Builder Pattern Example ===");
+        Composite builderExample = new CompositeBuilder("BuilderExample")
+            .addLeaf("D")
+            .addLeaf("E")
+            .addComposite(composite1)
+            .build();
+        
+        System.out.println("\nBuilder created structure:");
+        TreePrinter.printStructure(builderExample);
+        
+        // エラーハンドリングのデモ
+        System.out.println("\n=== Error Handling Demo ===");
+        
+        // 1. 循環参照のテスト
+        System.out.println("\n1. Testing circular reference prevention:");
+        try {
+            composite1.add(composite2);
+        } catch (IllegalArgumentException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 2. 範囲外アクセスのテスト
+        System.out.println("\n2. Testing out of range access:");
+        try {
+            composite1.getChild(10);
+        } catch (IndexOutOfBoundsException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 3. Leafに子を追加しようとするテスト
+        System.out.println("\n3. Testing invalid operation on Leaf:");
+        try {
+            leaf1.add(leaf2);
+        } catch (UnsupportedOperationException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 4. null値のテスト
+        System.out.println("\n4. Testing null component addition:");
+        try {
+            composite1.add(null);
+        } catch (NullPointerException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 5. 存在しない要素の削除テスト
+        System.out.println("\n5. Testing removal of non-existent component:");
+        try {
+            Component newLeaf = ComponentFactory.createLeaf("NotInTree");
+            composite1.remove(newLeaf);
+        } catch (IllegalArgumentException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 6. 無効な名前でのコンポーネント作成テスト
+        System.out.println("\n6. Testing invalid component creation:");
+        try {
+            ComponentFactory.createLeaf("");
+        } catch (IllegalArgumentException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 7. 自己参照のテスト
+        System.out.println("\n7. Testing self-reference prevention:");
+        try {
+            composite1.add(composite1);
+        } catch (IllegalArgumentException e) {
+            System.out.println("✓ Prevented: " + e.getMessage());
+        }
+        
+        // 8. 読み取り専用リストのテスト
+        System.out.println("\n8. Testing read-only children list:");
+        try {
+            List<Component> children = composite1.getChildren();
+            children.add(leaf3);  // これは失敗するはず
+        } catch (UnsupportedOperationException e) {
+            System.out.println("✓ Prevented modification of children list: " + e.getClass().getSimpleName());
+        }
+        
+    } catch (Exception e) {
+        System.err.println("Unexpected error: " + e.getMessage());
+        e.printStackTrace();
     }
+    
+    System.out.println("\n=== Demo Completed ===");
+}
+```
+
 }

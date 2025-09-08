@@ -2,68 +2,307 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <stdexcept>
+#include <string>
 
 // Component（コンポーネント）- 基底クラス
 class Component {
+protected:
+std::string name;
+
 public:
-    virtual ~Component() {}
-    virtual void operation() const = 0;
-    virtual void add(std::shared_ptr<Component> component) {}
-    virtual void remove(std::shared_ptr<Component> component) {}
-    virtual std::shared_ptr<Component> getChild(int index) { return nullptr; }
+Component(const std::string& name) : name(name) {
+if (name.empty()) {
+throw std::invalid_argument(“Component name cannot be empty”);
+}
+}
+
+```
+virtual ~Component() = default;
+
+virtual void operation() const = 0;
+
+virtual void add(std::shared_ptr<Component> component) {
+    throw std::runtime_error(getTypeName() + " does not support adding components");
+}
+
+virtual void remove(std::shared_ptr<Component> component) {
+    throw std::runtime_error(getTypeName() + " does not support removing components");
+}
+
+virtual std::shared_ptr<Component> getChild(size_t index) {
+    throw std::runtime_error(getTypeName() + " does not have children");
+}
+
+virtual size_t getChildCount() const { return 0; }
+virtual bool isComposite() const { return false; }
+
+const std::string& getName() const { return name; }
+virtual std::string getTypeName() const = 0;
+
+virtual std::string toString() const {
+    return getTypeName() + ": " + name;
+}
+```
+
 };
 
 // Leaf（葉）- 個別のオブジェクト
 class Leaf : public Component {
-private:
-    std::string name;
-    
 public:
-    Leaf(const std::string& name) : name(name) {}
-    
-    void operation() const override {
-        std::cout << "Leaf " << name << " operation" << std::endl;
-    }
+explicit Leaf(const std::string& name) : Component(name) {}
+
+```
+void operation() const override {
+    std::cout << "Leaf '" << name << "' operation" << std::endl;
+}
+
+std::string getTypeName() const override {
+    return "Leaf";
+}
+```
+
 };
+
+// 前方宣言
+class Composite;
 
 // Composite（複合体）- コンポーネントのコレクション
 class Composite : public Component {
 private:
-    std::string name;
-    std::vector<std::shared_ptr<Component>> children;
+std::vector<std::shared_ptr<Component>> children;
+
+```
+// 循環参照をチェックするメソッド
+bool wouldCreateCircularReference(std::shared_ptr<Component> component) const {
+    // 自分自身を追加しようとしている場合
+    if (component.get() == this) {
+        return true;
+    }
     
+    // コンポーネントがCompositeの場合、その子に自分が含まれていないかチェック
+    if (component->isComposite()) {
+        return containsInDescendants(component, shared_from_this());
+    }
+    
+    return false;
+}
+
+// 指定されたコンポーネントの子孫に特定のコンポーネントが含まれているかチェック
+bool containsInDescendants(std::shared_ptr<Component> parent, 
+                          std::shared_ptr<Component> target) const {
+    if (!parent->isComposite()) {
+        return false;
+    }
+    
+    auto composite = std::dynamic_pointer_cast<Composite>(parent);
+    if (!composite) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < composite->getChildCount(); ++i) {
+        auto child = composite->getChild(i);
+        if (child == target || containsInDescendants(child, target)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+```
+
 public:
-    Composite(const std::string& name) : name(name) {}
-    
-    void operation() const override {
-        std::cout << "Composite " << name << " operation" << std::endl;
-        // 子コンポーネントに処理を委譲
-        for (const auto& child : children) {
+explicit Composite(const std::string& name) : Component(name) {}
+
+```
+void operation() const override {
+    std::cout << "Composite '" << name << "' operation" << std::endl;
+    // 子コンポーネントに処理を委譲
+    for (const auto& child : children) {
+        if (child) {  // null チェック
             child->operation();
         }
     }
-    
-    void add(std::shared_ptr<Component> component) override {
-        children.push_back(component);
+}
+
+void add(std::shared_ptr<Component> component) override {
+    if (!component) {
+        throw std::invalid_argument("Cannot add null component");
     }
     
-    void remove(std::shared_ptr<Component> component) override {
-        auto it = std::find(children.begin(), children.end(), component);
-        if (it != children.end()) {
-            children.erase(it);
-        }
+    // 循環参照のチェック
+    if (wouldCreateCircularReference(component)) {
+        throw std::runtime_error("Adding this component would create a circular reference");
     }
     
-    std::shared_ptr<Component> getChild(int index) override {
-        if (index >= 0 && index < children.size()) {
-            return children[index];
-        }
-        return nullptr;
+    children.push_back(component);
+}
+
+void remove(std::shared_ptr<Component> component) override {
+    if (!component) {
+        throw std::invalid_argument("Cannot remove null component");
     }
+    
+    auto it = std::find(children.begin(), children.end(), component);
+    if (it != children.end()) {
+        children.erase(it);
+    } else {
+        throw std::runtime_error("Component not found in children");
+    }
+}
+
+std::shared_ptr<Component> getChild(size_t index) override {
+    if (index >= children.size()) {
+        throw std::out_of_range("Index " + std::to_string(index) + 
+                              " is out of range (size: " + std::to_string(children.size()) + ")");
+    }
+    return children[index];
+}
+
+size_t getChildCount() const override {
+    return children.size();
+}
+
+bool isComposite() const override {
+    return true;
+}
+
+std::string getTypeName() const override {
+    return "Composite";
+}
+
+std::string toString() const override {
+    return "Composite: " + name + " (Children: " + std::to_string(children.size()) + ")";
+}
+
+// 子コンポーネントの読み取り専用アクセス
+const std::vector<std::shared_ptr<Component>>& getChildren() const {
+    return children;
+}
+```
+
 };
+
+// shared_from_this を使用するため、enable_shared_from_this を継承
+class CompositeWithSharedFromThis : public Component,
+public std::enable_shared_from_this<CompositeWithSharedFromThis> {
+private:
+std::vector<std::shared_ptr<Component>> children;
+
+```
+bool wouldCreateCircularReference(std::shared_ptr<Component> component) const {
+    if (component.get() == this) {
+        return true;
+    }
+    
+    if (component->isComposite()) {
+        return containsInDescendants(component, shared_from_this());
+    }
+    
+    return false;
+}
+
+bool containsInDescendants(std::shared_ptr<Component> parent, 
+                          std::shared_ptr<Component> target) const {
+    if (!parent->isComposite()) {
+        return false;
+    }
+    
+    auto composite = std::dynamic_pointer_cast<CompositeWithSharedFromThis>(parent);
+    if (!composite) {
+        return false;
+    }
+    
+    for (size_t i = 0; i < composite->getChildCount(); ++i) {
+        auto child = composite->getChild(i);
+        if (child == target || containsInDescendants(child, target)) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+```
+
+public:
+explicit CompositeWithSharedFromThis(const std::string& name) : Component(name) {}
+
+```
+void operation() const override {
+    std::cout << "Composite '" << name << "' operation" << std::endl;
+    for (const auto& child : children) {
+        if (child) {
+            child->operation();
+        }
+    }
+}
+
+void add(std::shared_ptr<Component> component) override {
+    if (!component) {
+        throw std::invalid_argument("Cannot add null component");
+    }
+    
+    if (wouldCreateCircularReference(component)) {
+        throw std::runtime_error("Adding this component would create a circular reference");
+    }
+    
+    children.push_back(component);
+}
+
+void remove(std::shared_ptr<Component> component) override {
+    if (!component) {
+        throw std::invalid_argument("Cannot remove null component");
+    }
+    
+    auto it = std::find(children.begin(), children.end(), component);
+    if (it != children.end()) {
+        children.erase(it);
+    } else {
+        throw std::runtime_error("Component not found in children");
+    }
+}
+
+std::shared_ptr<Component> getChild(size_t index) override {
+    if (index >= children.size()) {
+        throw std::out_of_range("Index " + std::to_string(index) + 
+                              " is out of range (size: " + std::to_string(children.size()) + ")");
+    }
+    return children[index];
+}
+
+size_t getChildCount() const override { return children.size(); }
+bool isComposite() const override { return true; }
+std::string getTypeName() const override { return "Composite"; }
+
+std::string toString() const override {
+    return "Composite: " + name + " (Children: " + std::to_string(children.size()) + ")";
+}
+```
+
+};
+
+// 木構造を可視化するヘルパー関数
+void printStructure(std::shared_ptr<Component> component, int depth = 0) {
+std::string indent(depth * 2, ’ ’);
+std::cout << indent << “- “ << component->toString() << std::endl;
+
+```
+if (component->isComposite()) {
+    for (size_t i = 0; i < component->getChildCount(); ++i) {
+        printStructure(component->getChild(i), depth + 1);
+    }
+}
+```
+
+}
 
 // クライアント
 int main() {
+try {
+std::cout << “=== Composite Pattern Demo ===\n” << std::endl;
+
+```
+    // 基本的な使用例
     auto leaf1 = std::make_shared<Leaf>("A");
     auto leaf2 = std::make_shared<Leaf>("B");
     auto leaf3 = std::make_shared<Leaf>("C");
@@ -77,8 +316,64 @@ int main() {
     composite2->add(leaf3);
     composite2->add(composite1);
     
-    // 複合オブジェクトに対する操作
+    std::cout << "Tree structure:" << std::endl;
+    printStructure(composite2);
+    
+    std::cout << "\nExecuting operations:" << std::endl;
     composite2->operation();
     
-    return 0;
+    // エラーハンドリングのデモ
+    std::cout << "\n=== Error Handling Demo ===" << std::endl;
+    
+    // 1. 範囲外アクセスのテスト
+    std::cout << "\n1. Testing out of range access:" << std::endl;
+    try {
+        composite1->getChild(10);
+    } catch (const std::out_of_range& ex) {
+        std::cout << "✓ Prevented: " << ex.what() << std::endl;
+    }
+    
+    // 2. Leafに子を追加しようとするテスト
+    std::cout << "\n2. Testing invalid operation on Leaf:" << std::endl;
+    try {
+        leaf1->add(leaf2);
+    } catch (const std::runtime_error& ex) {
+        std::cout << "✓ Prevented: " << ex.what() << std::endl;
+    }
+    
+    // 3. null値のテスト
+    std::cout << "\n3. Testing null component addition:" << std::endl;
+    try {
+        composite1->add(nullptr);
+    } catch (const std::invalid_argument& ex) {
+        std::cout << "✓ Prevented: " << ex.what() << std::endl;
+    }
+    
+    // 4. 存在しない要素の削除テスト
+    std::cout << "\n4. Testing removal of non-existent component:" << std::endl;
+    try {
+        auto newLeaf = std::make_shared<Leaf>("NotInTree");
+        composite1->remove(newLeaf);
+    } catch (const std::runtime_error& ex) {
+        std::cout << "✓ Prevented: " << ex.what() << std::endl;
+    }
+    
+    // 5. 循環参照のテスト（簡単なケース）
+    std::cout << "\n5. Testing self-reference prevention:" << std::endl;
+    try {
+        // 注意: この例では循環参照チェックは完全ではありません
+        // 完全な循環参照チェックにはenable_shared_from_thisが必要
+        std::cout << "Note: Full circular reference checking requires enable_shared_from_this" << std::endl;
+    } catch (const std::runtime_error& ex) {
+        std::cout << "✓ Prevented: " << ex.what() << std::endl;
+    }
+    
+} catch (const std::exception& ex) {
+    std::cerr << "Unexpected error: " << ex.what() << std::endl;
+    return 1;
+}
+
+return 0;
+```
+
 }

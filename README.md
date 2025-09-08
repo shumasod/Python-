@@ -1,360 +1,831 @@
+# Python学習ガイド 🐍
 
+**初心者から中級者まで対応した実践的なPython学習リソース**
 
----
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Learning](https://img.shields.io/badge/Level-Beginner%20to%20Intermediate-orange)](README.md)
 
-# はじめてのPython：やさしい入門ガイド（実践プラクティス付き） 🐍
+-----
 
-このガイドは、プログラミング初心者がPythonの基本を学ぶためのステップバイステップの解説書です。コード例や演習問題を通して、実際に手を動かしながら理解を深めましょう。
+## 📚 目次
 
----
+1. [🚀 はじめに](#-はじめに)
+1. [📋 前提条件](#-前提条件)
+1. [⚡ クイックスタート](#-クイックスタート)
+1. [📖 学習コンテンツ](#-学習コンテンツ)
+1. [🛠️ 開発環境のセットアップ](#️-開発環境のセットアップ)
+1. [💡 学習のコツ](#-学習のコツ)
+1. [🤝 コントリビューション](#-コントリビューション)
+1. [📄 ライセンス](#-ライセンス)
 
-## 目次
-1. [プログラミングの基本](#1-プログラミングの基本)
-2. [変数とデータの種類](#2-変数とデータの種類)
-3. [データ構造の基本](#3-データ構造の基本)
-4. [制御構文：条件分岐とループ](#4-制御構文条件分岐とループ)
-5. [関数を作ろう](#5-関数を作ろう)
-6. [クラスとオブジェクト指向](#6-クラスとオブジェクト指向)
-7. [例外処理](#7-例外処理)
-8. [実践プラクティス：総合演習](#8-実践プラクティス総合演習)
-9. [用語集](#9-用語集)
+-----
 
----
+## 🚀 はじめに
 
-## 1. プログラミングの基本
+このリポジトリは、Python プログラミングの基礎から実践的なアプリケーション開発まで、段階的に学習できる教材です。各章には理論説明、実例コード、そして実際に手を動かして学べる演習問題が含まれています。
 
-### 概要
-プログラムは、コンピュータに「何をするか」を指示するレシピのようなものです。最初の一歩として、画面にメッセージを表示する簡単なプログラムを作ってみましょう。
+### 🎯 学習目標
 
-### サンプルコード
-```python
-# はじめてのプログラム
-print("こんにちは！")  # 画面に「こんにちは！」と表示される
+このガイドを完了することで、以下のスキルを身につけることができます：
+
+- **基本文法の習得**: 変数、データ型、制御構造の理解
+- **データ構造の活用**: リスト、辞書、セットの効果的な使い方
+- **関数型プログラミング**: 再利用可能なコードの設計
+- **オブジェクト指向プログラミング**: クラスとオブジェクトの概念
+- **エラーハンドリング**: 堅牢なプログラムの作成
+- **実践的なアプリ開発**: 学んだ知識を統合したプロジェクト作成
+
+-----
+
+## 📋 前提条件
+
+### 必要なもの
+
+- **Python 3.9以上** （推奨: Python 3.11+）
+- **テキストエディタまたはIDE** （推奨: VS Code, PyCharm）
+- **基本的なコンピュータ操作の知識**
+
+### 推奨環境
+
+```bash
+# Python バージョン確認
+python --version  # または python3 --version
+
+# pip のアップデート
+pip install --upgrade pip
 ```
 
-### 🔍 プログラムの基本ルール
-- プログラムは上から順に実行されます。
-- `#` で始まる行はコメントとして無視されます。
-- 文字列は `""` や `''` で囲みます。
+-----
 
-### ✍️ 練習問題
-1. **名前の表示:** 自分の名前を表示するプログラムを書いてみましょう。  
-   例：`print("あなたの名前")`
-2. **好きな食べ物:** 好きな食べ物を表示するプログラムを書いてみましょう。
+## ⚡ クイックスタート
 
----
+### 1分で始める Python
 
-## 2. 変数とデータの種類
-
-### 概要
-変数は、データを一時的に保存する「箱」です。Pythonでは、データ型が自動で決定されますが、型ヒントを用いることで可読性を向上させることができます。
-
-### サンプルコード
 ```python
-# 変数に値を保存する例
-name = "太郎"          # 文字列型（str）
-age = 20              # 整数型（int）
-height = 170.5        # 浮動小数点型（float）
-is_student = True     # 真偽値型（bool）
+# hello_world.py
+def main():
+    name = input("お名前を教えてください: ")
+    print(f"こんにちは、{name}さん！🎉")
+    print("Python学習をはじめましょう！")
 
-# 変数を使った文章作成
-print(f"{name}さんは{age}歳です")
+if __name__ == "__main__":
+    main()
 ```
 
-### 📦 主なデータ型
-| 種類       | 説明                  | 例             |
-|------------|-----------------------|----------------|
-| 文字列 (str) | テキストデータ        | "こんにちは"   |
-| 整数 (int)  | 整数の数値           | 42             |
-| 浮動小数点 (float) | 小数を含む数値  | 3.14           |
-| 真偽値 (bool) | True または False   | True, False    |
-
-### ✍️ 練習問題
-1. 自分の**名前**、**年齢**、**身長**を変数に保存し、自己紹介文を作成してみましょう。
-2. 次のコードを実行して、各変数の型を表示してみましょう。  
-   ```python
-   print(type(name))
-   print(type(age))
-   print(type(height))
-   print(type(is_student))
-   ```
-
----
-
-## 3. データ構造の基本
-
-Pythonには、データを整理するための便利なデータ構造がいくつかあります。ここでは、リスト、辞書、タプル、セットを解説します。
-
-### 3.1 リスト (List)
-順序付けられた変更可能なデータの集合です。
-
-#### サンプルコード
-```python
-# 買い物リストの例
-shopping_list = ["りんご", "バナナ", "オレンジ"]
-
-# リストの操作例
-print(shopping_list[0])         # 最初の要素
-shopping_list.append("ぶどう")   # 新しい項目を追加
-print("リストの長さ:", len(shopping_list))
-
-# リストの各要素を出力
-for item in shopping_list:
-    print(f"買うもの: {item}")
+```bash
+# 実行方法
+python hello_world.py
 ```
 
-### 3.2 辞書 (Dictionary)
-キーと値のペアでデータを管理します。
+-----
 
-#### サンプルコード
+## 📖 学習コンテンツ
+
+### 第1章: プログラミングの基礎 🎯
+
+**所要時間: 30分**
+
+プログラミングとは何か、Pythonの特徴、そして最初のプログラムを作成します。
+
 ```python
-# 生徒情報を管理する辞書
-student = {
-    "name": "佐藤花子",
-    "age": 15,
-    "class": "2年A組",
-    "subjects": ["国語", "数学", "英語"]
-}
+# モダンなPythonの書き方
+from typing import Optional
 
-print(f"名前: {student['name']}")
-print(f"好きな科目: {student['subjects'][0]}")
-```
-
-### 3.3 タプル (Tuple)
-変更不可能な順序付きデータの集合です。
-
-#### サンプルコード
-```python
-# 座標を表すタプルの例
-point = (3, 4)
-print("x座標:", point[0])
-print("y座標:", point[1])
-```
-
-### 3.4 セット (Set)
-重複しないデータの集合です。
-
-#### サンプルコード
-```python
-# セットの例
-fruits = {"りんご", "バナナ", "オレンジ", "りんご"}
-print("ユニークな果物:", fruits)
-```
-
-### ✍️ 練習問題
-1. **リストの演習:** 好きな食べ物のリストを作成し、新たに「ケーキ」を追加してリスト全体を表示してみましょう。
-2. **辞書の演習:** 友だちの名前、年齢、趣味を管理する辞書を作成し、各情報を出力してみましょう。
-
----
-
-## 4. 制御構文：条件分岐とループ
-
-### 4.1 条件分岐 (if文)
-条件に基づいて異なる処理を実行するための文法です。
-
-#### サンプルコード
-```python
-# 年齢に応じたメッセージ表示
-age = 15
-
-if age < 13:
-    print("子供料金です")
-elif age < 20:
-    print("学生料金です")
-else:
-    print("大人料金です")
-```
-
-### 4.2 ループ (for文・while文)
-同じ処理を繰り返し実行するための文法です。
-
-#### サンプルコード（for文）
-```python
-# 1から5までの数字を出力
-for i in range(1, 6):
-    print(f"{i}回目")
-```
-
-#### サンプルコード（while文）
-```python
-# 1から5までをwhile文で表示
-i = 1
-while i <= 5:
-    print(f"{i}回目")
-    i += 1
-```
-
-### ✍️ 練習問題
-1. **点数判定:** テストの点数（0～100点）を入力し、80点以上なら「合格」、それ以外なら「不合格」と表示するプログラムを作成しましょう。
-2. **偶数の表示:** 1から10までの数字をfor文で表示し、偶数の場合は「偶数です」と追加で出力するプログラムを作成しましょう。
-
----
-
-## 5. 関数を作ろう
-
-### 概要
-関数は、よく使う処理をひとまとめにして再利用するための仕組みです。関数を使うことでコードの整理・再利用が容易になります。
-
-### サンプルコード
-```python
-# 挨拶をする関数の例
-def greet(name):
-    """名前を受け取って挨拶する関数"""
-    return f"こんにちは、{name}さん！"
-
-message = greet("太郎")
-print(message)
-
-# 税込価格を計算する関数
-def calculate_total(price, tax_rate=0.1):
-    """商品の税込価格を計算する関数"""
-    return price * (1 + tax_rate)
-
-price = calculate_total(1000)
-print(f"税込価格: {price}円")
-```
-
-### ✍️ 練習問題
-1. **平均計算関数:** 二つまたは複数の数値の平均を計算する関数を作成しましょう。  
-   ※ ヒント: 入力としてリストを受け取り、`sum()` と `len()` を利用します。
-2. **自己紹介関数:** 名前と年齢を引数にとり、「〇〇さんは〇歳です」と返す関数を作成しましょう。
-
----
-
-## 6. クラスとオブジェクト指向
-
-### 概要
-クラスは、データ（属性）と処理（メソッド）をひとまとめにした設計図です。オブジェクト指向を使うと、複雑なプログラムでも整理されたコードが書けます。
-
-### サンプルコード：ペットクラス
-```python
-# ペットを表すクラスの例
-class Pet:
-    def __init__(self, name, animal_type):
-        self.name = name
-        self.animal_type = animal_type
+def greet_user(name: str, greeting: Optional[str] = None) -> str:
+    """ユーザーに挨拶メッセージを返す
     
-    def make_sound(self):
-        """動物ごとの鳴き声を返す"""
-        if self.animal_type == "犬":
-            return "ワン！"
-        elif self.animal_type == "猫":
-            return "ニャー！"
-        else:
-            return "..."
-
-# クラスを使ってインスタンスを作成
-my_pet = Pet("ポチ", "犬")
-print(f"{my_pet.name}が鳴きました：{my_pet.make_sound()}")
-```
-
-### ✍️ 練習問題
-1. **本を管理するクラス:** タイトル、著者、価格を属性として持つ `Book` クラスを作成し、各書籍の情報を表示するメソッドを実装しましょう。
-2. **生徒クラス:** 名前、年齢、得意科目を属性として持つ `Student` クラスを作成し、自己紹介文を返すメソッドを実装しましょう。
-
----
-
-## 7. 例外処理
-
-### 概要
-プログラム実行中に予期しないエラーが発生した場合、例外処理を使うことでプログラムをクラッシュさせずに適切な対応ができます。
-
-### サンプルコード：銀行口座の例
-```python
-class BankAccount:
-    """銀行口座を表すクラス"""
-    def __init__(self, account_number: str, balance: float = 0):
-        self.account_number = account_number
-        self._balance = balance
+    Args:
+        name: ユーザーの名前
+        greeting: カスタム挨拶（オプション）
     
-    class InsufficientFundsError(Exception):
-        """残高不足エラー"""
-        pass
-    
-    def deposit(self, amount: float):
-        if amount <= 0:
-            raise ValueError("入金額は正の数である必要があります")
-        self._balance += amount
-    
-    def withdraw(self, amount: float):
-        if amount <= 0:
-            raise ValueError("出金額は正の数である必要があります")
-        if amount > self._balance:
-            raise self.InsufficientFundsError(
-                f"残高不足です（残高: {self._balance}, 出金要求: {amount}）"
-            )
-        self._balance -= amount
-    
-    @property
-    def balance(self):
-        return self._balance
-
-def process_transaction(account, transaction_type, amount):
-    try:
-        if transaction_type == "deposit":
-            account.deposit(amount)
-        elif transaction_type == "withdraw":
-            account.withdraw(amount)
-        else:
-            raise ValueError(f"不正な取引種別: {transaction_type}")
-    except ValueError as e:
-        print(f"エラー: {e}")
-    except BankAccount.InsufficientFundsError as e:
-        print(f"残高不足エラー: {e}")
-    else:
-        print("取引が正常に完了しました")
-    finally:
-        print(f"現在の残高: {account.balance}円")
+    Returns:
+        挨拶メッセージ
+    """
+    default_greeting = "こんにちは"
+    message = greeting or default_greeting
+    return f"{message}、{name}さん！"
 
 # 使用例
-account = BankAccount("1234-5678", 10000)
-process_transaction(account, "deposit", 5000)
-process_transaction(account, "withdraw", 20000)
-process_transaction(account, "transfer", 1000)
+print(greet_user("太郎"))
+print(greet_user("花子", "おはよう"))
 ```
 
-### ✍️ 練習問題
-1. ユーザーから数値を入力させ、その入力を整数に変換する際のエラーをキャッチするプログラムを作成しましょう。
-2. ファイル操作など、実際に起こり得るエラー処理（`try-except`）のパターンを実装してみましょう。
+**🏃‍♂️ 実習課題**
 
----
+1. 自己紹介プログラムの作成
+1. 計算機能付きプログラムの実装
 
-## 8. 実践プラクティス：総合演習
+-----
 
-### 課題例：To-Doリスト CLI アプリ
-以下の機能を持つ簡単なコマンドライン・アプリケーションを作成してみましょう。
+### 第2章: 変数とデータ型 📦
 
-- **タスクの追加:** ユーザーからタスク名を入力させ、リストに追加する
-- **タスクの表示:** 現在のタスクリストを番号付きで表示する
-- **タスクの削除:** 指定した番号のタスクを削除する
-- **終了:** アプリケーションを終了する
+**所要時間: 45分**
 
-※ ヒント  
-- リストや辞書を用いてタスクを管理  
-- ループと条件分岐でメニューを実装  
-- 関数を分割してコードを整理
+型ヒント、f-string、そして現代的なPythonのデータ操作について学習します。
 
----
+```python
+from datetime import datetime
+from dataclasses import dataclass
+from typing import List, Dict, Union
 
-## 9. 用語集
+@dataclass
+class Student:
+    """学生情報を管理するデータクラス"""
+    name: str
+    age: int
+    grade: float
+    subjects: List[str]
+    
+    def get_grade_letter(self) -> str:
+        """成績を文字で返す"""
+        if self.grade >= 90: return "A"
+        elif self.grade >= 80: return "B"
+        elif self.grade >= 70: return "C"
+        else: return "D"
 
-| 用語       | 説明                                            |
-|------------|-------------------------------------------------|
-| 変数       | データを一時的に保存するための名前付きの「箱」    |
-| リスト     | 順序付きの変更可能なデータの集合                 |
-| 辞書       | キーと値のペアによるデータの管理方法             |
-| タプル     | 順序付きの変更不可能なデータの集合               |
-| セット     | 重複しない要素の集合                             |
-| 関数       | 再利用可能な処理をまとめたブロック               |
-| クラス     | 属性とメソッドをまとめた設計図                   |
-| 例外処理   | エラー発生時にプログラムの異常終了を防ぐ処理       |
+# 使用例
+student = Student("田中太郎", 16, 85.5, ["数学", "物理", "化学"])
+print(f"{student.name}さんの成績: {student.get_grade_letter()}")
+```
 
----
+**📊 Pythonの主要データ型（2024年版）**
 
-## おわりに
+|型      |説明    |例                 |用途        |
+|-------|------|------------------|----------|
+|`str`  |文字列   |`"Hello World"`   |テキスト処理    |
+|`int`  |整数    |`42`              |数値計算      |
+|`float`|浮動小数点数|`3.14159`         |科学計算      |
+|`bool` |真偽値   |`True`, `False`   |条件判定      |
+|`list` |リスト   |`[1, 2, 3]`       |順序付きデータ   |
+|`dict` |辞書    |`{"key": "value"}`|キー・バリューペア |
+|`set`  |セット   |`{1, 2, 3}`       |重複なしコレクション|
 
-プログラミング学習は、基本を理解した上で実際に手を動かすことが重要です。  
-このガイドと実践プラクティスを通して、Pythonの基礎をしっかりと身に付け、さらなる学習やプロジェクトへの第一歩として活用してください。  
-わからないことがあれば、積極的に調べたり、質問したりしましょう。😊
+-----
 
-Happy Coding!
+### 第3章: データ構造とアルゴリズム 🗂️
+
+**所要時間: 60分**
+
+効率的なデータ操作と、Pythonらしいコードの書き方を学習します。
+
+```python
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple
+
+class DataProcessor:
+    """データ処理を行うクラス"""
+    
+    @staticmethod
+    def analyze_scores(scores: List[int]) -> Dict[str, Union[float, int]]:
+        """スコアデータの統計分析"""
+        if not scores:
+            return {}
+            
+        return {
+            "平均": sum(scores) / len(scores),
+            "最大": max(scores),
+            "最小": min(scores),
+            "合計": sum(scores),
+            "データ数": len(scores)
+        }
+    
+    @staticmethod
+    def group_by_grade(students: List[Dict]) -> Dict[str, List[str]]:
+        """成績別に学生をグループ化"""
+        groups = defaultdict(list)
+        
+        for student in students:
+            grade = student.get("grade", 0)
+            name = student.get("name", "不明")
+            
+            if grade >= 90:
+                groups["優秀"].append(name)
+            elif grade >= 70:
+                groups["良好"].append(name)
+            else:
+                groups["要改善"].append(name)
+        
+        return dict(groups)
+
+# 使用例
+test_scores = [85, 92, 78, 96, 73, 88, 91]
+analysis = DataProcessor.analyze_scores(test_scores)
+print("スコア分析結果:")
+for key, value in analysis.items():
+    print(f"  {key}: {value}")
+```
+
+**🎯 リスト内包表記とジェネレータ**
+
+```python
+# 従来の書き方
+squares = []
+for i in range(10):
+    if i % 2 == 0:
+        squares.append(i ** 2)
+
+# Pythonらしい書き方
+squares = [i ** 2 for i in range(10) if i % 2 == 0]
+
+# メモリ効率的なジェネレータ
+squares_generator = (i ** 2 for i in range(10) if i % 2 == 0)
+```
+
+-----
+
+### 第4章: 制御構造とフロー制御 🔄
+
+**所要時間: 45分**
+
+条件分岐、ループ、そして例外処理について学習します。
+
+```python
+import sys
+from pathlib import Path
+from typing import Generator, Optional
+
+class FileProcessor:
+    """ファイル処理クラス"""
+    
+    def __init__(self, base_path: str = "."):
+        self.base_path = Path(base_path)
+    
+    def find_python_files(self) -> Generator[Path, None, None]:
+        """Python ファイルを再帰的に検索"""
+        try:
+            for file_path in self.base_path.rglob("*.py"):
+                if file_path.is_file():
+                    yield file_path
+        except PermissionError as e:
+            print(f"アクセス権限エラー: {e}")
+        except Exception as e:
+            print(f"予期しないエラー: {e}")
+    
+    def count_lines(self, file_path: Path) -> Optional[int]:
+        """ファイルの行数をカウント"""
+        try:
+            with file_path.open('r', encoding='utf-8') as f:
+                return sum(1 for _ in f)
+        except (UnicodeDecodeError, FileNotFoundError) as e:
+            print(f"ファイル読み込みエラー ({file_path}): {e}")
+            return None
+
+# 使用例: プロジェクト内のPythonファイル統計
+def analyze_project():
+    processor = FileProcessor()
+    total_files = 0
+    total_lines = 0
+    
+    print("🔍 Python ファイルを分析中...")
+    
+    for py_file in processor.find_python_files():
+        line_count = processor.count_lines(py_file)
+        
+        if line_count is not None:
+            total_files += 1
+            total_lines += line_count
+            print(f"  📄 {py_file.name}: {line_count} 行")
+    
+    print(f"\n📊 分析結果:")
+    print(f"  ファイル数: {total_files}")
+    print(f"  総行数: {total_lines}")
+    print(f"  平均行数: {total_lines / total_files if total_files > 0 else 0:.1f}")
+
+if __name__ == "__main__":
+    analyze_project()
+```
+
+-----
+
+### 第5章: 関数と関数型プログラミング ⚡
+
+**所要時間: 50分**
+
+高階関数、デコレータ、そして関数型プログラミングの概念を学習します。
+
+```python
+import functools
+import time
+from typing import Callable, Any, List
+from dataclasses import dataclass
+
+def timing_decorator(func: Callable) -> Callable:
+    """実行時間を測定するデコレータ"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        
+        print(f"⏱️  {func.__name__} 実行時間: {end_time - start_time:.4f} 秒")
+        return result
+    return wrapper
+
+@dataclass
+class Task:
+    """タスク情報"""
+    name: str
+    priority: int
+    completed: bool = False
+
+class TaskManager:
+    """タスク管理クラス"""
+    
+    def __init__(self):
+        self.tasks: List[Task] = []
+    
+    @timing_decorator
+    def add_task(self, name: str, priority: int = 1):
+        """タスクを追加"""
+        self.tasks.append(Task(name, priority))
+        print(f"✅ タスク追加: {name}")
+    
+    def get_tasks_by_priority(self) -> List[Task]:
+        """優先度順でタスクを取得"""
+        return sorted(self.tasks, key=lambda task: task.priority, reverse=True)
+    
+    def get_pending_tasks(self) -> List[Task]:
+        """未完了タスクを取得"""
+        return list(filter(lambda task: not task.completed, self.tasks))
+    
+    def complete_task(self, task_name: str) -> bool:
+        """タスクを完了に変更"""
+        for task in self.tasks:
+            if task.name == task_name:
+                task.completed = True
+                print(f"🎉 タスク完了: {task_name}")
+                return True
+        return False
+
+# 使用例
+manager = TaskManager()
+manager.add_task("Python学習", 3)
+manager.add_task("プロジェクト企画", 2)
+manager.add_task("買い物", 1)
+
+print("\n📋 優先度順タスクリスト:")
+for task in manager.get_tasks_by_priority():
+    status = "✅" if task.completed else "⏳"
+    print(f"  {status} {task.name} (優先度: {task.priority})")
+```
+
+-----
+
+### 第6章: オブジェクト指向プログラミング 🏗️
+
+**所要時間: 70分**
+
+クラス設計、継承、ポリモーフィズム、そして設計パターンについて学習します。
+
+```python
+from abc import ABC, abstractmethod
+from typing import List, Protocol
+from dataclasses import dataclass
+from enum import Enum
+
+class PaymentMethod(Enum):
+    """支払い方法の列挙型"""
+    CASH = "現金"
+    CREDIT_CARD = "クレジットカード"
+    DIGITAL = "電子マネー"
+
+@dataclass
+class Product:
+    """商品クラス"""
+    name: str
+    price: float
+    category: str
+    
+    def __post_init__(self):
+        if self.price < 0:
+            raise ValueError("価格は0以上である必要があります")
+
+class PaymentProcessor(Protocol):
+    """支払い処理のプロトコル"""
+    def process_payment(self, amount: float) -> bool:
+        ...
+
+class CashPayment:
+    """現金支払い処理"""
+    def process_payment(self, amount: float) -> bool:
+        print(f"💵 現金で {amount:,.0f}円 を支払いました")
+        return True
+
+class CreditCardPayment:
+    """クレジットカード支払い処理"""
+    def __init__(self, card_number: str):
+        self.card_number = card_number[-4:]  # 下4桁のみ保存
+    
+    def process_payment(self, amount: float) -> bool:
+        print(f"💳 カード(****{self.card_number})で {amount:,.0f}円 を支払いました")
+        return True
+
+class ShoppingCart:
+    """ショッピングカートクラス"""
+    
+    def __init__(self):
+        self.items: List[Product] = []
+        self.payment_processor: PaymentProcessor = CashPayment()
+    
+    def add_item(self, product: Product, quantity: int = 1):
+        """商品をカートに追加"""
+        for _ in range(quantity):
+            self.items.append(product)
+        print(f"🛒 {product.name} × {quantity} をカートに追加しました")
+    
+    def calculate_total(self) -> float:
+        """合計金額を計算"""
+        return sum(item.price for item in self.items)
+    
+    def set_payment_method(self, processor: PaymentProcessor):
+        """支払い方法を設定"""
+        self.payment_processor = processor
+    
+    def checkout(self) -> bool:
+        """精算処理"""
+        if not self.items:
+            print("❌ カートが空です")
+            return False
+        
+        total = self.calculate_total()
+        print(f"\n🧾 ご購入明細:")
+        
+        # カテゴリ別集計
+        from collections import defaultdict
+        category_totals = defaultdict(float)
+        
+        for item in self.items:
+            category_totals[item.category] += item.price
+        
+        for category, amount in category_totals.items():
+            print(f"  {category}: {amount:,.0f}円")
+        
+        print(f"  合計: {total:,.0f}円")
+        print("-" * 30)
+        
+        # 支払い処理
+        return self.payment_processor.process_payment(total)
+
+# 使用例: ECサイトのシミュレーション
+def shopping_simulation():
+    # 商品作成
+    products = [
+        Product("Python入門書", 2500, "書籍"),
+        Product("ワイヤレスマウス", 1200, "PC周辺機器"),
+        Product("コーヒー豆", 800, "食品"),
+    ]
+    
+    # ショッピング
+    cart = ShoppingCart()
+    
+    for product in products:
+        cart.add_item(product)
+    
+    # 支払い方法設定
+    card_payment = CreditCardPayment("1234-5678-9012-3456")
+    cart.set_payment_method(card_payment)
+    
+    # 精算
+    success = cart.checkout()
+    
+    if success:
+        print("\n🎉 購入完了！ありがとうございました。")
+    else:
+        print("\n❌ 購入に失敗しました。")
+
+if __name__ == "__main__":
+    shopping_simulation()
+```
+
+-----
+
+### 第7章: エラーハンドリングと品質管理 🛡️
+
+**所要時間: 40分**
+
+例外処理、ログ記録、テスト、そしてコード品質について学習します。
+
+```python
+import logging
+import json
+from pathlib import Path
+from typing import Optional, Dict, Any
+from contextlib import contextmanager
+
+# ログ設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+class ConfigError(Exception):
+    """設定エラー"""
+    pass
+
+class DataValidationError(Exception):
+    """データ検証エラー"""
+    pass
+
+class ConfigManager:
+    """設定管理クラス"""
+    
+    def __init__(self, config_path: str = "config.json"):
+        self.config_path = Path(config_path)
+        self.config: Dict[str, Any] = {}
+        self._load_config()
+    
+    def _load_config(self):
+        """設定ファイルを読み込み"""
+        try:
+            if self.config_path.exists():
+                with self.config_path.open('r', encoding='utf-8') as f:
+                    self.config = json.load(f)
+                logger.info(f"設定ファイルを読み込みました: {self.config_path}")
+            else:
+                self._create_default_config()
+        except json.JSONDecodeError as e:
+            raise ConfigError(f"設定ファイルの形式が正しくありません: {e}")
+        except Exception as e:
+            raise ConfigError(f"設定ファイルの読み込みに失敗しました: {e}")
+    
+    def _create_default_config(self):
+        """デフォルト設定を作成"""
+        default_config = {
+            "app_name": "Python学習アプリ",
+            "version": "1.0.0",
+            "debug": False,
+            "max_users": 100,
+            "features": {
+                "logging": True,
+                "auto_save": True
+            }
+        }
+        
+        try:
+            with self.config_path.open('w', encoding='utf-8') as f:
+                json.dump(default_config, f, ensure_ascii=False, indent=2)
+            
+            self.config = default_config
+            logger.info("デフォルト設定ファイルを作成しました")
+            
+        except Exception as e:
+            logger.error(f"デフォルト設定の作成に失敗: {e}")
+            raise ConfigError(f"設定ファイルの作成に失敗しました: {e}")
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """設定値を取得"""
+        return self.config.get(key, default)
+    
+    def set(self, key: str, value: Any):
+        """設定値を更新"""
+        self.config[key] = value
+        self._save_config()
+    
+    def _save_config(self):
+        """設定をファイルに保存"""
+        try:
+            with self.config_path.open('w', encoding='utf-8') as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+            logger.info("設定ファイルを保存しました")
+        except Exception as e:
+            logger.error(f"設定ファイルの保存に失敗: {e}")
+
+@contextmanager
+def safe_operation(operation_name: str):
+    """安全な操作のコンテキストマネージャ"""
+    logger.info(f"操作開始: {operation_name}")
+    try:
+        yield
+        logger.info(f"操作完了: {operation_name}")
+    except Exception as e:
+        logger.error(f"操作失敗: {operation_name} - {e}")
+        raise
+    finally:
+        logger.debug(f"操作終了: {operation_name}")
+
+# 使用例: エラーハンドリングの実践
+def demo_error_handling():
+    """エラーハンドリングのデモ"""
+    
+    with safe_operation("設定管理テスト"):
+        try:
+            config = ConfigManager("test_config.json")
+            
+            # 設定の取得
+            app_name = config.get("app_name", "デフォルトアプリ")
+            print(f"📱 アプリ名: {app_name}")
+            
+            # 設定の更新
+            config.set("last_run", "2024-01-01")
+            
+        except ConfigError as e:
+            print(f"❌ 設定エラー: {e}")
+        except Exception as e:
+            print(f"❌ 予期しないエラー: {e}")
+            logger.exception("予期しないエラーが発生しました")
+
+if __name__ == "__main__":
+    demo_error_handling()
+```
+
+-----
+
+### 第8章: 総合演習プロジェクト 🚀
+
+**所要時間: 120分**
+
+これまで学んだ知識を統合して、実用的なアプリケーションを作成します。
+
+```python
+#!/usr/bin/env python3
+"""
+タスク管理システム v2.0
+- GUI版タスク管理アプリケーション
+- データベース連携
+- ユーザー認証
+- レポート機能
+"""
+
+import sqlite3
+import hashlib
+from datetime import datetime, timedelta
+from typing import List, Optional, Dict
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+@dataclass
+class User:
+    """ユーザー情報"""
+    id: Optional[int] = None
+    username: str = ""
+    email: str = ""
+    password_hash: str = ""
+    created_at: Optional[datetime] = None
+
+@dataclass
+class Task:
+    """タスク情報"""
+    id: Optional[int] = None
+    user_id: int = 0
+    title: str = ""
+    description: str = ""
+    priority: int = 1
+    completed: bool = False
+    due_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+class Database:
+    """データベース管理クラス"""
+    
+    def __init__(self, db_path: str = "tasks.db"):
+        self.db_path = db_path
+        self.init_database()
+    
+    def init_database(self):
+        """データベース初期化"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    priority INTEGER DEFAULT 1,
+                    completed BOOLEAN DEFAULT FALSE,
+                    due_date DATETIME,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+            
+            conn.commit()
+
+class TaskManager:
+    """タスク管理システム"""
+    
+    def __init__(self, db_path: str = "tasks.db"):
+        self.db = Database(db_path)
+        self.current_user: Optional[User] = None
+    
+    def hash_password(self, password: str) -> str:
+        """パスワードをハッシュ化"""
+        return hashlib.sha256(password.encode()).hexdigest()
+    
+    def create_user(self, username: str, email: str, password: str) -> bool:
+        """新しいユーザーを作成"""
+        try:
+            password_hash = self.hash_password(password)
+            
+            with sqlite3.connect(self.db.db_path) as conn:
+                conn.execute(
+                    "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                    (username, email, password_hash)
+                )
+                conn.commit()
+            
+            print(f"✅ ユーザー '{username}' を作成しました")
+            return True
+            
+        except sqlite3.IntegrityError:
+            print("❌ ユーザー名またはメールアドレスが既に使用されています")
+            return False
+    
+    def login(self, username: str, password: str) -> bool:
+        """ユーザーログイン"""
+        password_hash = self.hash_password(password)
+        
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM users WHERE username = ? AND password_hash = ?",
+                (username, password_hash)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                self.current_user = User(
+                    id=row[0],
+                    username=row[1],
+                    email=row[2],
+                    password_hash=row[3],
+                    created_at=datetime.fromisoformat(row[4])
+                )
+                print(f"🎉 {username}さん、おかえりなさい！")
+                return True
+            else:
+                print("❌ ユーザー名またはパスワードが正しくありません")
+                return False
+    
+    def add_task(self, title: str, description: str = "", priority: int = 1, 
+                 due_date: Optional[datetime] = None) -> bool:
+        """タスクを追加"""
+        if not self.current_user:
+            print("❌ ログインが必要です")
+            return False
+        
+        try:
+            with sqlite3.connect(self.db.db_path) as conn:
+                conn.execute(
+                    """INSERT INTO tasks 
+                       (user_id, title, description, priority, due_date) 
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (self.current_user.id, title, description, priority, due_date)
+                )
+                conn.commit()
+            
+            print(f"📝 タスク '{title}' を追加しました")
+            return True
+            
+        except Exception as e:
+            print(f"❌ タスクの追加に失敗しました: {e}")
+            return False
+    
+    def get_tasks(self, completed: Optional[bool] = None) -> List[Task]:
+        """タスク一覧を取得"""
+        if not self.current_user:
+            return []
+        
+        query = "SELECT * FROM tasks WHERE user_id = ?"
+        params = [self.current_user.id]
+        
+        if completed is not None:
+            query += " AND completed = ?"
+            params.append(completed)
+        
+        query += " ORDER BY priority DESC, created_at DESC"
+        
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+            
+            tasks = []
+            for row in rows:
+                task = Task(
+                    id=row[0],
+                    user_id=row[1],
+                    title=row[2],
+                    description=row[3],
+                    priority=row[4],
+                    completed=bool(row[5]),
+                    due_date=datetime.fromisoformat(row[6]) if row[6] else None,
+                    created_at=datetime.fromisoformat(row[7]),
+                    updated_at=datetime.fromisoformat(row[8])
+```

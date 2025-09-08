@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-CSV重複削除ツール
-大きなファイルにも対応し、メモリ効率的に重複行を削除します。
-"""
+
 
 import os
 import sys

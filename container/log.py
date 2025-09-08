@@ -59,22 +59,34 @@ def find_docker_compose_path():
     
     return None
 
-def check_container_status(project_dir, container_name, compose_path):
-    """指定されたコンテナの稼働状態を確認する"""
+def check_container_status(project_dir: str, container_name: str, compose_path: str) -> bool:
     logger.info(f"コンテナ '{container_name}' の状態を確認します...")
-    
+
     try:
-        # プロジェクトディレクトリに移動
-        original_dir = os.getcwd()
-        os.chdir(project_dir)
-        
-        # docker-compose コマンドを実行
-        if ' ' in compose_path:  # 'docker compose' のような複合コマンド
+        with safe_chdir(project_dir):
             cmd_parts = compose_path.split() + ['ps', '--format', 'json']
             result = subprocess.run(cmd_parts, capture_output=True, text=True, check=False)
-        else:
-            result = subprocess.run([compose_path, 'ps', '--format', 'json'], 
-                                  capture_output=True, text=True, check=False)
+
+            if result.returncode == 0 and result.stdout.strip().startswith('['):
+                containers = json.loads(result.stdout)
+                return any(
+                    c.get('Name', '').endswith(container_name) and
+                    c.get('State', '').lower() == 'running'
+                    for c in containers
+                )
+            
+            # fallback to legacy text output
+            cmd_parts = compose_path.split() + ['ps']
+            result = subprocess.run(cmd_parts, capture_output=True, text=True, check=False)
+
+            return any(container_name in line and "Up" in line for line in result.stdout.splitlines())
+
+    except subprocess.SubprocessError as e:
+        logger.error(f"コンテナ状態確認中にサブプロセスエラー: {e}")
+    except Exception as e:
+        logger.error(f"想定外のエラー: {e}")
+    
+    return False
         
         # 新しいDocker Composeバージョン (JSONフォーマット) の出力でない場合
         if result.returncode != 0 or not result.stdout.strip().startswith('['):

@@ -1,0 +1,36 @@
+---
+# MySQL設定
+mysql_version: "8.0"
+mysql_root_password: "{{ vault_mysql_root_password }}"
+mysql_bind_address: "0.0.0.0"
+mysql_port: 3306
+
+# データベース設定
+mysql_databases:
+  - name: "webapp_prod"
+    collation: "utf8mb4_unicode_ci"
+    encoding: "utf8mb4"
+
+mysql_users:
+  - name: "webapp_user"
+    password: "{{ vault_mysql_webapp_password }}"
+    priv: "webapp_prod.*:ALL"
+    host: "192.168.1.%"
+
+# レプリケーション設定
+mysql_replication_enabled: true
+mysql_replication_user: "replication"
+mysql_replication_password: "{{ vault_mysql_replication_password }}"
+
+# パフォーマンス設定
+mysql_innodb_buffer_pool_size: "1G"
+mysql_max_connections: 200
+mysql_query_cache_size: "128M"
+mysql_tmp_table_size: "128M"
+mysql_max_heap_table_size: "128M"
+
+# バックアップ設定
+mysql_backup_enabled: true
+mysql_backup_user: "backup"
+mysql_backup_password: "{{ vault_mysql_backup_password }}"
+mysql_backup_directory: "/var/backups/mysql"

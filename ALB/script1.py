@@ -9,7 +9,7 @@ class ALBLogAnalyzer:
     def __init__(self, log_file: str):
         """
         Args:
-            log_file: ALBログファイルのパス
+            log_file: 
         """
         self.log_file = log_file
         self.logs = []

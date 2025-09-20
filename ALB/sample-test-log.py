@@ -3,7 +3,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Dict, List
 
-# Constants
+# Cす
 TEST_LOG_FILE = 'test_alb.log'
 LOG_ENTRIES = 100
 IPS = [f'192.168.1.{i:03d}' for i in range(1, 11)]

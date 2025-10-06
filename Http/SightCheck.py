@@ -1,238 +1,243 @@
-import time
-import requests
-from bs4 import BeautifulSoup
+#!/usr/bin/env python3
+"""
+ウェブサイトの特定要素を監視し、変更があればファイルへ保存するシンプルな監視スクリプト
+改善点:
+ - 設定の堅牢化（デフォルト値・引数上書き・エラーハンドリング）
+ - requests.Session + urllib3.Retry を使ったリトライ実装
+ - 取得テキストはセレクタにマッチした全要素の結合を使う（最初の要素のみでは欠落する可能性あり）
+ - ファイル書き込みは一時ファイル経由でアトミックに行う
+ - ロギングを改善（ログディレクトリ自動作成）
+ - 型注釈とドキュメンテーションの追加
+"""
+from __future__ import annotations
+
+import argparse
+import json
 import logging
 import os
-import json
-from typing import Optional, Dict, Any, Tuple
-import argparse
+import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional, Tuple
 
-# データクラスを使用して設定を整理
+import requests
+from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# --- 定数 ---
+DEFAULT_CONFIG_PATH = "config.json"
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; sightcheck/1.0; +https://example.com)"
+DEFAULT_TIMEOUT = 10  # 秒
+MIN_INTERVAL = 5  # 秒
+
+# --- データクラス ---
 @dataclass
 class Config:
-    """ウェブサイト監視の設定を保持するクラス"""
-    url: str
-    selector: str
-    output_file: Path
-    check_interval: int
-    max_retries: int
-    retry_delay: int
+    url: str = "https://example.com"
+    selector: str = "div.content"
+    output_file: Path = Path("elems_text.txt")
+    check_interval: int = 20
+    max_retries: int = 3
+    retry_delay: int = 5
+    timeout: int = DEFAULT_TIMEOUT
+    user_agent: str = DEFAULT_USER_AGENT
 
     @classmethod
-    def from_json(cls, json_file: str) -> 'Config':
-        """JSONファイルから設定を読み込む"""
+    def from_json(cls, json_file: str | Path) -> "Config":
+        """JSONファイルから設定を読み込み、Config を返す（見つからない/解析失敗時はデフォルトを返す）"""
         try:
-            with open(json_file, 'r', encoding='utf-8') as f:
-                config_data = json.load(f)
+            json_path = Path(json_file)
+            if not json_path.exists():
+                logging.info(f"設定ファイルが見つかりません: {json_file}（デフォルト設定を使用）")
+                return cls()
+            with json_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
             return cls(
-                url=config_data.get('url', 'https://example.com'),
-                selector=config_data.get('selector', 'div.content'),
-                output_file=Path(config_data.get('output_file', 'elems_text.txt')),
-                check_interval=config_data.get('check_interval', 20),
-                max_retries=config_data.get('max_retries', 3),
-                retry_delay=config_data.get('retry_delay', 5)
+                url=str(data.get("url", cls.url)),
+                selector=str(data.get("selector", cls.selector)),
+                output_file=Path(data.get("output_file", str(cls.output_file))),
+                check_interval=int(data.get("check_interval", cls.check_interval)),
+                max_retries=int(data.get("max_retries", cls.max_retries)),
+                retry_delay=int(data.get("retry_delay", cls.retry_delay)),
+                timeout=int(data.get("timeout", cls.timeout)),
+                user_agent=str(data.get("user_agent", cls.user_agent)),
             )
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.error(f"設定ファイル読み込みエラー: {e}")
-            # デフォルト設定を返す
-            return cls(
-                url='https://example.com',
-                selector='div.content',
-                output_file=Path('elems_text.txt'),
-                check_interval=20,
-                max_retries=3,
-                retry_delay=5
-            )
+        except (json.JSONDecodeError, ValueError) as e:
+            logging.error(f"設定ファイルの読み込みに失敗しました（JSONエラー）: {e}。デフォルト設定を使用します。")
+            return cls()
+        except Exception as e:
+            logging.exception(f"設定ファイル読み込み中に予期しないエラー: {e}。デフォルト設定を使用します。")
+            return cls()
 
+# --- ロギングセットアップ ---
 def setup_logging() -> None:
-    """ロギングの設定"""
     log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"sightcheck_{time.strftime('%Y%m%d')}.log"
-    
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
     )
 
+# --- HTTP セッション作成（リトライ対応） ---
+def create_session(config: Config) -> requests.Session:
+    session = requests.Session()
+    session.headers.update({"User-Agent": config.user_agent})
+    retries = Retry(
+        total=max(0, config.max_retries - 1),
+        backoff_factor=max(0.1, config.retry_delay / 10.0),
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "HEAD", "OPTIONS"]),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+# --- ファイル読込/書込 ---
 def get_stored_content(file_path: Path) -> str:
-    """保存されている以前の要素を取得します
-    
-    Args:
-        file_path: 保存ファイルのパス
-        
-    Returns:
-        str: 保存されていた内容（ファイルが存在しない場合は空文字列）
-    """
     try:
         if file_path.exists() and file_path.stat().st_size > 0:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                logging.info(f'保存内容: {content[:50]}...' if len(content) > 50 else f'保存内容: {content}')
-            return content
-        else:
-            logging.info('保存されている内容が見つかりませんでした')
-            return ''
-    except Exception as e:
-        logging.error(f"ファイル読み込みエラー: {e}")
-        return ''
+            text = file_path.read_text(encoding="utf-8")
+            logging.info("既存ファイル読み込み: %s", str(file_path))
+            return text
+        logging.info("保存されている内容がありません: %s", str(file_path))
+        return ""
+    except Exception:
+        logging.exception("既存ファイルの読み込みに失敗しました")
+        return ""
 
-def fetch_website_content(config: Config) -> Optional[str]:
-    """ウェブサイトから要素を取得します
-    
-    Args:
-        config: 監視設定
-        
-    Returns:
-        Optional[str]: 取得した要素のテキスト。エラー時はNone
+def atomic_write(file_path: Path, content: str) -> None:
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        # 一時ファイル経由でアトミックに書き込む
+        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8", dir=str(file_path.parent)) as tmp:
+            tmp.write(content)
+            tmp_name = tmp.name
+        os.replace(tmp_name, str(file_path))
+        logging.info("ファイルを安全に更新しました: %s", str(file_path))
+    except Exception:
+        logging.exception("ファイル書き込み中にエラーが発生しました")
+
+# --- ウェブ取得と解析 ---
+def fetch_website_content(session: requests.Session, config: Config) -> Optional[str]:
     """
-    for attempt in range(config.max_retries):
-        try:
-            logging.info(f"ウェブサイト取得試行 {attempt + 1}/{config.max_retries}")
-            response = requests.get(config.url, timeout=10)
-            response.raise_for_status()
-            
-            response.encoding = response.apparent_encoding
-            bs = BeautifulSoup(response.text, 'html.parser')
-            elements = bs.select(config.selector)
-            
-            if not elements:
-                logging.warning(f"指定されたセレクタに一致する要素が見つかりません: {config.selector}")
-                return ""
-                
-            content = elements[0].get_text(strip=True) if len(elements) > 0 else ""
-            logging.info(f'取得内容: {content[:50]}...' if len(content) > 50 else f'取得内容: {content}')
-            return content
-            
-        except requests.RequestException as e:
-            logging.error(f"リクエストエラー: {e}")
-            if attempt < config.max_retries - 1:
-                logging.info(f"{config.retry_delay}秒後に再試行します...")
-                time.sleep(config.retry_delay)
-            else:
-                logging.error("最大試行回数に達しました。処理を続行します。")
-                return None
-        except Exception as e:
-            logging.error(f"要素取得エラー: {e}")
-            return None
-
-def content_changed(old_content: str, new_content: str) -> bool:
-    """コンテンツが変更されたかどうかを確認します
-    
-    Args:
-        old_content: 以前のコンテンツ
-        new_content: 新しいコンテンツ
-        
-    Returns:
-        bool: 変更があった場合はTrue、なければFalse
-    """
-    # 空白やタブ、改行を正規化して比較
-    old_normalized = ' '.join(old_content.split())
-    new_normalized = ' '.join(new_content.split())
-    
-    return old_normalized != new_normalized
-
-def update_stored_content(file_path: Path, content: str) -> None:
-    """ファイルに新しい内容を保存します
-    
-    Args:
-        file_path: 保存先ファイルパス
-        content: 保存する内容
+    指定された URL を取得し、CSSセレクタにマッチした要素のテキストを返す。
+    マッチする複数要素がある場合は結合して返す（間は改行）。
+    None を返す場合は致命的なエラー（リクエスト失敗等）。
+    空文字列を返す場合はセレクタにマッチしなかったケース。
     """
     try:
-        # ディレクトリが存在しない場合は作成
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        logging.info("変更を検出しました。ファイルを更新しました。")
-    except IOError as e:
-        logging.error(f"ファイル書き込みエラー: {e}")
+        logging.info("GET %s", config.url)
+        resp = session.get(config.url, timeout=config.timeout)
+        # HTTPエラーはここで扱う（ステータスによっては content を取得するが注意）
+        if resp.status_code >= 400:
+            logging.warning("HTTP ステータスコード %s を受け取りました。", resp.status_code)
+            # 4xx/5xx はエラー扱いとする
+            return None
+        # 文字コードを推定して設定
+        resp.encoding = resp.apparent_encoding or resp.encoding or "utf-8"
+        soup = BeautifulSoup(resp.text, "html.parser")
+        elems = soup.select(config.selector)
+        if not elems:
+            logging.warning("セレクタに一致する要素が見つかりません: %s", config.selector)
+            return ""
+        # 各要素のテキストを改行で結合（必要ならここを加工）
+        texts = [e.get_text(separator=" ", strip=True) for e in elems]
+        combined = "\n".join(t for t in texts if t)
+        logging.info("取得テキスト（先頭100文字）: %s", combined[:100].replace("\n", " ") + ("..." if len(combined) > 100 else ""))
+        return combined
+    except requests.RequestException:
+        logging.exception("ウェブ取得中にリクエスト例外が発生しました")
+        return None
+    except Exception:
+        logging.exception("HTML解析中に予期しないエラーが発生しました")
+        return None
 
-def check_for_changes(config: Config) -> Tuple[bool, Optional[str]]:
-    """ウェブサイトの変更を確認します
-    
-    Args:
-        config: 監視設定
-        
-    Returns:
-        Tuple[bool, Optional[str]]: 
-            - 変更があったかどうか
-            - 新しい内容（エラー時はNone）
-    """
-    logging.info("=" * 50)
-    logging.info(f"ウェブサイト {config.url} をチェック中...")
-    
-    new_content = fetch_website_content(config)
+# --- 変更判定 ---
+def content_changed(old_content: str, new_content: str) -> bool:
+    # 正規化して比較（空白/改行をまとめる）
+    old_norm = " ".join(old_content.split()) if old_content else ""
+    new_norm = " ".join(new_content.split()) if new_content else ""
+    return old_norm != new_norm
+
+# --- 監視ロジック ---
+def check_for_changes(session: requests.Session, config: Config) -> Tuple[bool, Optional[str]]:
+    logging.info("チェック開始: %s", config.url)
+    new_content = fetch_website_content(session, config)
     if new_content is None:
+        logging.error("コンテンツ取得に失敗しました（None）。今回のチェックはスキップします。")
         return False, None
-        
     old_content = get_stored_content(config.output_file)
-    
     if content_changed(old_content, new_content):
-        update_stored_content(config.output_file, new_content)
+        logging.info("コンテンツの変更を検出しました")
+        atomic_write(config.output_file, new_content)
         return True, new_content
-    else:
-        logging.info("変更は検出されませんでした")
-        return False, new_content
+    logging.info("変更は検出されませんでした")
+    return False, new_content
 
+# --- 引数パース ---
 def parse_arguments() -> argparse.Namespace:
-    """コマンドライン引数をパースします"""
-    parser = argparse.ArgumentParser(description='ウェブサイトの変更を監視します')
-    parser.add_argument('--config', '-c', type=str, default='config.json',
-                        help='設定ファイルのパス (デフォルト: config.json)')
-    parser.add_argument('--url', '-u', type=str,
-                        help='監視するウェブサイトのURL')
-    parser.add_argument('--selector', '-s', type=str,
-                        help='監視するHTML要素のCSS3セレクタ')
-    parser.add_argument('--interval', '-i', type=int,
-                        help='確認間隔（秒）')
-    parser.add_argument('--output', '-o', type=str,
-                        help='出力ファイルパス')
-    return parser.parse_args()
+    p = argparse.ArgumentParser(description="ウェブサイトの要素変更を監視し、変更時にファイルへ書き出します")
+    p.add_argument("--config", "-c", type=str, default=DEFAULT_CONFIG_PATH, help="設定ファイル (JSON)")
+    p.add_argument("--url", "-u", type=str, help="監視対象の URL (設定ファイルより優先)")
+    p.add_argument("--selector", "-s", type=str, help="CSS セレクタ (設定ファイルより優先)")
+    p.add_argument("--interval", "-i", type=int, help=f"チェック間隔（秒、最小 {MIN_INTERVAL}）")
+    p.add_argument("--output", "-o", type=str, help="出力ファイルパス")
+    p.add_argument("--max-retries", type=int, help="内部 HTTP リトライ回数（Session の retry を構成）")
+    p.add_argument("--retry-delay", type=int, help="リトライのバックオフ係数（秒）")
+    p.add_argument("--timeout", type=int, help="HTTP タイムアウト（秒）")
+    return p.parse_args()
 
+# --- メイン ---
 def main() -> None:
-    """メイン処理ループ"""
     setup_logging()
-    logging.info("ウェブサイト変更監視を開始します...")
-    
+    logging.info("サイト変更監視を開始します")
     args = parse_arguments()
-    
-    # 設定読み込み
+
     config = Config.from_json(args.config)
-    
-    # コマンドライン引数で上書き
+
+    # CLI 引数で上書き
     if args.url:
         config.url = args.url
     if args.selector:
         config.selector = args.selector
     if args.interval:
-        config.check_interval = args.interval
+        config.check_interval = max(MIN_INTERVAL, args.interval)
     if args.output:
         config.output_file = Path(args.output)
-    
-    logging.info(f"設定: URL={config.url}, セレクタ={config.selector}, "
-                 f"確認間隔={config.check_interval}秒, 出力ファイル={config.output_file}")
-    
+    if args.max_retries is not None:
+        config.max_retries = max(0, args.max_retries)
+    if args.retry_delay is not None:
+        config.retry_delay = max(0, args.retry_delay)
+    if args.timeout is not None:
+        config.timeout = max(1, args.timeout)
+
+    logging.info("設定: url=%s selector=%s output=%s interval=%s max_retries=%s retry_delay=%s timeout=%s",
+                 config.url, config.selector, str(config.output_file), config.check_interval,
+                 config.max_retries, config.retry_delay, config.timeout)
+
+    session = create_session(config)
+
     try:
         while True:
-            changed, _ = check_for_changes(config)
-            # 変更があった場合は追加の処理をここに実装できます
-            
-            logging.info(f"{config.check_interval}秒後に次の確認を行います...")
+            changed, _ = check_for_changes(session, config)
+            # 変更発生時の拡張ポイント：通知（メール/Slack等）をここに追加可能
+            logging.info("次回チェックは %s 秒後です", config.check_interval)
             time.sleep(config.check_interval)
     except KeyboardInterrupt:
-        logging.info("ユーザーによって監視が停止されました")
-    except Exception as e:
-        logging.error(f"予期しないエラー: {e}")
+        logging.info("ユーザーによって監視が中断されました。")
+    except Exception:
+        logging.exception("致命的なエラーが発生しました。")
         raise
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

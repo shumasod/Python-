@@ -8,9 +8,8 @@ from typing import List, Dict
 class ALBLogAnalyzer:
     def __init__(self, log_file: str):
         """
-        ALBログを分析するクラス
         Args:
-            log_file: ALBログファイルのパス
+            log_file: 
         """
         self.log_file = log_file
         self.logs = []

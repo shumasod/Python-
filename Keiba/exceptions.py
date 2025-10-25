@@ -1,102 +1,183 @@
-# exceptions.py
-class BaseJRAException(Exception):
-    """JRA予測アプリの基本例外クラス"""
-    pass
+"""
+カスタム例外クラス
+"""
 
-class PredictionError(BaseJRAException):
-    """予測処理中のエラーを表すカスタム例外
+from typing import Optional, Dict, Any
+
+
+class BaseAppException(Exception):
+    """アプリケーションの基底例外クラス"""
     
-    Args:
-        message: エラーメッセージ
-        details: エラーの詳細情報（オプション）
-    """
-    def __init__(self, message: str, details: Optional[dict] = None):
-        self.details = details
-        super().__init__(message)
-
-class DataProcessingError(BaseJRAException):
-    """データ処理中のエラーを表すカスタム例外
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """
+        Args:
+            message: エラーメッセージ
+            details: 追加の詳細情報
+        """
+        self.message = message
+        self.details = details or {}
+        super().__init__(self.message)
     
-    Args:
-        message: エラーメッセージ
-        column: エラーが発生したカラム名（オプション）
-    """
-    def __init__(self, message: str, column: Optional[str] = None):
-        self.column = column
-        super().__init__(message)
-
-class ModelError(BaseJRAException):
-    """モデル関連のエラーを表すカスタム例外"""
-    pass
-
-# schemas.py
-from pydantic import BaseModel, Field, validator
-from typing import List, Dict, Any, Optional
-import re
-
-class HorseDataInput(BaseModel):
-    """馬のデータ入力スキーマ
-    
-    競馬予測に必要な馬のデータを定義します。
-    """
-    枠番: int = Field(..., ge=1, le=8, description="馬の枠番（1〜8）")
-    馬番: int = Field(..., ge=1, le=18, description="馬の馬番（1〜18）")
-    斤量: float = Field(..., ge=45.0, le=65.0, description="馬の斤量（kg）")
-    人気: int = Field(..., ge=1, description="人気順位")
-    単勝: float = Field(..., ge=1.0, description="単勝オッズ")
-    馬体重: int = Field(..., ge=300, le=600, description="馬の体重（kg）")
-    増減: int = Field(..., ge=-20, le=20, description="前走からの体重増減（kg）")
-    性齢: str = Field(..., description="馬の性別と年齢（例: 牡3）")
-    騎手: str = Field(..., description="騎手名")
-
-    @validator('性齢')
-    def validate_gender_age(cls, v):
-        """性齢のフォーマットを検証"""
-        if not re.match(r'^(牡|牝|セ)[2-9]$', v):
-            raise ValueError("性齢は「牡/牝/セ」と「2-9」の組み合わせである必要があります（例: 牡3）")
-        return v
-
-    @validator('騎手')
-    def validate_jockey(cls, v):
-        """騎手名が空でないことを確認"""
-        if not v.strip():
-            raise ValueError("騎手名は必須です")
-        return v.strip()
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "枠番": 1,
-                "馬番": 1,
-                "斤量": 54.0,
-                "人気": 3,
-                "単勝": 4.5,
-                "馬体重": 480,
-                "増減": 2,
-                "性齢": "牡3",
-                "騎手": "福永祐一"
-            }
+    def to_dict(self) -> Dict[str, Any]:
+        """例外情報を辞書形式で返す"""
+        return {
+            'error': self.__class__.__name__,
+            'message': self.message,
+            'details': self.details
         }
 
-class PredictionResponse(BaseModel):
-    """予測結果のレスポンススキーマ
-    
-    モデルの予測結果と信頼度を含みます。
-    """
-    prediction: int = Field(..., description="予測結果（着順）")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="予測の信頼度（0.0〜1.0）")
-    details: Optional[Dict[str, Any]] = Field(None, description="予測の詳細情報（オプション）")
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "prediction": 1,
-                "confidence": 0.75,
-                "details": {
-                    "feature_importance": {
-                        "単勝": 0.35,
-                        "馬体重": 0.25
-                    }
-                }
-            }
-        }
+class PredictionError(BaseAppException):
+    """予測処理に関するエラー"""
+    
+    def __init__(self, message: str = "予測の実行中にエラーが発生しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class DataProcessingError(BaseAppException):
+    """データ処理に関するエラー"""
+    
+    def __init__(self, message: str = "データ処理中にエラーが発生しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class ModelError(BaseAppException):
+    """モデルに関するエラー"""
+    
+    def __init__(self, message: str = "モデルエラーが発生しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class ModelNotFoundError(ModelError):
+    """モデルが見つからない場合のエラー"""
+    
+    def __init__(self, model_path: str):
+        message = f"モデルが見つかりません: {model_path}"
+        details = {'model_path': model_path}
+        super().__init__(message, details)
+
+
+class ModelLoadError(ModelError):
+    """モデルの読み込みに失敗した場合のエラー"""
+    
+    def __init__(self, model_path: str, reason: Optional[str] = None):
+        message = f"モデルの読み込みに失敗しました: {model_path}"
+        details = {'model_path': model_path}
+        if reason:
+            details['reason'] = reason
+        super().__init__(message, details)
+
+
+class ModelSaveError(ModelError):
+    """モデルの保存に失敗した場合のエラー"""
+    
+    def __init__(self, model_path: str, reason: Optional[str] = None):
+        message = f"モデルの保存に失敗しました: {model_path}"
+        details = {'model_path': model_path}
+        if reason:
+            details['reason'] = reason
+        super().__init__(message, details)
+
+
+class DataValidationError(DataProcessingError):
+    """データバリデーションエラー"""
+    
+    def __init__(self, field: str, reason: str):
+        message = f"データバリデーションエラー: {field}"
+        details = {'field': field, 'reason': reason}
+        super().__init__(message, details)
+
+
+class ScrapingError(DataProcessingError):
+    """スクレイピング処理に関するエラー"""
+    
+    def __init__(self, url: str, reason: Optional[str] = None):
+        message = f"データのスクレイピングに失敗しました: {url}"
+        details = {'url': url}
+        if reason:
+            details['reason'] = reason
+        super().__init__(message, details)
+
+
+class FeatureExtractionError(DataProcessingError):
+    """特徴量抽出エラー"""
+    
+    def __init__(self, message: str = "特徴量の抽出に失敗しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class TrainingError(ModelError):
+    """モデルのトレーニングエラー"""
+    
+    def __init__(self, message: str = "モデルのトレーニングに失敗しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class ConfigurationError(BaseAppException):
+    """設定に関するエラー"""
+    
+    def __init__(self, parameter: str, reason: str):
+        message = f"設定エラー: {parameter}"
+        details = {'parameter': parameter, 'reason': reason}
+        super().__init__(message, details)
+
+
+class ResourceNotFoundError(BaseAppException):
+    """リソースが見つからない場合のエラー"""
+    
+    def __init__(self, resource_type: str, resource_id: str):
+        message = f"{resource_type}が見つかりません: {resource_id}"
+        details = {'resource_type': resource_type, 'resource_id': resource_id}
+        super().__init__(message, details)
+
+
+class InvalidInputError(BaseAppException):
+    """入力データが無効な場合のエラー"""
+    
+    def __init__(self, message: str = "入力データが無効です", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class APIError(BaseAppException):
+    """API呼び出しに関するエラー"""
+    
+    def __init__(self, endpoint: str, status_code: int, reason: Optional[str] = None):
+        message = f"APIエラー: {endpoint} (Status: {status_code})"
+        details = {'endpoint': endpoint, 'status_code': status_code}
+        if reason:
+            details['reason'] = reason
+        super().__init__(message, details)
+
+
+class DatabaseError(BaseAppException):
+    """データベース操作に関するエラー"""
+    
+    def __init__(self, operation: str, reason: Optional[str] = None):
+        message = f"データベースエラー: {operation}"
+        details = {'operation': operation}
+        if reason:
+            details['reason'] = reason
+        super().__init__(message, details)
+
+
+class AuthenticationError(BaseAppException):
+    """認証エラー"""
+    
+    def __init__(self, message: str = "認証に失敗しました", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class AuthorizationError(BaseAppException):
+    """認可エラー"""
+    
+    def __init__(self, message: str = "権限がありません", details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, details)
+
+
+class RateLimitError(BaseAppException):
+    """レート制限エラー"""
+    
+    def __init__(self, limit: int, window: str):
+        message = f"レート制限を超えました: {limit}リクエスト/{window}"
+        details = {'limit': limit, 'window': window}
+        super().__init__(message, details)

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env 
 """
 Excelファイル結合ツール
 複数のExcelファイルを効率的に結合し、様々な結合オプションを提供します。

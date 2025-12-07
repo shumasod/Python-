@@ -1,270 +1,496 @@
 #!/usr/bin/env python3
 """
-Simple Redis Clone Implementation
-サポートするコマンド: SET, GET, DEL, EXISTS, EXPIRE, TTL, KEYS, INCR, DECR
+Redis Clone Server
+
+シンプルなインメモリKey-Valueストア。
+RESP (Redis Serialization Protocol) 互換のレスポンスを返す。
+
+サポートコマンド:
+  - 文字列: SET, GET, APPEND, STRLEN
+  - 数値: INCR, DECR, INCRBY, DECRBY
+  - キー: DEL, EXISTS, EXPIRE, TTL, KEYS, RENAME, TYPE
+  - サーバー: PING, ECHO, INFO, DBSIZE, FLUSHDB
 """
 
+import logging
+import re
+import signal
 import socket
 import threading
 import time
-from typing import Dict, Optional, Any
-from datetime import datetime, timedelta
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
-class RedisClone:
-    def __init__(self, host: str = '127.0.0.1', port: int = 6380):
-        self.host = host
-        self.port = port
-        self.data: Dict[str, Any] = {}
-        self.expiry: Dict[str, float] = {}
-        self.lock = threading.Lock()
-        self.running = False
-        
-    def _is_expired(self, key: str) -> bool:
-        """キーが期限切れかどうかチェック"""
-        if key in self.expiry:
-            if time.time() > self.expiry[key]:
-                with self.lock:
-                    del self.data[key]
-                    del self.expiry[key]
-                return True
-        return False
-    
-    def set_value(self, key: str, value: str, ex: Optional[int] = None) -> str:
-        """SET コマンド"""
-        with self.lock:
-            self.data[key] = value
-            if ex:
-                self.expiry[key] = time.time() + ex
-            elif key in self.expiry:
-                del self.expiry[key]
-        return "OK"
-    
-    def get_value(self, key: str) -> Optional[str]:
-        """GET コマンド"""
-        if self._is_expired(key):
-            return None
-        return self.data.get(key)
-    
-    def delete_key(self, key: str) -> int:
-        """DEL コマンド"""
-        with self.lock:
-            if key in self.data:
-                del self.data[key]
-                if key in self.expiry:
-                    del self.expiry[key]
-                return 1
-        return 0
-    
-    def exists(self, key: str) -> int:
-        """EXISTS コマンド"""
-        if self._is_expired(key):
-            return 0
-        return 1 if key in self.data else 0
-    
-    def expire(self, key: str, seconds: int) -> int:
-        """EXPIRE コマンド"""
-        if key not in self.data or self._is_expired(key):
-            return 0
-        with self.lock:
-            self.expiry[key] = time.time() + seconds
-        return 1
-    
-    def ttl(self, key: str) -> int:
-        """TTL コマンド"""
-        if key not in self.data:
-            return -2
-        if self._is_expired(key):
-            return -2
-        if key not in self.expiry:
+# =============================================================================
+# RESP Protocol
+# =============================================================================
+
+
+class RespType(Enum):
+    """RESPデータ型"""
+
+    SIMPLE_STRING = "+"
+    ERROR = "-"
+    INTEGER = ":"
+    BULK_STRING = "$"
+    ARRAY = "*"
+
+
+class Resp:
+    """RESPプロトコル エンコーダー"""
+
+    @staticmethod
+    def ok() -> str:
+        return "+OK\r\n"
+
+    @staticmethod
+    def pong() -> str:
+        return "+PONG\r\n"
+
+    @staticmethod
+    def simple_string(value: str) -> str:
+        return f"+{value}\r\n"
+
+    @staticmethod
+    def error(message: str) -> str:
+        return f"-ERR {message}\r\n"
+
+    @staticmethod
+    def integer(value: int) -> str:
+        return f":{value}\r\n"
+
+    @staticmethod
+    def bulk_string(value: str | None) -> str:
+        if value is None:
+            return "$-1\r\n"
+        return f"${len(value)}\r\n{value}\r\n"
+
+    @staticmethod
+    def array(items: list[str]) -> str:
+        if items is None:
+            return "*-1\r\n"
+        response = f"*{len(items)}\r\n"
+        for item in items:
+            response += Resp.bulk_string(item)
+        return response
+
+
+# =============================================================================
+# Storage Layer
+# =============================================================================
+
+
+@dataclass
+class Entry:
+    """ストレージエントリ"""
+
+    value: Any
+    expires_at: float | None = None
+
+    def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
+        return time.time() > self.expires_at
+
+    def ttl(self) -> int:
+        if self.expires_at is None:
             return -1
-        remaining = int(self.expiry[key] - time.time())
+        remaining = int(self.expires_at - time.time())
         return remaining if remaining > 0 else -2
-    
-    def keys(self, pattern: str = "*") -> list:
-        """KEYS コマンド（簡易版）"""
-        # 期限切れキーをクリーンアップ
-        expired_keys = [k for k in self.data.keys() if self._is_expired(k)]
-        
+
+
+class Storage:
+    """スレッドセーフなKey-Valueストレージ"""
+
+    def __init__(self) -> None:
+        self._data: dict[str, Entry] = {}
+        self._lock = threading.RLock()
+
+    def get(self, key: str) -> Entry | None:
+        """エントリを取得（期限切れチェック付き）"""
+        with self._lock:
+            entry = self._data.get(key)
+            if entry is None:
+                return None
+            if entry.is_expired():
+                del self._data[key]
+                return None
+            return entry
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        ex: int | None = None,
+        nx: bool = False,
+        xx: bool = False,
+    ) -> bool:
+        """値を設定"""
+        with self._lock:
+            exists = self.get(key) is not None
+
+            if nx and exists:
+                return False
+            if xx and not exists:
+                return False
+
+            expires_at = time.time() + ex if ex else None
+            self._data[key] = Entry(value=value, expires_at=expires_at)
+            return True
+
+    def delete(self, *keys: str) -> int:
+        """キーを削除"""
+        count = 0
+        with self._lock:
+            for key in keys:
+                if key in self._data:
+                    del self._data[key]
+                    count += 1
+        return count
+
+    def exists(self, *keys: str) -> int:
+        """存在するキーの数を返す"""
+        count = 0
+        for key in keys:
+            if self.get(key) is not None:
+                count += 1
+        return count
+
+    def expire(self, key: str, seconds: int) -> bool:
+        """有効期限を設定"""
+        with self._lock:
+            entry = self.get(key)
+            if entry is None:
+                return False
+            entry.expires_at = time.time() + seconds
+            return True
+
+    def keys(self, pattern: str = "*") -> list[str]:
+        """パターンにマッチするキーを取得"""
+        with self._lock:
+            # 期限切れをクリーンアップ
+            valid_keys = [k for k in self._data if self.get(k) is not None]
+
         if pattern == "*":
-            return list(self.data.keys())
-        
-        # 簡単なパターンマッチング
-        import re
-        regex_pattern = pattern.replace("*", ".*").replace("?", ".")
-        return [k for k in self.data.keys() if re.match(regex_pattern, k)]
-    
-    def incr(self, key: str) -> Optional[int]:
-        """INCR コマンド"""
-        with self.lock:
-            if key not in self.data:
-                self.data[key] = "1"
-                return 1
-            
-            try:
-                value = int(self.data[key])
-                value += 1
-                self.data[key] = str(value)
-                return value
-            except ValueError:
-                return None
-    
-    def decr(self, key: str) -> Optional[int]:
-        """DECR コマンド"""
-        with self.lock:
-            if key not in self.data:
-                self.data[key] = "-1"
-                return -1
-            
-            try:
-                value = int(self.data[key])
-                value -= 1
-                self.data[key] = str(value)
-                return value
-            except ValueError:
-                return None
-    
-    def parse_command(self, command_str: str) -> str:
-        """コマンドをパースして実行"""
-        parts = command_str.strip().split()
-        if not parts:
-            return "-ERR empty command\r\n"
-        
-        cmd = parts[0].upper()
-        
-        try:
-            if cmd == "SET":
-                if len(parts) < 3:
-                    return "-ERR wrong number of arguments for 'set' command\r\n"
-                key, value = parts[1], parts[2]
-                ex = None
-                if len(parts) >= 5 and parts[3].upper() == "EX":
-                    ex = int(parts[4])
-                result = self.set_value(key, value, ex)
-                return f"+{result}\r\n"
-            
-            elif cmd == "GET":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'get' command\r\n"
-                value = self.get_value(parts[1])
-                if value is None:
-                    return "$-1\r\n"
-                return f"${len(value)}\r\n{value}\r\n"
-            
-            elif cmd == "DEL":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'del' command\r\n"
-                result = self.delete_key(parts[1])
-                return f":{result}\r\n"
-            
-            elif cmd == "EXISTS":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'exists' command\r\n"
-                result = self.exists(parts[1])
-                return f":{result}\r\n"
-            
-            elif cmd == "EXPIRE":
-                if len(parts) != 3:
-                    return "-ERR wrong number of arguments for 'expire' command\r\n"
-                result = self.expire(parts[1], int(parts[2]))
-                return f":{result}\r\n"
-            
-            elif cmd == "TTL":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'ttl' command\r\n"
-                result = self.ttl(parts[1])
-                return f":{result}\r\n"
-            
-            elif cmd == "KEYS":
-                pattern = parts[1] if len(parts) > 1 else "*"
-                keys = self.keys(pattern)
-                response = f"*{len(keys)}\r\n"
-                for key in keys:
-                    response += f"${len(key)}\r\n{key}\r\n"
-                return response
-            
-            elif cmd == "INCR":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'incr' command\r\n"
-                result = self.incr(parts[1])
-                if result is None:
-                    return "-ERR value is not an integer\r\n"
-                return f":{result}\r\n"
-            
-            elif cmd == "DECR":
-                if len(parts) != 2:
-                    return "-ERR wrong number of arguments for 'decr' command\r\n"
-                result = self.decr(parts[1])
-                if result is None:
-                    return "-ERR value is not an integer\r\n"
-                return f":{result}\r\n"
-            
-            elif cmd == "PING":
-                return "+PONG\r\n"
-            
-            elif cmd == "QUIT":
-                return "+OK\r\n"
-            
+            return valid_keys
+
+        regex = re.compile(pattern.replace("*", ".*").replace("?", "."))
+        return [k for k in valid_keys if regex.fullmatch(k)]
+
+    def rename(self, old_key: str, new_key: str) -> bool:
+        """キーをリネーム"""
+        with self._lock:
+            entry = self.get(old_key)
+            if entry is None:
+                return False
+            self._data[new_key] = entry
+            del self._data[old_key]
+            return True
+
+    def size(self) -> int:
+        """有効なキーの数"""
+        return len(self.keys())
+
+    def flush(self) -> None:
+        """全データ削除"""
+        with self._lock:
+            self._data.clear()
+
+
+# =============================================================================
+# Command System
+# =============================================================================
+
+
+@dataclass
+class CommandContext:
+    """コマンド実行コンテキスト"""
+
+    storage: Storage
+    args: list[str]
+    client_address: tuple[str, int]
+
+
+class Command(ABC):
+    """コマンドの基底クラス"""
+
+    name: str
+    min_args: int = 0
+    max_args: int | None = None
+
+    @abstractmethod
+    def execute(self, ctx: CommandContext) -> str:
+        """コマンドを実行"""
+
+    def validate_args(self, args: list[str]) -> str | None:
+        """引数を検証。エラーがあればエラーメッセージを返す"""
+        if len(args) < self.min_args:
+            return f"wrong number of arguments for '{self.name}' command"
+        if self.max_args is not None and len(args) > self.max_args:
+            return f"wrong number of arguments for '{self.name}' command"
+        return None
+
+
+# --- 文字列コマンド ---
+
+
+class SetCommand(Command):
+    name = "SET"
+    min_args = 2
+
+    def execute(self, ctx: CommandContext) -> str:
+        key, value = ctx.args[0], ctx.args[1]
+        ex = None
+        nx = False
+        xx = False
+
+        i = 2
+        while i < len(ctx.args):
+            opt = ctx.args[i].upper()
+            if opt == "EX" and i + 1 < len(ctx.args):
+                try:
+                    ex = int(ctx.args[i + 1])
+                    i += 2
+                except ValueError:
+                    return Resp.error("invalid expire time")
+            elif opt == "NX":
+                nx = True
+                i += 1
+            elif opt == "XX":
+                xx = True
+                i += 1
             else:
-                return f"-ERR unknown command '{cmd}'\r\n"
-        
-        except Exception as e:
-            return f"-ERR {str(e)}\r\n"
-    
-    def handle_client(self, client_socket: socket.socket, address):
-        """クライアント接続を処理"""
-        print(f"[+] クライアント接続: {address}")
-        
-        try:
-            while True:
-                data = client_socket.recv(1024).decode('utf-8')
-                if not data:
-                    break
-                
-                print(f"[>] 受信: {data.strip()}")
-                response = self.parse_command(data)
-                print(f"[<] 送信: {response.strip()}")
-                client_socket.send(response.encode('utf-8'))
-                
-                if data.strip().upper() == "QUIT":
-                    break
-        
-        except Exception as e:
-            print(f"[-] エラー: {e}")
-        
-        finally:
-            client_socket.close()
-            print(f"[-] クライアント切断: {address}")
-    
-    def start(self):
-        """サーバー起動"""
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        
-        self.running = True
-        print(f"[*] Redis Clone サーバー起動: {self.host}:{self.port}")
-        print(f"[*] 接続待機中...")
-        
-        try:
-            while self.running:
-                client_socket, address = server_socket.accept()
-                client_thread = threading.Thread(
-                    target=self.handle_client,
-                    args=(client_socket, address)
-                )
-                client_thread.daemon = True
-                client_thread.start()
-        
-        except KeyboardInterrupt:
-            print("\n[*] サーバー停止中...")
-        
-        finally:
-            server_socket.close()
-            print("[*] サーバー停止完了")
+                i += 1
+
+        success = ctx.storage.set(key, value, ex=ex, nx=nx, xx=xx)
+        return Resp.ok() if success else Resp.bulk_string(None)
 
 
-if __name__ == "__main__":
-    redis = RedisClone(host='127.0.0.1', port=6380)
-    redis.start()
+class GetCommand(Command):
+    name = "GET"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        entry = ctx.storage.get(ctx.args[0])
+        if entry is None:
+            return Resp.bulk_string(None)
+        return Resp.bulk_string(str(entry.value))
+
+
+class AppendCommand(Command):
+    name = "APPEND"
+    min_args = 2
+    max_args = 2
+
+    def execute(self, ctx: CommandContext) -> str:
+        key, value = ctx.args[0], ctx.args[1]
+        entry = ctx.storage.get(key)
+
+        if entry is None:
+            ctx.storage.set(key, value)
+            return Resp.integer(len(value))
+
+        new_value = str(entry.value) + value
+        ctx.storage.set(key, new_value)
+        return Resp.integer(len(new_value))
+
+
+class StrlenCommand(Command):
+    name = "STRLEN"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        entry = ctx.storage.get(ctx.args[0])
+        if entry is None:
+            return Resp.integer(0)
+        return Resp.integer(len(str(entry.value)))
+
+
+# --- 数値コマンド ---
+
+
+class IncrCommand(Command):
+    name = "INCR"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        return self._modify(ctx, 1)
+
+    def _modify(self, ctx: CommandContext, delta: int) -> str:
+        key = ctx.args[0]
+        entry = ctx.storage.get(key)
+
+        if entry is None:
+            ctx.storage.set(key, str(delta))
+            return Resp.integer(delta)
+
+        try:
+            value = int(entry.value) + delta
+            ctx.storage.set(key, str(value))
+            return Resp.integer(value)
+        except ValueError:
+            return Resp.error("value is not an integer")
+
+
+class DecrCommand(IncrCommand):
+    name = "DECR"
+
+    def execute(self, ctx: CommandContext) -> str:
+        return self._modify(ctx, -1)
+
+
+class IncrByCommand(IncrCommand):
+    name = "INCRBY"
+    min_args = 2
+    max_args = 2
+
+    def execute(self, ctx: CommandContext) -> str:
+        try:
+            delta = int(ctx.args[1])
+        except ValueError:
+            return Resp.error("value is not an integer")
+        ctx.args = [ctx.args[0]]
+        return self._modify(ctx, delta)
+
+
+class DecrByCommand(IncrByCommand):
+    name = "DECRBY"
+
+    def execute(self, ctx: CommandContext) -> str:
+        try:
+            delta = int(ctx.args[1])
+        except ValueError:
+            return Resp.error("value is not an integer")
+        ctx.args = [ctx.args[0]]
+        return self._modify(ctx, -delta)
+
+
+# --- キーコマンド ---
+
+
+class DelCommand(Command):
+    name = "DEL"
+    min_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        count = ctx.storage.delete(*ctx.args)
+        return Resp.integer(count)
+
+
+class ExistsCommand(Command):
+    name = "EXISTS"
+    min_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        count = ctx.storage.exists(*ctx.args)
+        return Resp.integer(count)
+
+
+class ExpireCommand(Command):
+    name = "EXPIRE"
+    min_args = 2
+    max_args = 2
+
+    def execute(self, ctx: CommandContext) -> str:
+        try:
+            seconds = int(ctx.args[1])
+        except ValueError:
+            return Resp.error("invalid expire time")
+
+        success = ctx.storage.expire(ctx.args[0], seconds)
+        return Resp.integer(1 if success else 0)
+
+
+class TtlCommand(Command):
+    name = "TTL"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        entry = ctx.storage.get(ctx.args[0])
+        if entry is None:
+            return Resp.integer(-2)
+        return Resp.integer(entry.ttl())
+
+
+class KeysCommand(Command):
+    name = "KEYS"
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        pattern = ctx.args[0] if ctx.args else "*"
+        keys = ctx.storage.keys(pattern)
+        return Resp.array(keys)
+
+
+class RenameCommand(Command):
+    name = "RENAME"
+    min_args = 2
+    max_args = 2
+
+    def execute(self, ctx: CommandContext) -> str:
+        success = ctx.storage.rename(ctx.args[0], ctx.args[1])
+        if not success:
+            return Resp.error("no such key")
+        return Resp.ok()
+
+
+class TypeCommand(Command):
+    name = "TYPE"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        entry = ctx.storage.get(ctx.args[0])
+        if entry is None:
+            return Resp.simple_string("none")
+        return Resp.simple_string("string")
+
+
+# --- サーバーコマンド ---
+
+
+class PingCommand(Command):
+    name = "PING"
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        if ctx.args:
+            return Resp.bulk_string(ctx.args[0])
+        return Resp.pong()
+
+
+class EchoCommand(Command):
+    name = "ECHO"
+    min_args = 1
+    max_args = 1
+
+    def execute(self, ctx: CommandContext) -> str:
+        return Resp.bulk_string(ctx.args[0])
+
+
+class DbSizeCommand(Command):
+    name = "DBSIZE"
+    max_args = 0
+
+    def execute(self, ctx: CommandContext) -> str:
+        return Resp.integer(ctx.storage.size())
+
+
+class FlushDbCommand(Command):
+    name = "FLUSHDB"
+    max_args = 0
+
+    de

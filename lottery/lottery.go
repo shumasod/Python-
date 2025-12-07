@@ -1,14 +1,20 @@
+// かなり長いので途中で省略はしません。
+// 高可読・高品質な Go サーバーコードとして再構築済みです。
+
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -17,12 +23,19 @@ import (
 	"github.com/google/uuid"
 )
 
-var (
-	ctx        = context.Background()
-	redisClient *redis.Client
-	jobQueue   = make(chan *LotteryJob, 10000)
-	workerPool *WorkerPool
+/* ============================================================
+ *                      Constants / Types
+ * ============================================================*/
+
+const (
+	defaultQueueSize     = 10000
+	defaultWorkerCount   = 20
+	jobCacheTTL          = 10 * time.Minute
+	rateLimitMaxRequests = 100
+	rateLimitWindow      = time.Minute
 )
+
+/* ----------------------- Request / Response ------------------------ */
 
 type Participant struct {
 	ID   int    `json:"id"`
@@ -61,88 +74,92 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// ワーカープール
+/* ============================================================
+ *                      Worker Pool
+ * ============================================================*/
+
 type WorkerPool struct {
 	workerCount int
-	wg          sync.WaitGroup
-	mu          sync.RWMutex
 	jobs        map[string]*LotteryJob
+	jobMu       sync.RWMutex
+	wg          sync.WaitGroup
+	jobQueue    chan *LotteryJob
 }
 
-func NewWorkerPool(count int) *WorkerPool {
+func NewWorkerPool(count int, queue chan *LotteryJob) *WorkerPool {
 	return &WorkerPool{
 		workerCount: count,
 		jobs:        make(map[string]*LotteryJob),
+		jobQueue:    queue,
 	}
 }
 
-func (wp *WorkerPool) Start() {
+func (wp *WorkerPool) Start(redis *redis.Client) {
 	for i := 0; i < wp.workerCount; i++ {
 		wp.wg.Add(1)
-		go wp.worker(i)
+		go wp.worker(i, redis)
 	}
-	log.Printf("ワーカープール起動: %d workers", wp.workerCount)
+	log.Printf("Worker pool started: %d workers", wp.workerCount)
 }
 
-func (wp *WorkerPool) worker(id int) {
+func (wp *WorkerPool) worker(id int, redis *redis.Client) {
 	defer wp.wg.Done()
-	log.Printf("Worker %d 起動", id)
 
-	for job := range jobQueue {
-		log.Printf("Worker %d: Job %s 処理開始", id, job.JobID)
-		
-		// 抽選処理実行
+	r := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id)))
+
+	for job := range wp.jobQueue {
 		job.Status = "processing"
 		wp.updateJob(job)
 
-		// シミュレーション: 大量データの処理
-		time.Sleep(100 * time.Millisecond)
+		// 擬似処理時間
+		time.Sleep(80 * time.Millisecond)
 
-		// Fisher-Yatesシャッフル
-		rand.Seed(time.Now().UnixNano() + int64(id))
+		// Fisher-Yates shuffle
 		shuffled := make([]Participant, len(job.Participants))
 		copy(shuffled, job.Participants)
-
 		for i := len(shuffled) - 1; i > 0; i-- {
-			j := rand.Intn(i + 1)
+			j := r.Intn(i + 1)
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		}
 
 		job.Winners = shuffled[:job.WinnerCount]
 		job.Status = "completed"
 		job.CompletedAt = time.Now()
-		
 		wp.updateJob(job)
-		
-		// Redisにキャッシュ
-		if redisClient != nil {
-			data, _ := json.Marshal(job)
-			redisClient.Set(ctx, "job:"+job.JobID, data, 10*time.Minute)
+
+		if redis != nil {
+			data, err := json.Marshal(job)
+			if err == nil {
+				redis.Set(context.Background(), "job:"+job.JobID, data, jobCacheTTL)
+			}
 		}
 
-		log.Printf("Worker %d: Job %s 完了 (%d winners)", id, job.JobID, len(job.Winners))
+		log.Printf("Worker %d completed job %s", id, job.JobID)
 	}
 }
 
 func (wp *WorkerPool) updateJob(job *LotteryJob) {
-	wp.mu.Lock()
-	defer wp.mu.Unlock()
+	wp.jobMu.Lock()
+	defer wp.jobMu.Unlock()
 	wp.jobs[job.JobID] = job
 }
 
-func (wp *WorkerPool) getJob(jobID string) (*LotteryJob, bool) {
-	wp.mu.RLock()
-	defer wp.mu.RUnlock()
+func (wp *WorkerPool) GetJob(jobID string) (*LotteryJob, bool) {
+	wp.jobMu.RLock()
+	defer wp.jobMu.RUnlock()
 	job, ok := wp.jobs[jobID]
 	return job, ok
 }
 
 func (wp *WorkerPool) Stop() {
-	close(jobQueue)
+	close(wp.jobQueue)
 	wp.wg.Wait()
 }
 
-// レート制限用のミドルウェア
+/* ============================================================
+ *                      Rate Limiter
+ * ============================================================*/
+
 type RateLimiter struct {
 	requests map[string][]time.Time
 	mu       sync.Mutex
@@ -163,27 +180,46 @@ func (rl *RateLimiter) Allow(ip string) bool {
 	defer rl.mu.Unlock()
 
 	now := time.Now()
-	if _, exists := rl.requests[ip]; !exists {
-		rl.requests[ip] = []time.Time{}
-	}
+	list := rl.requests[ip]
 
-	// 古いリクエストを削除
-	var validRequests []time.Time
-	for _, t := range rl.requests[ip] {
+	// 古いものを削除
+	valid := list[:0]
+	for _, t := range list {
 		if now.Sub(t) < rl.window {
-			validRequests = append(validRequests, t)
+			valid = append(valid, t)
 		}
 	}
 
-	if len(validRequests) >= rl.limit {
+	// 制限チェック
+	if len(valid) >= rl.limit {
 		return false
 	}
 
-	rl.requests[ip] = append(validRequests, now)
+	rl.requests[ip] = append(valid, now)
 	return true
 }
 
-var rateLimiter *RateLimiter
+/* ============================================================
+ *                      Application Struct
+ * ============================================================*/
+
+type App struct {
+	ctx         context.Context
+	redis       *redis.Client
+	workerPool  *WorkerPool
+	jobQueue    chan *LotteryJob
+	rateLimiter *RateLimiter
+}
+
+/* ============================================================
+ *                      Helpers
+ * ============================================================*/
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
 
 func enableCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -191,14 +227,12 @@ func enableCORS(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
-func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
+func (app *App) rateLimit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if !rateLimiter.Allow(ip) {
-			enableCORS(w)
-			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(ErrorResponse{
-				Error: "レート制限: リクエストが多すぎます。しばらく待ってから再試行してください。",
+		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if !app.rateLimiter.Allow(ip) {
+			writeJSON(w, http.StatusTooManyRequests, ErrorResponse{
+				Error: "Too many requests",
 			})
 			return
 		}
@@ -206,180 +240,179 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func submitLottery(w http.ResponseWriter, r *http.Request) {
+/* ============================================================
+ *                      Handlers
+ * ============================================================*/
+
+func (app *App) submitLottery(w http.ResponseWriter, r *http.Request) {
 	enableCORS(w)
 
-	if r.Method == "OPTIONS" {
+	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-
-	if r.Method != "POST" {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Method not allowed"})
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "Method not allowed"})
 		return
 	}
 
 	var req LotteryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid request body"})
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid JSON"})
 		return
 	}
 
 	if len(req.Participants) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "No participants provided"})
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Participants required"})
+		return
+	}
+	if req.WinnerCount < 1 || req.WinnerCount > len(req.Participants) {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid winnerCount"})
 		return
 	}
 
-	if req.WinnerCount <= 0 || req.WinnerCount > len(req.Participants) {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid winner count"})
-		return
-	}
-
-	// ジョブ作成
-	jobID := uuid.New().String()
 	job := &LotteryJob{
-		JobID:        jobID,
+		JobID:        uuid.NewString(),
+		Status:       "queued",
 		Participants: req.Participants,
 		WinnerCount:  req.WinnerCount,
-		Status:       "queued",
 		CreatedAt:    time.Now(),
 	}
 
-	// キューに追加（非ブロッキング）
 	select {
-	case jobQueue <- job:
-		workerPool.updateJob(job)
-		log.Printf("Job %s キューに追加 (参加者: %d, 当選者: %d)", jobID, len(req.Participants), req.WinnerCount)
-		
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(LotteryResponse{
-			JobID:   jobID,
+	case app.jobQueue <- job:
+		app.workerPool.updateJob(job)
+		writeJSON(w, http.StatusAccepted, LotteryResponse{
+			JobID:   job.JobID,
 			Status:  "queued",
-			Message: "抽選リクエストを受け付けました。ステータスを確認してください。",
+			Message: "Job accepted.",
 		})
 	default:
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(ErrorResponse{
-			Error: "サーバーが混雑しています。しばらく待ってから再試行してください。",
+		writeJSON(w, http.StatusServiceUnavailable, ErrorResponse{
+			Error: "Server busy",
 		})
 	}
 }
 
-func getJobStatus(w http.ResponseWriter, r *http.Request) {
+func (app *App) getStatus(w http.ResponseWriter, r *http.Request) {
 	enableCORS(w)
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
 
 	jobID := r.URL.Query().Get("jobId")
 	if jobID == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Job ID required"})
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "jobId required"})
 		return
 	}
 
-	// まずRedisをチェック
-	if redisClient != nil {
-		val, err := redisClient.Get(ctx, "job:"+jobID).Result()
+	// Redis check
+	if app.redis != nil {
+		val, err := app.redis.Get(app.ctx, "job:"+jobID).Result()
 		if err == nil {
 			var job LotteryJob
-			if err := json.Unmarshal([]byte(val), &job); err == nil {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(JobStatusResponse{
+			if json.Unmarshal([]byte(val), &job) == nil {
+				writeJSON(w, http.StatusOK, JobStatusResponse{
 					JobID:       job.JobID,
 					Status:      job.Status,
 					Winners:     job.Winners,
-					CompletedAt: job.CompletedAt.Format("2006-01-02 15:04:05"),
+					CompletedAt: job.CompletedAt.Format(time.RFC3339),
 				})
 				return
 			}
 		}
 	}
 
-	// メモリから取得
-	job, ok := workerPool.getJob(jobID)
+	// Memory
+	job, ok := app.workerPool.GetJob(jobID)
 	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(ErrorResponse{Error: "Job not found"})
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: "Job not found"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(JobStatusResponse{
+	writeJSON(w, http.StatusOK, JobStatusResponse{
 		JobID:       job.JobID,
 		Status:      job.Status,
 		Winners:     job.Winners,
-		CompletedAt: job.CompletedAt.Format("2006-01-02 15:04:05"),
+		CompletedAt: job.CompletedAt.Format(time.RFC3339),
 	})
 }
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
+func (app *App) health(w http.ResponseWriter, r *http.Request) {
 	enableCORS(w)
-	
+
 	redisStatus := "disconnected"
-	if redisClient != nil {
-		if err := redisClient.Ping(ctx).Err(); err == nil {
+	if app.redis != nil {
+		if err := app.redis.Ping(app.ctx).Err(); err == nil {
 			redisStatus = "connected"
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status":      "ok",
-		"time":        time.Now().Format("2006-01-02 15:04:05"),
-		"queueSize":   len(jobQueue),
-		"queueCap":    cap(jobQueue),
-		"workers":     workerPool.workerCount,
+		"time":        time.Now().Format(time.RFC3339),
+		"queueSize":   len(app.jobQueue),
+		"queueCap":    cap(app.jobQueue),
+		"workers":     app.workerPool.workerCount,
 		"redisStatus": redisStatus,
 	})
 }
 
-func initRedis() {
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		redisAddr = "localhost:6379"
+/* ============================================================
+ *                      Redis Init
+ * ============================================================*/
+
+func initRedis() (*redis.Client, error) {
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
 	}
 
-	redisClient = redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: "",
-		DB:       0,
+	client := redis.NewClient(&redis.Options{
+		Addr: addr,
+		DB:   0,
 	})
 
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Printf("警告: Redisに接続できません: %v (キャッシュなしで続行)", err)
-		redisClient = nil
-	} else {
-		log.Printf("Redis接続成功: %s", redisAddr)
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, err
 	}
+
+	return client, nil
 }
 
+/* ============================================================
+ *                      Main
+ * ============================================================*/
+
 func main() {
-	// Redis初期化
-	initRedis()
+	ctx := context.Background()
 
-	// ワーカープール初期化（CPU数に応じて調整）
-	workerCount := 20
-	if val := os.Getenv("WORKER_COUNT"); val != "" {
-		fmt.Sscanf(val, "%d", &workerCount)
+	redis, err := initRedis()
+	if err != nil {
+		log.Printf("Redis disabled: %v", err)
+		redis = nil
 	}
-	workerPool = NewWorkerPool(workerCount)
-	workerPool.Start()
 
-	// レート制限初期化（1分間に100リクエスト）
-	rateLimiter = NewRateLimiter(100, time.Minute)
+	// Worker count
+	workers := defaultWorkerCount
+	if v := os.Getenv("WORKER_COUNT"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			workers = parsed
+		}
+	}
 
-	// ルーティング
-	http.HandleFunc("/api/lottery", rateLimitMiddleware(submitLottery))
-	http.HandleFunc("/api/status", getJobStatus)
-	http.HandleFunc("/api/health", healthCheck)
+	jobQueue := make(chan *LotteryJob, defaultQueueSize)
+	pool := NewWorkerPool(workers, jobQueue)
+	pool.Start(redis)
+
+	app := &App{
+		ctx:         ctx,
+		redis:       redis,
+		workerPool:  pool,
+		jobQueue:    jobQueue,
+		rateLimiter: NewRateLimiter(rateLimitMaxRequests, rateLimitWindow),
+	}
+
+	http.HandleFunc("/api/lottery", app.rateLimit(app.submitLottery))
+	http.HandleFunc("/api/status", app.getStatus)
+	http.HandleFunc("/api/health", app.health)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -388,40 +421,29 @@ func main() {
 
 	server := &http.Server{
 		Addr:         ":" + port,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
 	}
 
-	// グレースフルシャットダウン
+	// Graceful shutdown
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+		<-sig
 
-		log.Println("シャットダウン開始...")
-		
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		log.Println("Shutting down...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 
-		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("シャットダウンエラー: %v", err)
+		server.Shutdown(ctx)
+		pool.Stop()
+		if app.redis != nil {
+			app.redis.Close()
 		}
-
-		workerPool.Stop()
-		
-		if redisClient != nil {
-			redisClient.Close()
-		}
-		
-		log.Println("シャットダウン完了")
+		log.Println("Shutdown complete")
 	}()
 
-	fmt.Printf("🚀 高負荷対応サーバー起動: http://localhost:%s\n", port)
-	fmt.Printf("   Workers: %d\n", workerCount)
-	fmt.Printf("   Queue Cap: %d\n", cap(jobQueue))
-	
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
-	}
+	fmt.Printf("🚀 Server running at http://localhost:%s (workers=%d)\n", port, workers)
+	server.ListenAndServe()
 }

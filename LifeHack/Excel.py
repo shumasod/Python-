@@ -1,385 +1,602 @@
-#!/usr/bin/env 
+#!/usr/bin/env python3
 """
 Excelファイル結合ツール
-複数のExcelファイルを効率的に結合し、様々な結合オプションを提供します。
+
+複数のExcelファイルを効率的に結合するCLIツール。
+列互換性チェック、重複削除、ソート、メタデータ出力に対応。
+
+Usage:
+    python excel_merger.py -d ./data -o merged.xlsx
+    python excel_merger.py file1.xlsx file2.xlsx -o output.xlsx --add-source
 """
 
-import os
-import sys
+from __future__ import annotations
+
 import argparse
 import logging
-from pathlib import Path
-from typing import List, Dict, Optional, Union
-import pandas as pd
-from glob import glob
+import os
+import sys
 import warnings
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from glob import glob
+from pathlib import Path
+from typing import Any
 
-# 警告を抑制
-warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+import pandas as pd
+
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 
-def setup_logging(verbose: bool = False) -> None:
-    """ロギングの設定"""
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler('excel_merger.log', encoding='utf-8')
-        ]
+# =============================================================================
+# Types & Configuration
+# =============================================================================
+
+
+class OutputFormat(Enum):
+    """出力フォーマット"""
+
+    XLSX = auto()
+    CSV = auto()
+
+    @classmethod
+    def from_path(cls, path: Path) -> OutputFormat:
+        suffix = path.suffix.lower()
+        if suffix == ".csv":
+            return cls.CSV
+        return cls.XLSX
+
+
+@dataclass
+class MergeConfig:
+    """結合設定"""
+
+    output_path: Path
+    sheet_name: str | None = None
+    add_source_column: bool = False
+    sort_by: str | None = None
+    remove_duplicates: bool = False
+    validate_columns: bool = True
+    add_metadata_sheet: bool = True
+
+
+@dataclass
+class MergeStats:
+    """結合統計"""
+
+    total_files: int = 0
+    successful_files: int = 0
+    failed_files: int = 0
+    total_rows: int = 0
+    final_rows: int = 0
+    duplicates_removed: int = 0
+
+    def summary(self) -> str:
+        return (
+            f"対象ファイル: {self.total_files}\n"
+            f"成功: {self.successful_files}\n"
+            f"失敗: {self.failed_files}\n"
+            f"総行数: {self.total_rows:,}\n"
+            f"重複削除: {self.duplicates_removed:,}\n"
+            f"最終行数: {self.final_rows:,}"
+        )
+
+
+@dataclass
+class FileInfo:
+    """ファイル情報"""
+
+    path: Path
+    status: str = "pending"
+    rows: int = 0
+    error: str | None = None
+
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+
+def setup_logging(verbose: bool = False, log_file: Path | None = None) -> logging.Logger:
+    """ロガーをセットアップ"""
+    logger = logging.getLogger("excel_merger")
+    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+
+    if logger.handlers:
+        return logger
+
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
 
-def get_excel_files(patterns: List[str], recursive: bool = False) -> List[str]:
-    """指定されたパターンでExcelファイルを取得"""
-    excel_files = []
-    extensions = ['*.xlsx', '*.xls', '*.xlsm']
-    
+    if log_file:
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+
+# =============================================================================
+# File Discovery
+# =============================================================================
+
+
+EXCEL_EXTENSIONS = {".xlsx", ".xls", ".xlsm"}
+
+
+def is_excel_file(path: Path) -> bool:
+    """Excelファイルかどうかを判定"""
+    return path.suffix.lower() in EXCEL_EXTENSIONS
+
+
+def discover_excel_files(
+    patterns: list[str],
+    recursive: bool = False,
+) -> list[Path]:
+    """Excelファイルを検出"""
+    files: set[Path] = set()
+
     for pattern in patterns:
-        if os.path.isfile(pattern):
-            # 直接ファイルが指定された場合
-            excel_files.append(pattern)
-        elif os.path.isdir(pattern):
-            # ディレクトリが指定された場合
-            for ext in extensions:
-                search_pattern = os.path.join(pattern, '**', ext) if recursive else os.path.join(pattern, ext)
-                excel_files.extend(glob(search_pattern, recursive=recursive))
+        path = Path(pattern)
+
+        if path.is_file() and is_excel_file(path):
+            files.add(path.resolve())
+
+        elif path.is_dir():
+            glob_pattern = "**/*.xls*" if recursive else "*.xls*"
+            for match in path.glob(glob_pattern):
+                if match.is_file() and is_excel_file(match):
+                    files.add(match.resolve())
+
         else:
-            # パターンが指定された場合
-            excel_files.extend(glob(pattern, recursive=recursive))
-    
-    # 重複を削除し、ソート
-    excel_files = sorted(list(set(excel_files)))
-    logging.info(f"見つかったExcelファイル: {len(excel_files)}個")
-    
-    return excel_files
+            # globパターンとして処理
+            for match in glob(pattern, recursive=recursive):
+                match_path = Path(match)
+                if match_path.is_file() and is_excel_file(match_path):
+                    files.add(match_path.resolve())
+
+    return sorted(files)
 
 
-def get_sheet_info(file_path: str) -> Dict[str, int]:
-    """Excelファイルのシート情報を取得"""
-    try:
-        excel_file = pd.ExcelFile(file_path)
-        sheet_info = {}
-        for sheet_name in excel_file.sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
-            sheet_info[sheet_name] = len(df.columns)
-        return sheet_info
-    except Exception as e:
-        logging.warning(f"シート情報取得エラー ({file_path}): {e}")
-        return {}
+# =============================================================================
+# Validation
+# =============================================================================
 
 
-def validate_column_compatibility(file_list: List[str], sheet_name: Optional[str] = None) -> bool:
-    """ファイル間の列の互換性をチェック"""
-    if not file_list:
-        return True
-    
-    reference_columns = None
-    reference_file = None
-    
-    for file_path in file_list:
-        try:
-            if sheet_name:
+class ColumnValidator:
+    """列互換性検証"""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+
+    def validate(
+        self,
+        files: list[Path],
+        sheet_name: str | None = None,
+    ) -> tuple[bool, list[str]]:
+        """ファイル間の列互換性をチェック"""
+        if len(files) < 2:
+            return True, []
+
+        reference_columns: list[str] | None = None
+        reference_file: Path | None = None
+        issues: list[str] = []
+
+        for file_path in files:
+            try:
                 df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=0)
-            else:
-                df = pd.read_excel(file_path, nrows=0)
-            
-            current_columns = list(df.columns)
-            
-            if reference_columns is None:
-                reference_columns = current_columns
-                reference_file = file_path
-            elif current_columns != reference_columns:
-                logging.warning(f"列の構造が異なります:")
-                logging.warning(f"  基準ファイル ({reference_file}): {reference_columns}")
-                logging.warning(f"  対象ファイル ({file_path}): {current_columns}")
-                return False
-                
-        except Exception as e:
-            logging.error(f"ファイル読み込みエラー ({file_path}): {e}")
-            return False
-    
-    return True
+                columns = list(df.columns)
+
+                if reference_columns is None:
+                    reference_columns = columns
+                    reference_file = file_path
+                elif columns != reference_columns:
+                    issue = (
+                        f"列が異なります:\n"
+                        f"  基準: {reference_file.name} → {reference_columns}\n"
+                        f"  対象: {file_path.name} → {columns}"
+                    )
+                    issues.append(issue)
+                    self._logger.warning(issue)
+
+            except Exception as e:
+                self._logger.error("検証エラー (%s): %s", file_path.name, e)
+                issues.append(f"{file_path.name}: {e}")
+
+        return len(issues) == 0, issues
 
 
-def merge_excel_files(
-    file_list: List[str],
-    output_file: str,
-    sheet_name: Optional[str] = None,
-    add_source_column: bool = False,
-    ignore_index: bool = True,
-    sort_by: Optional[str] = None,
-    filter_duplicates: bool = False,
-    chunk_size: Optional[int] = None,
-    validate_columns: bool = True
-) -> Dict[str, int]:
-    """
-    複数のExcelファイルを結合します。
+# =============================================================================
+# Excel Merger
+# =============================================================================
 
-    Args:
-        file_list: 結合するExcelファイルのリスト
-        output_file: 出力ファイルのパス
-        sheet_name: 読み込むシート名（Noneの場合は最初のシート）
-        add_source_column: ソースファイル名の列を追加するか
-        ignore_index: インデックスを無視するか
-        sort_by: ソートする列名
-        filter_duplicates: 重複行を削除するか
-        chunk_size: 大きなファイル用のチャンクサイズ
-        validate_columns: 列の互換性をチェックするか
 
-    Returns:
-        処理結果の統計情報
-    """
-    if not file_list:
-        raise ValueError("結合するファイルが指定されていません。")
-    
-    # ファイルの存在確認
-    missing_files = [f for f in file_list if not os.path.exists(f)]
-    if missing_files:
-        raise FileNotFoundError(f"以下のファイルが見つかりません: {missing_files}")
-    
-    # 出力ディレクトリの作成
-    output_path = Path(output_file)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    # 列の互換性チェック
-    if validate_columns and not validate_column_compatibility(file_list, sheet_name):
-        response = input("列の構造が異なるファイルがあります。続行しますか? (y/N): ")
-        if response.lower() != 'y':
-            raise ValueError("処理を中断しました。")
-    
-    logging.info("ファイル結合を開始します...")
-    
-    stats = {
-        'total_files': len(file_list),
-        'successful_files': 0,
-        'failed_files': 0,
-        'total_rows': 0,
-        'final_rows': 0
-    }
-    
-    dfs = []
-    
-    for i, file_path in enumerate(file_list, 1):
-        try:
-            logging.info(f"ファイル {i}/{len(file_list)} を処理中: {os.path.basename(file_path)}")
-            
-            # Excelファイルの読み込み
-            if chunk_size:
-                # 大きなファイルの場合はチャンク処理（実際にはExcelでは使用頻度は低い）
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
-            else:
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
-            
-            if df.empty:
-                logging.warning(f"空のファイルをスキップ: {file_path}")
-                continue
-            
-            # ソースファイル名を追加
-            if add_source_column:
-                df['source_file'] = os.path.basename(file_path)
-            
-            dfs.append(df)
-            stats['successful_files'] += 1
-            stats['total_rows'] += len(df)
-            
-            logging.debug(f"  読み込み行数: {len(df):,}")
-            
-        except Exception as e:
-            logging.error(f"ファイル読み込みエラー ({file_path}): {e}")
-            stats['failed_files'] += 1
-            continue
-    
-    if not dfs:
-        raise ValueError("読み込み可能なファイルがありませんでした。")
-    
-    # データフレームの結合
-    logging.info("データフレームを結合中...")
-    try:
-        merged_df = pd.concat(dfs, ignore_index=ignore_index, sort=False)
-        logging.info(f"結合後の行数: {len(merged_df):,}")
-        
+class ExcelMerger:
+    """Excel結合処理"""
+
+    def __init__(
+        self,
+        config: MergeConfig,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        self._config = config
+        self._logger = logger or logging.getLogger("excel_merger")
+        self._validator = ColumnValidator(self._logger)
+        self._file_infos: list[FileInfo] = []
+
+    def merge(self, files: list[Path]) -> MergeStats:
+        """Excelファイルを結合"""
+        if not files:
+            raise ValueError("結合するファイルがありません")
+
+        # ファイル存在確認
+        missing = [f for f in files if not f.exists()]
+        if missing:
+            raise FileNotFoundError(f"ファイルが見つかりません: {missing}")
+
+        # 出力ディレクトリ作成
+        self._config.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 列互換性チェック
+        if self._config.validate_columns:
+            is_valid, issues = self._validator.validate(files, self._config.sheet_name)
+            if not is_valid:
+                self._logger.warning("列の構造が異なるファイルがあります")
+
+        # ファイル読み込み
+        stats = MergeStats(total_files=len(files))
+        self._file_infos = [FileInfo(path=f) for f in files]
+        dataframes: list[pd.DataFrame] = []
+
+        for i, file_info in enumerate(self._file_infos, 1):
+            self._logger.info(
+                "読み込み中 [%d/%d]: %s",
+                i,
+                len(files),
+                file_info.path.name,
+            )
+
+            try:
+                df = self._read_file(file_info.path)
+
+                if df.empty:
+                    self._logger.warning("空のファイルをスキップ: %s", file_info.path.name)
+                    file_info.status = "skipped"
+                    continue
+
+                if self._config.add_source_column:
+                    df["source_file"] = file_info.path.name
+
+                dataframes.append(df)
+                file_info.status = "success"
+                file_info.rows = len(df)
+                stats.successful_files += 1
+                stats.total_rows += len(df)
+
+            except Exception as e:
+                self._logger.error("読み込みエラー (%s): %s", file_info.path.name, e)
+                file_info.status = "failed"
+                file_info.error = str(e)
+                stats.failed_files += 1
+
+        if not dataframes:
+            raise ValueError("読み込み可能なファイルがありませんでした")
+
+        # 結合
+        self._logger.info("データを結合中...")
+        merged_df = pd.concat(dataframes, ignore_index=True, sort=False)
+
         # 重複削除
-        if filter_duplicates:
-            logging.info("重複行を削除中...")
-            before_dedup = len(merged_df)
+        if self._config.remove_duplicates:
+            before = len(merged_df)
             merged_df = merged_df.drop_duplicates()
-            after_dedup = len(merged_df)
-            logging.info(f"重複削除: {before_dedup - after_dedup:,}行削除")
-        
+            stats.duplicates_removed = before - len(merged_df)
+            self._logger.info("重複削除: %d行", stats.duplicates_removed)
+
         # ソート
-        if sort_by and sort_by in merged_df.columns:
-            logging.info(f"'{sort_by}'列でソート中...")
-            merged_df = merged_df.sort_values(by=sort_by)
-        elif sort_by:
-            logging.warning(f"ソート列 '{sort_by}' が見つかりません。")
-        
-        stats['final_rows'] = len(merged_df)
-        
-        # ファイル出力
-        logging.info(f"結果をファイルに保存中: {output_file}")
-        
-        # 出力形式の判定
-        if output_file.endswith('.csv'):
-            merged_df.to_csv(output_file, index=False, encoding='utf-8-sig')
-        else:
-            # Excelファイルとして出力
-            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-                merged_df.to_excel(writer, sheet_name='MergedData', index=False)
-                
-                # メタデータシートを追加
-                metadata = pd.DataFrame({
-                    'ファイル名': [os.path.basename(f) for f in file_list],
-                    'パス': file_list,
-                    '状態': ['成功' if f in [file_list[i] for i in range(stats['successful_files'])] else '失敗' 
-                            for f in file_list]
-                })
-                metadata.to_excel(writer, sheet_name='SourceFiles', index=False)
-        
+        if self._config.sort_by:
+            if self._config.sort_by in merged_df.columns:
+                merged_df = merged_df.sort_values(by=self._config.sort_by)
+                self._logger.info("ソート完了: %s", self._config.sort_by)
+            else:
+                self._logger.warning("ソート列が見つかりません: %s", self._config.sort_by)
+
+        stats.final_rows = len(merged_df)
+
+        # 出力
+        self._write_output(merged_df)
+
         return stats
-        
-    except Exception as e:
-        logging.error(f"データ結合エラー: {e}")
-        raise
+
+    def _read_file(self, path: Path) -> pd.DataFrame:
+        """Excelファイルを読み込み"""
+        return pd.read_excel(path, sheet_name=self._config.sheet_name)
+
+    def _write_output(self, df: pd.DataFrame) -> None:
+        """結果を出力"""
+        output_format = OutputFormat.from_path(self._config.output_path)
+
+        self._logger.info("ファイル出力中: %s", self._config.output_path)
+
+        if output_format == OutputFormat.CSV:
+            df.to_csv(self._config.output_path, index=False, encoding="utf-8-sig")
+        else:
+            with pd.ExcelWriter(self._config.output_path, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="MergedData", index=False)
+
+                if self._config.add_metadata_sheet:
+                    self._write_metadata_sheet(writer)
+
+    def _write_metadata_sheet(self, writer: pd.ExcelWriter) -> None:
+        """メタデータシートを追加"""
+        metadata = pd.DataFrame([
+            {
+                "ファイル名": info.path.name,
+                "パス": str(info.path),
+                "状態": info.status,
+                "行数": info.rows if info.status == "success" else 0,
+                "エラー": info.error or "",
+            }
+            for info in self._file_infos
+        ])
+        metadata.to_excel(writer, sheet_name="SourceFiles", index=False)
 
 
-def preview_files(file_list: List[str], sheet_name: Optional[str] = None, rows: int = 3) -> None:
-    """ファイルの内容をプレビュー表示"""
-    print("\n" + "="*80)
+# =============================================================================
+# Preview
+# =============================================================================
+
+
+def preview_files(
+    files: list[Path],
+    sheet_name: str | None = None,
+    max_files: int = 5,
+    max_rows: int = 3,
+) -> None:
+    """ファイル内容をプレビュー"""
+    print("\n" + "=" * 70)
     print("ファイルプレビュー")
-    print("="*80)
-    
-    for file_path in file_list[:5]:  # 最初の5ファイルのみ表示
+    print("=" * 70)
+
+    for file_path in files[:max_files]:
         try:
-            df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=rows)
-            print(f"\nファイル: {os.path.basename(file_path)}")
+            df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=max_rows)
+            print(f"\nファイル: {file_path.name}")
             print(f"形状: {df.shape}")
             print(f"列: {list(df.columns)}")
             if not df.empty:
-                print("プレビュー:")
                 print(df.to_string(index=False))
         except Exception as e:
-            print(f"エラー ({file_path}): {e}")
-        print("-" * 40)
+            print(f"エラー ({file_path.name}): {e}")
+        print("-" * 70)
+
+    if len(files) > max_files:
+        print(f"\n... 他 {len(files) - max_files} ファイル")
 
 
-def create_sample_excel_files(output_dir: str, count: int = 3) -> List[str]:
-    """テスト用のサンプルExcelファイルを作成"""
+# =============================================================================
+# Sample Generator
+# =============================================================================
+
+
+def create_sample_files(output_dir: Path, count: int = 3) -> list[Path]:
+    """テスト用サンプルファイルを生成"""
     import random
     from datetime import datetime, timedelta
-    
-    os.makedirs(output_dir, exist_ok=True)
-    created_files = []
-    
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    created: list[Path] = []
+
     for i in range(count):
-        filename = os.path.join(output_dir, f"sample_{i+1}.xlsx")
-        
-        # サンプルデータ作成
+        filename = output_dir / f"sample_{i + 1}.xlsx"
+
         data = []
         for j in range(random.randint(50, 200)):
             data.append({
-                'ID': j + i * 1000,
-                'Name': f"Item_{j+1}",
-                'Category': random.choice(['A', 'B', 'C']),
-                'Value': random.randint(1, 1000),
-                'Date': datetime.now() - timedelta(days=random.randint(0, 365)),
-                'Flag': random.choice([True, False])
+                "ID": j + i * 1000,
+                "Name": f"Item_{j + 1}",
+                "Category": random.choice(["A", "B", "C"]),
+                "Value": random.randint(1, 1000),
+                "Date": datetime.now() - timedelta(days=random.randint(0, 365)),
+                "Active": random.choice([True, False]),
             })
-        
+
         df = pd.DataFrame(data)
         df.to_excel(filename, index=False)
-        created_files.append(filename)
-        logging.info(f"サンプルファイル作成: {filename} ({len(df)}行)")
-    
-    return created_files
+        created.append(filename)
+        print(f"作成: {filename} ({len(df)}行)")
+
+    return created
 
 
-def main():
-    """メイン実行関数"""
-    parser = argparse.ArgumentParser(description='Excelファイル結合ツール')
-    parser.add_argument('files', nargs='*', help='結合するExcelファイル（パターンも可）')
-    parser.add_argument('-o', '--output', required=True, help='出力ファイルのパス')
-    parser.add_argument('-s', '--sheet', help='読み込むシート名')
-    parser.add_argument('-d', '--directory', help='Excelファイルを検索するディレクトリ')
-    parser.add_argument('-r', '--recursive', action='store_true', help='サブディレクトリも検索')
-    parser.add_argument('--add-source', action='store_true', help='ソースファイル名の列を追加')
-    parser.add_argument('--sort-by', help='ソートする列名')
-    parser.add_argument('--remove-duplicates', action='store_true', help='重複行を削除')
-    parser.add_argument('--no-validate', action='store_true', help='列の互換性チェックをスキップ')
-    parser.add_argument('--preview', action='store_true', help='ファイル内容をプレビュー')
-    parser.add_argument('--create-samples', help='指定ディレクトリにサンプルファイルを作成')
-    parser.add_argument('--verbose', '-v', action='store_true', help='詳細ログ出力')
-    
-    args = parser.parse_args()
-    
-    setup_logging(args.verbose)
-    
+# =============================================================================
+# CLI
+# =============================================================================
+
+
+def parse_args() -> argparse.Namespace:
+    """コマンドライン引数をパース"""
+    parser = argparse.ArgumentParser(
+        description="Excelファイル結合ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  %(prog)s file1.xlsx file2.xlsx -o merged.xlsx
+  %(prog)s -d ./data -o output.xlsx --recursive
+  %(prog)s -d ./data -o output.csv --add-source --remove-duplicates
+  %(prog)s --create-samples ./samples
+        """,
+    )
+
+    parser.add_argument(
+        "files",
+        nargs="*",
+        help="結合するExcelファイル（パターン可）",
+    )
+    parser.add_argument(
+        "-o", "--output",
+        type=Path,
+        help="出力ファイルパス",
+    )
+    parser.add_argument(
+        "-d", "--directory",
+        type=Path,
+        help="検索ディレクトリ",
+    )
+    parser.add_argument(
+        "-r", "--recursive",
+        action="store_true",
+        help="サブディレクトリも検索",
+    )
+    parser.add_argument(
+        "-s", "--sheet",
+        help="読み込むシート名",
+    )
+    parser.add_argument(
+        "--add-source",
+        action="store_true",
+        help="ソースファイル名列を追加",
+    )
+    parser.add_argument(
+        "--sort-by",
+        metavar="COLUMN",
+        help="ソート列",
+    )
+    parser.add_argument(
+        "--remove-duplicates",
+        action="store_true",
+        help="重複行を削除",
+    )
+    parser.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="列互換性チェックをスキップ",
+    )
+    parser.add_argument(
+        "--no-metadata",
+        action="store_true",
+        help="メタデータシートを追加しない",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="プレビュー表示",
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="詳細ログ",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        help="ログファイル",
+    )
+
+    sample_group = parser.add_argument_group("サンプル生成")
+    sample_group.add_argument(
+        "--create-samples",
+        type=Path,
+        metavar="DIR",
+        help="サンプルファイルを生成",
+    )
+    sample_group.add_argument(
+        "--sample-count",
+        type=int,
+        default=3,
+        help="サンプル数 (default: 3)",
+    )
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    """メインエントリーポイント"""
+    args = parse_args()
+
+    # サンプル生成
+    if args.create_samples:
+        create_sample_files(args.create_samples, args.sample_count)
+        return 0
+
+    logger = setup_logging(args.verbose, args.log_file)
+
     try:
-        # サンプルファイル作成
-        if args.create_samples:
-            created_files = create_sample_excel_files(args.create_samples)
-            print(f"\n{len(created_files)}個のサンプルファイルを作成しました:")
-            for f in created_files:
-                print(f"  {f}")
-            return
-        
-        # ファイルリストの取得
-        file_patterns = args.files or []
+        # ファイル検出
+        patterns = args.files or []
         if args.directory:
-            file_patterns.append(args.directory)
-        
-        if not file_patterns:
-            raise ValueError("結合するファイルまたはディレクトリを指定してください。")
-        
-        excel_files = get_excel_files(file_patterns, args.recursive)
-        
-        if not excel_files:
-            raise ValueError("Excelファイルが見つかりませんでした。")
-        
-        print(f"\n見つかったファイル: {len(excel_files)}個")
-        for f in excel_files:
+            patterns.append(str(args.directory))
+
+        if not patterns:
+            print("エラー: ファイルまたはディレクトリを指定してください", file=sys.stderr)
+            return 1
+
+        files = discover_excel_files(patterns, args.recursive)
+
+        if not files:
+            print("エラー: Excelファイルが見つかりません", file=sys.stderr)
+            return 1
+
+        print(f"\n見つかったファイル: {len(files)}個")
+        for f in files:
             print(f"  {f}")
-        
-        # プレビュー表示
+
+        # プレビュー
         if args.preview:
-            preview_files(excel_files, args.sheet)
+            preview_files(files, args.sheet)
             response = input("\n続行しますか? (y/N): ")
-            if response.lower() != 'y':
-                print("処理を中断しました。")
-                return
-        
-        # ファイル結合実行
-        stats = merge_excel_files(
-            file_list=excel_files,
-            output_file=args.output,
+            if response.lower() != "y":
+                print("中断しました")
+                return 0
+
+        # 出力先確認
+        if not args.output:
+            print("エラー: 出力ファイル (-o) を指定してください", file=sys.stderr)
+            return 1
+
+        # 結合実行
+        config = MergeConfig(
+            output_path=args.output,
             sheet_name=args.sheet,
             add_source_column=args.add_source,
             sort_by=args.sort_by,
-            filter_duplicates=args.remove_duplicates,
-            validate_columns=not args.no_validate
+            remove_duplicates=args.remove_duplicates,
+            validate_columns=not args.no_validate,
+            add_metadata_sheet=not args.no_metadata,
         )
-        
+
+        merger = ExcelMerger(config, logger)
+        stats = merger.merge(files)
+
         # 結果表示
-        print("\n" + "="*60)
-        print("処理結果:")
-        print(f"対象ファイル数: {stats['total_files']}")
-        print(f"成功: {stats['successful_files']}")
-        print(f"失敗: {stats['failed_files']}")
-        print(f"総行数: {stats['total_rows']:,}")
-        print(f"最終行数: {stats['final_rows']:,}")
-        print(f"出力ファイル: {args.output}")
-        print("="*60)
-        
-        logging.info("処理が正常に完了しました。")
-        
+        print("\n" + "=" * 50)
+        print("処理完了")
+        print("=" * 50)
+        print(stats.summary())
+        print(f"出力: {args.output}")
+        print("=" * 50)
+
+        return 0
+
+    except FileNotFoundError as e:
+        logger.error("ファイルエラー: %s", e)
+        return 1
+    except ValueError as e:
+        logger.error("設定エラー: %s", e)
+        return 1
     except KeyboardInterrupt:
-        logging.info("処理が中断されました。")
-        sys.exit(1)
+        logger.info("中断されました")
+        return 130
     except Exception as e:
-        logging.error(f"エラーが発生しました: {e}")
-        sys.exit(1)
+        logger.exception("予期しないエラー: %s", e)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

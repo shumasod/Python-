@@ -1,730 +1,733 @@
-import aiohttp
+"""
+Web Scraping Framework
+
+非同期Webスクレイピングフレームワーク。
+キャッシング、レート制限、データ品質チェック、複数エクスポート形式に対応。
+
+Usage:
+    config = ScrapingConfig(base_url="https://example.com")
+    async with WebScraper(config) as scraper:
+        results = await scraper.scrape(urls)
+        await scraper.export()
+"""
+
+from __future__ import annotations
+
 import asyncio
-from bs4 import BeautifulSoup
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import List, Dict, Any, Optional, Set, Callable, Union
-import logging
-import logging.handlers
-from dataclasses import dataclass, field
-import os
-import json
 import hashlib
-import aiofiles
-from urllib.parse import urljoin, urlparse
-import re
-from pathlib import Path
-import sqlite3
-from contextlib import asynccontextmanager
-import time
+import json
+import logging
+import os
 import random
-from tqdm.asyncio import tqdm
-import socket
+import re
+import sqlite3
 import sys
-from enum import Enum
+import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum, auto
+from pathlib import Path
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
-# 非同期ループの最適化
+import aiofiles
+import aiohttp
+from bs4 import BeautifulSoup
+from tqdm.asyncio import tqdm
 
-if os.name == ‘nt’:
-asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Windows向け非同期ループ設定
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+# =============================================================================
+# Logging
+# =============================================================================
+
 
 class LogLevel(Enum):
-“”“ログレベル定義”””
-DEBUG = “DEBUG”
-INFO = “INFO”
-WARNING = “WARNING”
-ERROR = “ERROR”
-CRITICAL = “CRITICAL”
+    DEBUG = auto()
+    INFO = auto()
+    WARNING = auto()
+    ERROR = auto()
 
-class CloudLogProvider(Enum):
-“”“クラウドログプロバイダー”””
-CLOUDWATCH = “cloudwatch”
-DATADOG = “datadog”
-NEW_RELIC = “newrelic”
-ELASTIC = “elastic”
-SPLUNK = “splunk”
-CUSTOM_HTTP = “custom_http”
 
 @dataclass
-class CloudLoggingConfig:
-“”“クラウドログ設定”””
-provider: CloudLogProvider
-enabled: bool = True
+class LogConfig:
+    """ロギング設定"""
 
-```
-# 共通設定
-service_name: str = "web-scraper"
-environment: str = "production"
-version: str = "1.0.0"
+    name: str = "scraper"
+    level: LogLevel = LogLevel.INFO
+    log_dir: Path = field(default_factory=lambda: Path("logs"))
+    max_bytes: int = 10 * 1024 * 1024  # 10MB
+    backup_count: int = 5
 
-# AWS CloudWatch設定
-aws_region: str = "us-east-1"
-log_group: str = "/aws/application/scraper"
-log_stream: str = None  # Noneの場合は自動生成
-aws_access_key: str = None
-aws_secret_key: str = None
+    def __post_init__(self) -> None:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
 
-# Datadog設定
-datadog_api_key: str = None
-datadog_site: str = "datadoghq.com"
 
-# New Relic設定
-newrelic_license_key: str = None
-newrelic_app_name: str = "web-scraper"
+def setup_logger(config: LogConfig) -> logging.Logger:
+    """ロガーをセットアップ"""
+    logger = logging.getLogger(config.name)
+    logger.setLevel(logging.DEBUG)
 
-# Elastic/ELK設定
-elastic_host: str = "localhost"
-elastic_port: int = 9200
-elastic_index: str = "scraper-logs"
-elastic_username: str = None
-elastic_password: str = None
+    if logger.handlers:
+        return logger
 
-# カスタムHTTP設定
-custom_endpoint: str = None
-custom_headers: Dict[str, str] = field(default_factory=dict)
-custom_auth_token: str = None
-
-# バッファリング設定
-buffer_size: int = 100
-flush_interval: int = 30  # 秒
-max_retries: int = 3
-timeout: int = 10
-```
-
-class StructuredLogger:
-“”“構造化ログ出力クラス”””
-
-```
-def __init__(self, name: str, config: CloudLoggingConfig):
-    self.name = name
-    self.config = config
-    self.logger = logging.getLogger(name)
-    self.logger.setLevel(logging.DEBUG)
-    
-    # バッファリング用
-    self.log_buffer = []
-    self.last_flush = time.time()
-    
-    # セッション情報
-    self.session_id = self._generate_session_id()
-    self.hostname = socket.gethostname()
-    self.process_id = os.getpid()
-    
-    self._setup_handlers()
-    
-    # 定期フラッシュタスク
-    if config.enabled:
-        asyncio.create_task(self._periodic_flush())
-
-def _generate_session_id(self) -> str:
-    """セッションID生成"""
-    timestamp = int(time.time())
-    random_part = random.randint(1000, 9999)
-    return f"{timestamp}_{random_part}"
-
-def _setup_handlers(self):
-    """ログハンドラー設定"""
-    # コンソールハンドラー
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    console_handler.setFormatter(console_formatter)
-    self.logger.addHandler(console_handler)
-    
-    # ファイルハンドラー（ローテーション対応）
-    file_handler = logging.handlers.RotatingFileHandler(
-        f'logs/{self.name}.log',
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=5,
-        encoding='utf-8'
+
+    # コンソール
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(getattr(logging, config.level.name))
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+    # ファイル
+    from logging.handlers import RotatingFileHandler
+
+    file_handler = RotatingFileHandler(
+        config.log_dir / f"{config.name}.log",
+        maxBytes=config.max_bytes,
+        backupCount=config.backup_count,
+        encoding="utf-8",
     )
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    file_handler.setFormatter(file_formatter)
-    self.logger.addHandler(file_handler)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
-def _create_structured_log(self, level: str, message: str, extra: Dict[str, Any] = None) -> Dict[str, Any]:
-    """構造化ログエントリ作成"""
-    log_entry = {
-        'timestamp': datetime.utcnow().isoformat() + 'Z',
-        'level': level,
-        'message': message,
-        'service': self.config.service_name,
-        'environment': self.config.environment,
-        'version': self.config.version,
-        'session_id': self.session_id,
-        'hostname': self.hostname,
-        'process_id': self.process_id,
-        'logger_name': self.name
-    }
-    
-    if extra:
-        log_entry.update(extra)
-    
-    return log_entry
+    return logger
 
-async def _send_to_cloud(self, log_entries: List[Dict[str, Any]]):
-    """クラウドログサービスへの送信"""
-    if not self.config.enabled or not log_entries:
-        return
-    
-    try:
-        if self.config.provider == CloudLogProvider.CLOUDWATCH:
-            await self._send_to_cloudwatch(log_entries)
-        elif self.config.provider == CloudLogProvider.DATADOG:
-            await self._send_to_datadog(log_entries)
-        elif self.config.provider == CloudLogProvider.NEW_RELIC:
-            await self._send_to_newrelic(log_entries)
-        elif self.config.provider == CloudLogProvider.ELASTIC:
-            await self._send_to_elastic(log_entries)
-        elif self.config.provider == CloudLogProvider.CUSTOM_HTTP:
-            await self._send_to_custom_http(log_entries)
-            
-    except Exception as e:
-        self.logger.error(f"クラウドログ送信エラー: {e}")
 
-async def _send_to_cloudwatch(self, log_entries: List[Dict[str, Any]]):
-    """AWS CloudWatch Logsへの送信"""
-    try:
-        import boto3
-        
-        client = boto3.client(
-            'logs',
-            region_name=self.config.aws_region,
-            aws_access_key_id=self.config.aws_access_key,
-            aws_secret_access_key=self.config.aws_secret_key
-        )
-        
-        log_stream = self.config.log_stream or f"{self.hostname}-{self.session_id}"
-        
-        # ログストリーム作成（存在しない場合）
-        try:
-            client.create_log_stream(
-                logGroupName=self.config.log_group,
-                logStreamName=log_stream
-            )
-        except client.exceptions.ResourceAlreadyExistsException:
-            pass
-        
-        # ログイベント準備
-        events = []
-        for entry in log_entries:
-            events.append({
-                'timestamp': int(datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00')).timestamp() * 1000),
-                'message': json.dumps(entry, ensure_ascii=False)
-            })
-        
-        # ログ送信
-        client.put_log_events(
-            logGroupName=self.config.log_group,
-            logStreamName=log_stream,
-            logEvents=events
-        )
-        
-    except ImportError:
-        self.logger.error("boto3がインストールされていません。pip install boto3を実行してください。")
-    except Exception as e:
-        self.logger.error(f"CloudWatch送信エラー: {e}")
+# =============================================================================
+# Configuration
+# =============================================================================
 
-async def _send_to_datadog(self, log_entries: List[Dict[str, Any]]):
-    """Datadogへの送信"""
-    if not self.config.datadog_api_key:
-        return
-    
-    url = f"https://http-intake.logs.{self.config.datadog_site}/v1/input/{self.config.datadog_api_key}"
-    
-    async with aiohttp.ClientSession() as session:
-        for entry in log_entries:
-            payload = {
-                'timestamp': entry['timestamp'],
-                'level': entry['level'],
-                'message': entry['message'],
-                'service': entry['service'],
-                'environment': entry['environment'],
-                'version': entry['version'],
-                'hostname': entry['hostname'],
-                'session_id': entry['session_id']
-            }
-            
-            async with session.post(
-                url,
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-            ) as response:
-                if response.status != 200:
-                    self.logger.error(f"Datadog送信エラー: {response.status}")
-
-async def _send_to_newrelic(self, log_entries: List[Dict[str, Any]]):
-    """New Relicへの送信"""
-    if not self.config.newrelic_license_key:
-        return
-    
-    url = "https://log-api.newrelic.com/log/v1"
-    headers = {
-        'Content-Type': 'application/json',
-        'X-License-Key': self.config.newrelic_license_key
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        payload = {
-            'logs': [{
-                'timestamp': int(datetime.fromisoformat(entry['timestamp'].replace('Z', '+00:00')).timestamp() * 1000),
-                'message': entry['message'],
-                'logtype': entry['level'],
-                'service': entry['service'],
-                'environment': entry['environment'],
-                'version': entry['version'],
-                'hostname': entry['hostname'],
-                'session_id': entry['session_id']
-            } for entry in log_entries]
-        }
-        
-        async with session.post(
-            url,
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-        ) as response:
-            if response.status != 200:
-                self.logger.error(f"New Relic送信エラー: {response.status}")
-
-async def _send_to_elastic(self, log_entries: List[Dict[str, Any]]):
-    """Elasticsearchへの送信"""
-    url = f"http://{self.config.elastic_host}:{self.config.elastic_port}/{self.config.elastic_index}/_bulk"
-    
-    headers = {'Content-Type': 'application/x-ndjson'}
-    if self.config.elastic_username and self.config.elastic_password:
-        import base64
-        credentials = base64.b64encode(f"{self.config.elastic_username}:{self.config.elastic_password}".encode()).decode()
-        headers['Authorization'] = f"Basic {credentials}"
-    
-    # バルクペイロード作成
-    bulk_data = []
-    for entry in log_entries:
-        index_action = {'index': {'_index': self.config.elastic_index}}
-        bulk_data.append(json.dumps(index_action))
-        bulk_data.append(json.dumps(entry))
-    
-    payload = '\n'.join(bulk_data) + '\n'
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            url,
-            data=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-        ) as response:
-            if response.status not in [200, 201]:
-                self.logger.error(f"Elasticsearch送信エラー: {response.status}")
-
-async def _send_to_custom_http(self, log_entries: List[Dict[str, Any]]):
-    """カスタムHTTPエンドポイントへの送信"""
-    if not self.config.custom_endpoint:
-        return
-    
-    headers = {'Content-Type': 'application/json'}
-    headers.update(self.config.custom_headers)
-    
-    if self.config.custom_auth_token:
-        headers['Authorization'] = f"Bearer {self.config.custom_auth_token}"
-    
-    payload = {'logs': log_entries}
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            self.config.custom_endpoint,
-            json=payload,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-        ) as response:
-            if response.status not in [200, 201]:
-                self.logger.error(f"カスタムHTTP送信エラー: {response.status}")
-
-async def _periodic_flush(self):
-    """定期的なログフラッシュ"""
-    while True:
-        await asyncio.sleep(self.config.flush_interval)
-        await self._flush_logs()
-
-async def _flush_logs(self):
-    """ログバッファをフラッシュ"""
-    if not self.log_buffer:
-        return
-    
-    logs_to_send = self.log_buffer.copy()
-    self.log_buffer.clear()
-    
-    await self._send_to_cloud(logs_to_send)
-    self.last_flush = time.time()
-
-def _log(self, level: LogLevel, message: str, extra: Dict[str, Any] = None):
-    """内部ログ処理"""
-    # 標準ログ出力
-    getattr(self.logger, level.value.lower())(message, extra=extra or {})
-    
-    # 構造化ログをバッファに追加
-    if self.config.enabled:
-        structured_log = self._create_structured_log(level.value, message, extra)
-        self.log_buffer.append(structured_log)
-        
-        # バッファサイズチェック
-        if len(self.log_buffer) >= self.config.buffer_size:
-            asyncio.create_task(self._flush_logs())
-
-def debug(self, message: str, **kwargs):
-    """デバッグログ"""
-    self._log(LogLevel.DEBUG, message, kwargs)
-
-def info(self, message: str, **kwargs):
-    """情報ログ"""
-    self._log(LogLevel.INFO, message, kwargs)
-
-def warning(self, message: str, **kwargs):
-    """警告ログ"""
-    self._log(LogLevel.WARNING, message, kwargs)
-
-def error(self, message: str, **kwargs):
-    """エラーログ"""
-    self._log(LogLevel.ERROR, message, kwargs)
-
-def critical(self, message: str, **kwargs):
-    """重大エラーログ"""
-    self._log(LogLevel.CRITICAL, message, kwargs)
-
-async def close(self):
-    """リソース解放"""
-    await self._flush_logs()
-```
-
-# ログ設定
-
-def setup_cloud_logger(name: str, cloud_config: CloudLoggingConfig = None) -> StructuredLogger:
-“”“クラウド対応ロガーのセットアップ”””
-if cloud_config is None:
-cloud_config = CloudLoggingConfig(
-provider=CloudLogProvider.CUSTOM_HTTP,
-enabled=False  # デフォルトは無効
-)
-
-```
-# ログディレクトリ作成
-Path('logs').mkdir(exist_ok=True)
-
-return StructuredLogger(name, cloud_config)
-```
-
-# メインのロガーインスタンス
-
-logger = setup_cloud_logger(**name**)
 
 @dataclass
 class ScrapingConfig:
-“”“スクレイピング設定の拡張版”””
-base_url: str
-output_dir: str = “data”
-cache_dir: str = “cache”
-log_dir: str = “logs”
+    """スクレイピング設定"""
 
-```
-# リクエスト設定
-max_retries: int = 3
-timeout: int = 15
-delay_range: tuple = (1, 3)  # レート制限用の遅延範囲
-max_concurrent: int = 10
-chunk_size: int = 50
+    base_url: str
+    output_dir: Path = field(default_factory=lambda: Path("data"))
+    cache_dir: Path = field(default_factory=lambda: Path("cache"))
 
-# キャッシュ設定
-cache_expire_hours: int = 24
-use_cache: bool = True
+    # HTTP設定
+    max_concurrent: int = 10
+    timeout: int = 15
+    max_retries: int = 3
+    delay_range: tuple[float, float] = (1.0, 3.0)
 
-# 解析設定
-parse_rules: Dict[str, str] = field(default_factory=dict)
-required_fields: List[str] = field(default_factory=list)
+    # キャッシュ設定
+    cache_enabled: bool = True
+    cache_expire_hours: int = 24
 
-# データ品質設定
-min_content_length: int = 50
-max_content_length: int = 50000
+    # パース設定
+    parse_rules: dict[str, str] = field(default_factory=dict)
+    required_fields: list[str] = field(default_factory=list)
 
-# エクスポート設定
-export_formats: List[str] = field(default_factory=lambda: ['csv', 'json', 'excel'])
+    # バリデーション設定
+    min_content_length: int = 50
+    max_content_length: int = 50000
 
-# クラウドログ設定
-cloud_logging: CloudLoggingConfig = field(default_factory=lambda: CloudLoggingConfig(
-    provider=CloudLogProvider.CUSTOM_HTTP,
-    enabled=False
-))
+    # エクスポート設定
+    export_formats: list[str] = field(default_factory=lambda: ["csv", "json"])
 
-headers: Dict[str, str] = field(default_factory=lambda: {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
-    'Accept-Encoding': 'gzip, deflate',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-})
+    # HTTPヘッダー
+    headers: dict[str, str] = field(default_factory=lambda: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ja,en;q=0.7",
+    })
 
-def __post_init__(self):
-    # ディレクトリ作成
-    for directory in [self.output_dir, self.cache_dir, self.log_dir]:
-        Path(directory).mkdir(parents=True, exist_ok=True)
-    
-    # デフォルトの解析ルール
-    if not self.parse_rules:
-        self.parse_rules = {
-            'title': 'h1, .title, .headline, title',
-            'content': 'article, .content, .post-content, .article-body, main',
-            'date': 'time, .date, .published, .post-date',
-            'author': '.author, .byline, .writer',
-            'tags': '.tags, .categories, .keywords'
-        }
-```
+    def __post_init__(self) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        if not self.parse_rules:
+            self.parse_rules = {
+                "title": "h1, .title, title",
+                "content": "article, .content, main",
+                "date": "time, .date, .published",
+                "author": ".author, .byline",
+            }
+
+
+# =============================================================================
+# Rate Limiter
+# =============================================================================
+
 
 class RateLimiter:
-“”“レート制限管理クラス”””
-def **init**(self, delay_range: tuple = (1, 3), logger_instance: StructuredLogger = None):
-self.delay_range = delay_range
-self.last_request = 0
-self.logger = logger_instance or logger
+    """レート制限"""
 
-```
-async def wait(self):
-    """適切な間隔での待機"""
-    now = time.time()
-    elapsed = now - self.last_request
-    delay = random.uniform(*self.delay_range)
-    
-    if elapsed < delay:
-        wait_time = delay - elapsed
-        self.logger.debug(f"レート制限待機中", wait_time=wait_time, elapsed=elapsed, target_delay=delay)
-        await asyncio.sleep(wait_time)
-    
-    self.last_request = time.time()
-```
+    def __init__(self, delay_range: tuple[float, float]) -> None:
+        self._delay_range = delay_range
+        self._last_request = 0.0
+        self._lock = asyncio.Lock()
 
-class EnhancedURLCache:
-“”“拡張URLキャッシュ管理クラス”””
-def **init**(self, cache_dir: str, expire_hours: int = 24, logger_instance: StructuredLogger = None):
-self.cache_dir = Path(cache_dir)
-self.expire_hours = expire_hours
-self.db_path = self.cache_dir / “cache_metadata.db”
-self.logger = logger_instance or logger
-self._init_db()
+    async def acquire(self) -> None:
+        """レート制限を適用"""
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request
+            delay = random.uniform(*self._delay_range)
 
-```
-def _init_db(self):
-    """キャッシュメタデータDB初期化"""
-    with sqlite3.connect(self.db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS cache_metadata (
-                url_hash TEXT PRIMARY KEY,
-                url TEXT,
-                cached_at TIMESTAMP,
-                file_path TEXT,
-                content_type TEXT,
-                status_code INTEGER
+            if elapsed < delay:
+                await asyncio.sleep(delay - elapsed)
+
+            self._last_request = time.monotonic()
+
+
+# =============================================================================
+# Cache
+# =============================================================================
+
+
+class Cache:
+    """SQLiteベースのURLキャッシュ"""
+
+    def __init__(self, cache_dir: Path, expire_hours: int = 24) -> None:
+        self._cache_dir = cache_dir
+        self._expire_hours = expire_hours
+        self._db_path = cache_dir / "cache.db"
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS cache (
+                    url_hash TEXT PRIMARY KEY,
+                    url TEXT NOT NULL,
+                    cached_at TEXT NOT NULL,
+                    status_code INTEGER
+                )
+            """)
+
+    def _hash_url(self, url: str) -> str:
+        return hashlib.sha256(url.encode()).hexdigest()
+
+    def _cache_path(self, url_hash: str) -> Path:
+        return self._cache_dir / f"{url_hash}.html"
+
+    def _is_valid(self, cached_at: str) -> bool:
+        cached_time = datetime.fromisoformat(cached_at)
+        expire_time = datetime.now() - timedelta(hours=self._expire_hours)
+        return cached_time > expire_time
+
+    async def get(self, url: str) -> str | None:
+        """キャッシュからコンテンツを取得"""
+        url_hash = self._hash_url(url)
+        cache_path = self._cache_path(url_hash)
+
+        with sqlite3.connect(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT cached_at FROM cache WHERE url_hash = ?",
+                (url_hash,),
+            ).fetchone()
+
+        if not row or not self._is_valid(row[0]) or not cache_path.exists():
+            return None
+
+        async with aiofiles.open(cache_path, encoding="utf-8") as f:
+            return await f.read()
+
+    async def set(self, url: str, content: str, status_code: int = 200) -> None:
+        """コンテンツをキャッシュに保存"""
+        url_hash = self._hash_url(url)
+        cache_path = self._cache_path(url_hash)
+
+        async with aiofiles.open(cache_path, "w", encoding="utf-8") as f:
+            await f.write(content)
+
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cache (url_hash, url, cached_at, status_code)
+                VALUES (?, ?, ?, ?)
+                """,
+                (url_hash, url, datetime.now().isoformat(), status_code),
             )
-        """)
-    self.logger.info("キャッシュデータベース初期化完了", db_path=str(self.db_path))
 
-def _get_cache_path(self, url: str) -> tuple:
-    """URLのキャッシュパスとハッシュを取得"""
-    url_hash = hashlib.sha256(url.encode()).hexdigest()
-    cache_file = self.cache_dir / f"{url_hash}.html"
-    return cache_file, url_hash
 
-def _is_cache_valid(self, cached_at: str) -> bool:
-    """キャッシュの有効性確認"""
-    cached_time = datetime.fromisoformat(cached_at)
-    expire_time = datetime.now() - timedelta(hours=self.expire_hours)
-    return cached_time > expire_time
+# =============================================================================
+# Parser
+# =============================================================================
 
-async def get(self, url: str) -> Optional[str]:
-    """キャッシュからコンテンツを取得"""
-    cache_file, url_hash = self._get_cache_path(url)
-    
-    with sqlite3.connect(self.db_path) as conn:
-        cursor = conn.execute(
-            "SELECT cached_at, file_path FROM cache_metadata WHERE url_hash = ?",
-            (url_hash,)
-        )
-        result = cursor.fetchone()
-    
-    if result and self._is_cache_valid(result[0]) and cache_file.exists():
-        async with aiofiles.open(cache_file, mode='r', encoding='utf-8') as f:
-            content = await f.read()
-            self.logger.debug("キャッシュヒット", url=url, cache_file=str(cache_file))
-            return content
-    
-    self.logger.debug("キャッシュミス", url=url)
-    return None
 
-async def set(self, url: str, content: str, status_code: int = 200):
-    """コンテンツをキャッシュに保存"""
-    cache_file, url_hash = self._get_cache_path(url)
-    
-    async with aiofiles.open(cache_file, mode='w', encoding='utf-8') as f:
-        await f.write(content)
-    
-    with sqlite3.connect(self.db_path) as conn:
-        conn.execute("""
-            INSERT OR REPLACE INTO cache_metadata 
-            (url_hash, url, cached_at, file_path, content_type, status_code)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (url_hash, url, datetime.now().isoformat(), str(cache_file), 'text/html', status_code))
-    
-    self.logger.debug("キャッシュ保存", url=url, status_code=status_code, content_length=len(content))
-```
+@dataclass
+class ParsedContent:
+    """パース済みコンテンツ"""
+
+    url: str
+    title: str | None = None
+    content: str | None = None
+    date: str | None = None
+    author: str | None = None
+    meta_description: str | None = None
+    word_count: int = 0
+    links_count: int = 0
+    images_count: int = 0
+    parsed_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    error: str | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
 
 class ContentParser:
-“”“コンテンツ解析クラス”””
-def **init**(self, parse_rules: Dict[str, str], logger_instance: StructuredLogger = None):
-self.parse_rules = parse_rules
-self.logger = logger_instance or logger
+    """HTMLコンテンツパーサー"""
 
-```
-def parse(self, content: str, url: str) -> Dict[str, Any]:
-    """ページの詳細解析"""
-    start_time = time.time()
-    try:
-        soup = BeautifulSoup(content, 'html.parser')
-        data = {'url': url, 'parsed_at': datetime.now().isoformat()}
-        
-        for field, selector in self.parse_rules.items():
-            data[field] = self._extract_field(soup, selector)
-        
-        # 追加メタデータ
-        data.update({
-            'content_length': len(content),
-            'word_count': len(content.split()) if content else 0,
-            'meta_description': self._get_meta_content(soup, 'description'),
-            'meta_keywords': self._get_meta_content(soup, 'keywords'),
-            'lang': soup.get('lang') or soup.find('html', {'lang': True}),
-            'links_count': len(soup.find_all('a', href=True)),
-            'images_count': len(soup.find_all('img', src=True))
-        })
-        
-        processing_time = time.time() - start_time
-        self.logger.info("ページ解析完了", 
-                       url=url, 
-                       processing_time=processing_time,
-                       content_length=data['content_length'],
-                       word_count=data['word_count'])
-        
-        return data
-        
-    except Exception as e:
-        self.logger.error("ページ解析エラー", url=url, error=str(e), error_type=type(e).__name__)
-        return {'url': url, 'error': str(e)}
+    def __init__(self, parse_rules: dict[str, str]) -> None:
+        self._rules = parse_rules
 
-def _extract_field(self, soup: BeautifulSoup, selector: str) -> Optional[str]:
-    """フィールドの抽出"""
-    try:
-        for sel in selector.split(','):
-            element = soup.select_one(sel.strip())
-            if element:
-                text = element.get_text(strip=True)
+    def parse(self, html: str, url: str) -> ParsedContent:
+        """HTMLをパース"""
+        try:
+            soup = BeautifulSoup(html, "html.parser")
+
+            # 基本フィールド抽出
+            fields = {}
+            for name, selector in self._rules.items():
+                fields[name] = self._extract(soup, selector)
+
+            return ParsedContent(
+                url=url,
+                title=fields.get("title"),
+                content=fields.get("content"),
+                date=fields.get("date"),
+                author=fields.get("author"),
+                meta_description=self._get_meta(soup, "description"),
+                word_count=len(html.split()),
+                links_count=len(soup.find_all("a", href=True)),
+                images_count=len(soup.find_all("img", src=True)),
+                extra={k: v for k, v in fields.items() if k not in ["title", "content", "date", "author"]},
+            )
+
+        except Exception as e:
+            return ParsedContent(url=url, error=str(e))
+
+    def _extract(self, soup: BeautifulSoup, selector: str) -> str | None:
+        """セレクタでテキストを抽出"""
+        for sel in selector.split(","):
+            elem = soup.select_one(sel.strip())
+            if elem:
+                text = elem.get_text(strip=True)
                 if text:
                     return text
         return None
-    except Exception:
+
+    def _get_meta(self, soup: BeautifulSoup, name: str) -> str | None:
+        """metaタグの内容を取得"""
+        meta = soup.find("meta", {"name": name}) or soup.find("meta", {"property": f"og:{name}"})
+        return meta.get("content") if meta else None
+
+
+# =============================================================================
+# Validator
+# =============================================================================
+
+
+@dataclass
+class ValidationResult:
+    """バリデーション結果"""
+
+    is_valid: bool
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+class ContentValidator:
+    """コンテンツバリデーター"""
+
+    def __init__(
+        self,
+        required_fields: list[str],
+        min_length: int = 50,
+        max_length: int = 50000,
+    ) -> None:
+        self._required = required_fields
+        self._min_length = min_length
+        self._max_length = max_length
+
+    def validate(self, content: ParsedContent) -> ValidationResult:
+        """コンテンツをバリデート"""
+        errors = []
+        warnings = []
+
+        # 必須フィールドチェック
+        for field_name in self._required:
+            value = getattr(content, field_name, None) or content.extra.get(field_name)
+            if not value:
+                errors.append(f"必須フィールド '{field_name}' が不足")
+
+        # コンテンツ長チェック
+        if content.content:
+            length = len(content.content)
+            if length < self._min_length:
+                warnings.append(f"コンテンツが短すぎます ({length}文字)")
+            elif length > self._max_length:
+                warnings.append(f"コンテンツが長すぎます ({length}文字)")
+
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+        )
+
+
+# =============================================================================
+# Exporter
+# =============================================================================
+
+
+class Exporter(ABC):
+    """エクスポーターの基底クラス"""
+
+    @abstractmethod
+    async def export(self, data: list[ParsedContent], path: Path) -> None:
+        """データをエクスポート"""
+
+
+class JsonExporter(Exporter):
+    async def export(self, data: list[ParsedContent], path: Path) -> None:
+        output = path.with_suffix(".json")
+        records = [self._to_dict(item) for item in data]
+
+        async with aiofiles.open(output, "w", encoding="utf-8") as f:
+            await f.write(json.dumps(records, ensure_ascii=False, indent=2))
+
+    def _to_dict(self, item: ParsedContent) -> dict[str, Any]:
+        return {
+            "url": item.url,
+            "title": item.title,
+            "content": item.content,
+            "date": item.date,
+            "author": item.author,
+            "meta_description": item.meta_description,
+            "word_count": item.word_count,
+            "links_count": item.links_count,
+            "images_count": item.images_count,
+            "parsed_at": item.parsed_at,
+            **item.extra,
+        }
+
+
+class CsvExporter(Exporter):
+    async def export(self, data: list[ParsedContent], path: Path) -> None:
+        import csv
+
+        output = path.with_suffix(".csv")
+        if not data:
+            return
+
+        fieldnames = [
+            "url", "title", "content", "date", "author",
+            "meta_description", "word_count", "links_count",
+            "images_count", "parsed_at",
+        ]
+
+        rows = []
+        for item in data:
+            rows.append({
+                "url": item.url,
+                "title": item.title,
+                "content": item.content[:500] if item.content else None,  # 切り詰め
+                "date": item.date,
+                "author": item.author,
+                "meta_description": item.meta_description,
+                "word_count": item.word_count,
+                "links_count": item.links_count,
+                "images_count": item.images_count,
+                "parsed_at": item.parsed_at,
+            })
+
+        async with aiofiles.open(output, "w", encoding="utf-8", newline="") as f:
+            # aiofilesはcsv.writerと直接使えないため、文字列として書き込み
+            import io
+            buffer = io.StringIO()
+            writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+            await f.write(buffer.getvalue())
+
+
+def get_exporter(format_name: str) -> Exporter:
+    """フォーマット名からエクスポーターを取得"""
+    exporters = {
+        "json": JsonExporter(),
+        "csv": CsvExporter(),
+    }
+    if format_name not in exporters:
+        raise ValueError(f"未対応のフォーマット: {format_name}")
+    return exporters[format_name]
+
+
+# =============================================================================
+# HTTP Client
+# =============================================================================
+
+
+@dataclass
+class FetchResult:
+    """フェッチ結果"""
+
+    url: str
+    content: str | None = None
+    status_code: int = 0
+    error: str | None = None
+    from_cache: bool = False
+
+
+class HttpClient:
+    """非同期HTTPクライアント"""
+
+    def __init__(
+        self,
+        config: ScrapingConfig,
+        cache: Cache | None,
+        rate_limiter: RateLimiter,
+        logger: logging.Logger,
+    ) -> None:
+        self._config = config
+        self._cache = cache
+        self._rate_limiter = rate_limiter
+        self._logger = logger
+        self._session: aiohttp.ClientSession | None = None
+
+    async def __aenter__(self) -> HttpClient:
+        connector = aiohttp.TCPConnector(limit=self._config.max_concurrent)
+        timeout = aiohttp.ClientTimeout(total=self._config.timeout)
+        self._session = aiohttp.ClientSession(
+            headers=self._config.headers,
+            connector=connector,
+            timeout=timeout,
+        )
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        if self._session:
+            await self._session.close()
+
+    async def fetch(self, url: str) -> FetchResult:
+        """URLからコンテンツを取得"""
+        # キャッシュチェック
+        if self._cache:
+            cached = await self._cache.get(url)
+            if cached:
+                self._logger.debug("キャッシュヒット: %s", url)
+                return FetchResult(url=url, content=cached, status_code=200, from_cache=True)
+
+        # レート制限
+        await self._rate_limiter.acquire()
+
+        # リトライ付きフェッチ
+        for attempt in range(self._config.max_retries):
+            try:
+                async with self._session.get(url) as response:
+                    content = await response.text()
+
+                    if response.status == 200:
+                        if self._cache:
+                            await self._cache.set(url, content, response.status)
+                        return FetchResult(url=url, content=content, status_code=response.status)
+
+                    self._logger.warning("HTTPエラー %d: %s", response.status, url)
+                    return FetchResult(url=url, status_code=response.status, error=f"HTTP {response.status}")
+
+            except asyncio.TimeoutError:
+                self._logger.warning("タイムアウト (試行 %d/%d): %s", attempt + 1, self._config.max_retries, url)
+            except aiohttp.ClientError as e:
+                self._logger.warning("接続エラー (試行 %d/%d): %s - %s", attempt + 1, self._config.max_retries, url, e)
+
+            if attempt < self._config.max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+
+        return FetchResult(url=url, error="最大リトライ回数超過")
+
+
+# =============================================================================
+# Main Scraper
+# =============================================================================
+
+
+@dataclass
+class ScrapingStats:
+    """スクレイピング統計"""
+
+    total: int = 0
+    successful: int = 0
+    failed: int = 0
+    cached: int = 0
+    valid: int = 0
+    invalid: int = 0
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+
+    @property
+    def duration(self) -> timedelta | None:
+        if self.start_time and self.end_time:
+            return self.end_time - self.start_time
         return None
 
-def _get_meta_content(self, soup: BeautifulSoup, name: str) -> Optional[str]:
-    """メタタグの内容を取得"""
-    meta = soup.find('meta', {'name': name}) or soup.find('meta', {'property': f'og:{name}'})
-    return meta.get('content') if meta else None
-```
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "successful": self.successful,
+            "failed": self.failed,
+            "cached": self.cached,
+            "valid": self.valid,
+            "invalid": self.invalid,
+            "duration_seconds": self.duration.total_seconds() if self.duration else None,
+        }
 
-class DataQualityChecker:
-“”“データ品質チェッククラス”””
-def **init**(self, config: ScrapingConfig, logger_instance: StructuredLogger = None):
-self.config = config
-self.logger = logger_instance or logger
 
-```
-def validate_record(self, record: Dict[str, Any]) -> tuple:
-    """レコードの品質チェック"""
-    errors = []
-    warnings = []
-    
-    # 必須フィールドチェック
-    for field in self.config.required_fields:
-        if field not in record or not record[field]:
-            errors.append(f"必須フィールド '{field}' が不足")
-    
-    # コンテンツ長チェック
-    if 'content' in record and record['content']:
-        content_len = len(record['content'])
-        if content_len < self.config.min_content_length:
-            warnings.append(f"コンテンツが短すぎます ({content_len}文字)")
-        elif content_len > self.config.max_content_length:
-            warnings.append(f"コンテンツが長すぎます ({content_len}文字)")
-    
-    # 日付形式チェック
-    if 'date' in record and record['date']:
-        try:
-            pd.to_datetime(record['date'])
-        except:
-            warnings.append("日付形式が不正です")
-    
-    is_valid = len(errors) == 0
-    
-    if not is_valid:
-        self.logger.warning("データ品質チェック失敗", 
-                          url=record.get('url', 'unknown'),
-                          errors=errors,
-                          warnings=warnings)
-    
-    return is_valid, errors, warnings
-```
+class WebScraper:
+    """Webスクレイパー"""
 
-class EnhancedDataCollector:
-“”“拡張データ収集クラス”””
-def **init**(self, config: ScrapingConfig):
-self.config = config
-self.logger = setup_cloud_logger(f”{**name**}.collector”, config.cloud_logging)
-self.cache = EnhancedURLCache(config.cache_dir, config.cache_expire_hours, self.logger)
-self.parser = ContentParser(config.parse_rules, self.logger)
-self.quality_checker = DataQualityChecker(config, self.logger)
-self.rate_limiter = RateLimiter(config.delay_range, self.logger)
-self.session: Optional[aiohttp.ClientSession] = None
-self.stats = {
-‘total_urls’: 0,
-‘successful’: 0,
-‘failed’: 0,
-‘cached’: 0,
-‘quality_passed’: 0,
-‘quality_failed’: 0,
-‘start_time’: None,
-‘end_time’: None
-}
+    def __init__(self, config: ScrapingConfig, log_config: LogConfig | None = None) -> None:
+        self._config = config
+        self._logger = setup_logger(log_config or LogConfig())
 
-```
-async def __aenter__(self):
-    """非同期コンテキストマネージャー"""
-    connector = aiohttp.TCPConnector(limit=self.config.max_concurrent)
-    timeout = aiohttp.ClientTimeout(total=self.config.timeout)
-    self.session = aiohttp.ClientSession(
-        headers=self.config.headers,
-        connector=connector,
-        timeout=timeout
+        self._cache = Cache(config.cache_dir, config.cache_expire_hours) if config.cache_enabled else None
+        self._rate_limiter = RateLimiter(config.delay_range)
+        self._parser = ContentParser(config.parse_rules)
+        self._validator = ContentValidator(
+            config.required_fields,
+            config.min_content_length,
+            config.max_content_length,
+        )
+
+        self._client: HttpClient | None = None
+        self._results: list[ParsedContent] = []
+        self._stats = ScrapingStats()
+
+    async def __aenter__(self) -> WebScraper:
+        self._client = HttpClient(
+            self._config,
+            self._cache,
+            self._rate_limiter,
+            self._logger,
+        )
+        await self._client.__aenter__()
+        self._stats.start_time = datetime.now()
+        self._logger.info("スクレイピング開始: %s", self._config.base_url)
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        if self._client:
+            await self._client.__aexit__(*_)
+        self._stats.end_time = datetime.now()
+        self._logger.info("スクレイピング完了: %s", self._stats.to_dict())
+
+    async def scrape(self, urls: list[str], show_progress: bool = True) -> list[ParsedContent]:
+        """URLリストをスクレイプ"""
+        self._stats.total = len(urls)
+        self._results = []
+
+        tasks = [self._process_url(url) for url in urls]
+
+        if show_progress:
+            results = await tqdm.gather(*tasks, desc="スクレイピング中")
+        else:
+            results = await asyncio.gather(*tasks)
+
+        self._results = [r for r in results if r is not None]
+        return self._results
+
+    async def _process_url(self, url: str) -> ParsedContent | None:
+        """単一URLを処理"""
+        # フェッチ
+        result = await self._client.fetch(url)
+
+        if result.from_cache:
+            self._stats.cached += 1
+
+        if result.error or not result.content:
+            self._stats.failed += 1
+            self._logger.error("取得失敗: %s - %s", url, result.error)
+            return ParsedContent(url=url, error=result.error)
+
+        self._stats.successful += 1
+
+        # パース
+        parsed = self._parser.parse(result.content, url)
+
+        if parsed.error:
+            self._logger.warning("パースエラー: %s - %s", url, parsed.error)
+            return parsed
+
+        # バリデーション
+        validation = self._validator.validate(parsed)
+
+        if validation.is_valid:
+            self._stats.valid += 1
+        else:
+            self._stats.invalid += 1
+            self._logger.warning("バリデーション失敗: %s - %s", url, validation.errors)
+
+        return parsed
+
+    async def export(self, filename: str = "scraped_data") -> list[Path]:
+        """結果をエクスポート"""
+        if not self._results:
+            self._logger.warning("エクスポートするデータがありません")
+            return []
+
+        output_path = self._config.output_dir / filename
+        exported = []
+
+        for fmt in self._config.export_formats:
+            try:
+                exporter = get_exporter(fmt)
+                await exporter.export(self._results, output_path)
+                exported.append(output_path.with_suffix(f".{fmt}"))
+                self._logger.info("エクスポート完了: %s", output_path.with_suffix(f".{fmt}"))
+            except Exception as e:
+                self._logger.error("エクスポートエラー (%s): %s", fmt, e)
+
+        return exported
+
+    @property
+    def stats(self) -> ScrapingStats:
+        return self._stats
+
+    @property
+    def results(self) -> list[ParsedContent]:
+        return self._results
+
+
+# =============================================================================
+# Entry Point
+# =============================================================================
+
+
+async def main() -> None:
+    """使用例"""
+    config = ScrapingConfig(
+        base_url="https://example.com",
+        max_concurrent=5,
+        delay_range=(1.0, 2.0),
+        required_fields=["title"],
+        export_formats=["json", "csv"],
     )
-    self.stats['start_time'] = datetime.now().isoformat()
-    self.logger.info("データ収集セッション開始", config=self.config.__dict__)
-    return self
 
-async def __aexit__(self, exc_type, exc_val, exc_tb):
-    """リソースの解放"""
-    if self.session:
-        await self.session.close()
-    
-    self.stats['end_time'] = datetime.now
-```
+    urls = [
+        "https://example.com/page1",
+        "https://example.com/page2",
+        "https://example.com/page3",
+    ]
+
+    async with WebScraper(config) as scraper:
+        results = await scraper.scrape(urls)
+
+        print(f"\n=== 統計 ===")
+        print(f"成功: {scraper.stats.successful}/{scraper.stats.total}")
+        print(f"キャッシュ: {scraper.stats.cached}")
+        print(f"有効: {scraper.stats.valid}")
+
+        await scraper.export("example_output")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

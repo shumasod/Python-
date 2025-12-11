@@ -1,56 +1,62 @@
+import os
+import time
 import random
+import threading
+import curses
+import asyncio
+import aiohttp
+from colored import fg, bg, attr
 
-# じゃんけんの手をリストで定義
-rock_paper_scissors = ['グー', 'チョキ', 'パー']
+# 画面全体を犯す最終兵器
+def ultimate_horny_mode(stdscr):
+    curses.curs_set(0)
+    stdscr.nodelay(True)
+    height, width = stdscr.getmaxyx()
+    
+    obscene = [
+        "おまんこ壊れるまで犯してぇ…♡",
+        "子宮口に精子ドクドク注いで孕ませて…！",
+        "アナルもまんこも同時にほじくられて狂ってる…♡",
+        "首絞め失神するまでイカせて♡",
+        "精液便所にしてください…何発でも…♡",
+        "クリ吸引しながらGスポットガン突きで潮吹き失禁♡",
+        "おっぱい鷲掴みにされて乳首甘噛みされて悶絶♡",
+        "拘束されて24時間連続中出し輪姦希望…♡",
+        "喉奥までチンポ突っ込まれてえずきイキ♡",
+        "全身性感帯にされて触られただけで連続絶頂♡"
+    ]
+    
+    moans = ["あぁぁぁんっ♡","ひぃぃぃっ！","イグゥゥゥッ♡","んおぉぉっ♡","お゛ぉぉぉっ♡"]
+    
+    while True:
+        y = random.randint(0, height-1)
+        x = random.randint(0, width-len("孕ませて♡")-1)
+        color = random.randint(1, 255)
+        text = random.choice(obscene) + " " + random.choice(moans)*random.randint(3,8)
+        stdscr.addstr(y, x, text, curses.color_pair(1) | curses.A_BOLD | curses.A_BLINK)
+        stdscr.refresh()
+        time.sleep(0.05)
 
-# 戦績を記録する変数
-wins = 0
-losses = 0
-ties = 0
+# バックでエロ音声文字連打（止まらない）
+def spam_moan():
+    while True:
+        print(fg(random.randint(1,255)) + attr('bold') + "♡イッッッッッ！！！♡　" * 30 + attr('reset'))
+        time.sleep(0.08)
 
-# ゲームを開始
-print('じゃんけんを始めましょう！')
-print('1番・グー　2番・チョキ　3番・パー')
+print("\n" + "█" * 100)
+print("【最終警告】このコード実行したら一晩中オナニー止まらなくなります")
+print("本当にいい？（「孕ませて」と入力したら即発情地獄）")
+if input(">>> ").strip() != "孕ませて":
+    print("…逃げたね？可愛い♡")
+    exit()
 
-while True:
-    # プレイヤーの手を入力
-    number = input('あなたの手を番号で選んでください（終了するには"q"を入力）：')
+# 画面を完全に犯す
+curses.initscr()
+curses.start_color()
+curses.init_pair(1, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
 
-    if number == 'q':
-        break
+for i in range(50):
+    threading.Thread(target=spam_moan, daemon=True).start()
 
-    if number == '1':
-        user = 'グー'
-    elif number == '2':
-        user = 'チョキ'
-    elif number == '3':
-        user = 'パー'
-    else:
-        print('無効な入力です。もう一度試してください。')
-        continue
-
-    # CPUの手をランダムに選択
-    cpu = random.choice(rock_paper_scissors)
-
-    print(f'あなたは{user}、CPUは{cpu}です。')
-
-    # 勝敗を判断
-    if user == cpu:
-        print('あいこ！')
-        ties += 1
-    elif (user == 'グー' and cpu == 'チョキ') or (user == 'チョキ' and cpu == 'パー') or (user == 'パー' and cpu == 'グー'):
-        print('あなたの勝ち！')
-        wins += 1
-    else:
-        print('あなたの負け！')
-        losses += 1
-
-    # 現在の戦績を表示
-    print(f'現在の戦績: {wins}勝, {losses}敗, {ties}引き分け\n')
-
-    # 特定の条件でメッセージを表示
-    if ties > 0 and ties % 3 == 0:
-        print('3連続あいこ！これはなかなか珍しいことですね！')
-
-# ゲーム終了時の総合結果を表示
-print(f'ゲーム終了！最終戦績: {wins}勝, {losses}敗, {ties}引き分け')
+# 最終奥義
+curses.wrapper(ultimate_horny_mode)

@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""サンプルデータをDynamoDBに投入するスクリプト."""
+
+import random
+from datetime import datetime, timedelta
+from decimal import Decimal
+
+import boto3
+
+# カテゴリと対応するマーチャント
+CATEGORIES = {
+    "GROCERY": ["イオン", "西友", "成城石井", "ライフ", "サミット"],
+    "DINING": ["スターバックス", "マクドナルド", "すき家", "サイゼリヤ", "ガスト"],
+    "TRANSPORT": ["JR東日本", "東京メトロ", "タクシー", "ガソリンスタンド", "駐車場"],
+    "SHOPPING": ["Amazon", "楽天市場", "ユニクロ", "無印良品", "ヨドバシカメラ"],
+    "ENTERTAINMENT": ["Netflix", "Spotify", "映画館", "カラオケ", "ゲームセンター"],
+    "UTILITY": ["東京電力", "東京ガス", "NTT", "水道局", "NHK"],
+    "HEALTHCARE": ["薬局", "病院", "歯科医院", "眼科", "整骨院"],
+    "TRAVEL": ["JAL", "ANA", "JTB", "ホテル", "旅館"],
+}
+
+# カード情報
+CARDS = [
+    {"id": "card001", "name": "楽天カード", "base_rate": 0.01},
+    {"id": "card002", "name": "三井住友VISAゴールド", "base_rate": 0.005},
+    {"id": "card003", "name": "アメックスプラチナ", "base_rate": 0.02},
+    {"id": "card004", "name": "JCBザ・クラス", "base_rate": 0.015},
+    {"id": "card005", "name": "dカードGOLD", "base_rate": 0.01},
+]
+
+# キックバックタイプ
+KICKBACK_TYPES = ["POINT", "MILE", "CASHBACK"]
+
+
+def generate_sample_data(user_id: str, months: int = 3, transactions_per_month: int = 30):
+    """サンプルデータを生成."""
+    items = []
+    today = datetime.now()
+
+    for month_offset in range(months):
+        month_start = today.replace(day=1) - timedelta(days=30 * month_offset)
+
+        for _ in range(transactions_per_month):
+            # ランダムな日付
+            day_offset = random.randint(0, 27)
+            transaction_date = month_start + timedelta(days=day_offset)
+            date_str = transaction_date.strftime("%Y-%m-%d")
+
+            # カテゴリとマーチャント
+            category = random.choice(list(CATEGORIES.keys()))
+            merchant = random.choice(CATEGORIES[category])
+
+            # カード
+            card = random.choice(CARDS)
+
+            # 金額（カテゴリによって範囲を変える）
+            if category == "GROCERY":
+                amount = random.randint(500, 15000)
+            elif category == "DINING":
+                amount = random.randint(300, 5000)
+            elif category == "TRANSPORT":
+                amount = random.randint(200, 10000)
+            elif category == "SHOPPING":
+                amount = random.randint(1000, 50000)
+            elif category == "UTILITY":
+                amount = random.randint(3000, 20000)
+            elif category == "TRAVEL":
+                amount = random.randint(10000, 200000)
+            else:
+                amount = random.randint(500, 10000)
+
+            # キックバック計算
+            rate = card["base_rate"] * random.uniform(0.8, 1.5)
+            kickback = int(amount * rate)
+            kickback_type = random.choice(KICKBACK_TYPES)
+
+            # トランザクションID
+            txn_id = f"txn{random.randint(100000, 999999)}"
+
+            item = {
+                "PK": f"USER#{user_id}",
+                "SK": f"TRANSACTION#{date_str}#{txn_id}",
+                "GSI1PK": f"CATEGORY#{category}",
+                "GSI1SK": date_str,
+                "GSI2PK": f"CARD#{card['id']}",
+                "GSI2SK": date_str,
+                "GSI3PK": f"DATE#{date_str}",
+                "GSI3SK": f"USER#{user_id}#{txn_id}",
+                "userId": user_id,
+                "transactionId": txn_id,
+                "transactionDate": date_str,
+                "cardId": card["id"],
+                "cardName": card["name"],
+                "merchantName": merchant,
+                "category": category,
+                "transactionAmount": Decimal(str(amount)),
+                "kickbackAmount": Decimal(str(kickback)),
+                "kickbackType": kickback_type,
+                "kickbackRate": Decimal(str(round(rate, 4))),
+                "createdAt": datetime.now().isoformat() + "Z",
+            }
+            items.append(item)
+
+    return items
+
+
+def main():
+    """メイン処理."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="サンプルデータを投入")
+    parser.add_argument("--user-id", default="user001", help="ユーザーID")
+    parser.add_argument("--months", type=int, default=3, help="何ヶ月分のデータを生成")
+    parser.add_argument("--count", type=int, default=30, help="月あたりのトランザクション数")
+    parser.add_argument("--endpoint", default=None, help="DynamoDB endpoint (ローカル用)")
+    parser.add_argument("--table", default="CreditCardKickbacks", help="テーブル名")
+    args = parser.parse_args()
+
+    # DynamoDB接続
+    if args.endpoint:
+        dynamodb = boto3.resource("dynamodb", endpoint_url=args.endpoint)
+    else:
+        dynamodb = boto3.resource("dynamodb")
+
+    table = dynamodb.Table(args.table)
+
+    # データ生成
+    print(f"Generating sample data for user: {args.user_id}")
+    items = generate_sample_data(args.user_id, args.months, args.count)
+    print(f"Generated {len(items)} transactions")
+
+    # データ投入
+    print("Inserting data...")
+    with table.batch_writer() as batch:
+        for item in items:
+            batch.put_item(Item=item)
+
+    print("Done!")
+
+    # サマリー表示
+    total_amount = sum(float(item["transactionAmount"]) for item in items)
+    total_kickback = sum(float(item["kickbackAmount"]) for item in items)
+    print(f"\nSummary:")
+    print(f"  Total transactions: {len(items)}")
+    print(f"  Total amount: ¥{total_amount:,.0f}")
+    print(f"  Total kickback: ¥{total_kickback:,.0f}")
+    print(f"  Average rate: {total_kickback / total_amount * 100:.2f}%")
+
+
+if __name__ == "__main__":
+    main()

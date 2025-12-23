@@ -31,7 +31,7 @@ logging.FileHandler(“netconf_config.log”),
 logging.StreamHandler()
 ]
 )
-logger = logging.getLogger(**name**)
+logger = logging.getLogger(__name__)
 
 # 環境変数からデフォルト値を取得
 
@@ -48,8 +48,7 @@ prefix: str
 mask: str
 fwd: Optional[str] = None
 
-```
-def __post_init__(self):
+    def __post_init__(self):
     """バリデーション"""
     if not self.prefix or not self.mask:
         raise ValueError("prefix and mask are required")
@@ -74,7 +73,6 @@ def _is_valid_ip(ip: str) -> bool:
         return True
     except (ValueError, AttributeError):
         return False
-```
 
 class NetconfConnectionError(Exception):
 “”“NETCONF接続エラー”””
@@ -85,10 +83,9 @@ class NetconfConfigurationError(Exception):
 pass
 
 class NetconfClient:
-“”“NETCONF プロトコルを使用してCiscoデバイスを設定するクライアント”””
+"""NETCONF プロトコルを使用してCiscoデバイスを設定するクライアント"""
 
-```
-def __init__(self, host: str, port: int, username: str, password: str, timeout: int = 30):
+    def __init__(self, host: str, port: int, username: str, password: str, timeout: int = 30):
     """
     NETCONF クライアントを初期化
     
@@ -268,52 +265,48 @@ def verify_config(self, config_path: str) -> str:
     result = self.get_running_config(filter_xml)
     if not result:
         raise NetconfConfigurationError(f"Configuration path '{config_path}' not found")
-    
+
     return result
-```
 
 def create_route_config(routes: List[RouteConfig]) -> str:
-“””
-ルート設定用のXMLペイロードを生成
+    """
+    ルート設定用のXMLペイロードを生成
 
-```
-Args:
+    Args:
     routes: ルート設定のリスト
     
 Returns:
     str: XML形式の設定ペイロード
 """
-if not routes:
-    raise ValueError("No routes provided")
+    if not routes:
+        raise ValueError("No routes provided")
 
-# 設定用のルート要素を生成
-root = ET.Element("config", xmlns="urn:ietf:params:xml:ns:netconf:base:1.0")
-native = ET.SubElement(root, "native", xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native")
-ip = ET.SubElement(native, "ip")
-route = ET.SubElement(ip, "route")
+    # 設定用のルート要素を生成
+    root = ET.Element("config", xmlns="urn:ietf:params:xml:ns:netconf:base:1.0")
+    native = ET.SubElement(root, "native", xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native")
+    ip = ET.SubElement(native, "ip")
+    route = ET.SubElement(ip, "route")
 
-# 各ルートを追加
-for route_config in routes:
-    route_elem = ET.SubElement(route, "ip-route-interface-forwarding-list")
-    ET.SubElement(route_elem, "prefix").text = route_config.prefix
-    ET.SubElement(route_elem, "mask").text = route_config.mask
-    
-    if route_config.fwd:
-        fwd_list = ET.SubElement(route_elem, "fwd-list")
-        ET.SubElement(fwd_list, "fwd").text = route_config.fwd
+    # 各ルートを追加
+    for route_config in routes:
+        route_elem = ET.SubElement(route, "ip-route-interface-forwarding-list")
+        ET.SubElement(route_elem, "prefix").text = route_config.prefix
+        ET.SubElement(route_elem, "mask").text = route_config.mask
 
-# XMLを文字列に変換
-xml_str = ET.tostring(root, encoding='unicode')
-logger.debug(f"Generated XML configuration: {xml_str}")
-return xml_str
-```
+        if route_config.fwd:
+            fwd_list = ET.SubElement(route_elem, "fwd-list")
+            ET.SubElement(fwd_list, "fwd").text = route_config.fwd
+
+    # XMLを文字列に変換
+    xml_str = ET.tostring(root, encoding='unicode')
+    logger.debug(f"Generated XML configuration: {xml_str}")
+    return xml_str
 
 def format_xml(xml_string: str) -> str:
-“””
-XML文字列を整形して読みやすくする
+    """
+    XML文字列を整形して読みやすくする
 
-```
-Args:
+    Args:
     xml_string: 整形前のXML文字列
     
 Returns:
@@ -326,16 +319,14 @@ try:
     lines = [line for line in pretty_xml.split('\n') if line.strip()]
     return '\n'.join(lines)
 except Exception as e:
-    logger.error(f"Failed to format XML: {e}")
-    return xml_string
-```
+        logger.error(f"Failed to format XML: {e}")
+        return xml_string
 
 def load_routes_from_file(file_path: str) -> List[RouteConfig]:
-“””
-JSONファイルからルート設定をロード
+    """
+    JSONファイルからルート設定をロード
 
-```
-Args:
+    Args:
     file_path: ルート設定を含むJSONファイルのパス
     
 Returns:
@@ -378,166 +369,159 @@ try:
     logger.info(f"Loaded {len(routes)} routes from {file_path}")
     return routes
     
-except json.JSONDecodeError as e:
-    raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
-```
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
 
 def parse_arguments() -> argparse.Namespace:
-“”“コマンドライン引数をパース”””
-parser = argparse.ArgumentParser(
-description=‘Configure static routes on Cisco devices using NETCONF’,
-formatter_class=argparse.RawDescriptionHelpFormatter,
-epilog=”””
+    """コマンドライン引数をパース"""
+    parser = argparse.ArgumentParser(
+        description='Configure static routes on Cisco devices using NETCONF',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
 Examples:
-%(prog)s –host 192.168.1.1 –username admin –routes-file routes.json
-%(prog)s –host 192.168.1.1 –username admin –get-config
-%(prog)s –host 192.168.1.1 –username admin –routes-file routes.json –dry-run
-“””
-)
+  %(prog)s --host 192.168.1.1 --username admin --routes-file routes.json
+  %(prog)s --host 192.168.1.1 --username admin --get-config
+  %(prog)s --host 192.168.1.1 --username admin --routes-file routes.json --dry-run
+"""
+    )
 
-```
-# 接続情報
-parser.add_argument('--host', default=DEFAULT_HOST, required=not DEFAULT_HOST,
-                    help='Network device hostname or IP address')
-parser.add_argument('--port', type=int, default=DEFAULT_PORT,
-                    help=f'NETCONF port number (default: {DEFAULT_PORT})')
-parser.add_argument('--username', default=DEFAULT_USERNAME, required=not DEFAULT_USERNAME,
-                    help='Authentication username')
-parser.add_argument('--password', default='',
-                    help='Authentication password (will prompt if not provided)')
-parser.add_argument('--timeout', type=int, default=30,
-                    help='Connection timeout in seconds (default: 30)')
+    # 接続情報
+    parser.add_argument('--host', default=DEFAULT_HOST, required=not DEFAULT_HOST,
+                        help='Network device hostname or IP address')
+    parser.add_argument('--port', type=int, default=DEFAULT_PORT,
+                        help=f'NETCONF port number (default: {DEFAULT_PORT})')
+    parser.add_argument('--username', default=DEFAULT_USERNAME, required=not DEFAULT_USERNAME,
+                        help='Authentication username')
+    parser.add_argument('--password', default='',
+                        help='Authentication password (will prompt if not provided)')
+    parser.add_argument('--timeout', type=int, default=30,
+                        help='Connection timeout in seconds (default: 30)')
 
-# ルート設定
-parser.add_argument('--routes-file', type=str,
-                    help='JSON file containing route configurations')
+    # ルート設定
+    parser.add_argument('--routes-file', type=str,
+                        help='JSON file containing route configurations')
 
-# 動作モード
-parser.add_argument('--dry-run', action='store_true',
-                    help='Validate connection and show config without applying changes')
-parser.add_argument('--get-config', action='store_true',
-                    help='Retrieve and display the running configuration')
-parser.add_argument('--verbose', '-v', action='store_true',
-                    help='Enable verbose logging')
+    # 動作モード
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Validate connection and show config without applying changes')
+    parser.add_argument('--get-config', action='store_true',
+                        help='Retrieve and display the running configuration')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose logging')
 
-return parser.parse_args()
-```
+    return parser.parse_args()
 
 def validate_arguments(args: argparse.Namespace) -> None:
-“”“引数の検証”””
-if not args.get_config and not args.routes_file:
-if not args.dry_run:
-raise ValueError(“Either –routes-file or –get-config must be specified”)
+    """引数の検証"""
+    if not args.get_config and not args.routes_file:
+        if not args.dry_run:
+            raise ValueError("Either --routes-file or --get-config must be specified")
 
-```
-if args.routes_file and not Path(args.routes_file).exists():
-    raise FileNotFoundError(f"Routes file not found: {args.routes_file}")
-```
+    if args.routes_file and not Path(args.routes_file).exists():
+        raise FileNotFoundError(f"Routes file not found: {args.routes_file}")
 
 def main() -> int:
-“”“メイン実行関数”””
-try:
-args = parse_arguments()
+    """メイン実行関数"""
+    try:
+        args = parse_arguments()
 
-```
-    # 詳細ログを有効化
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        for handler in logger.handlers:
-            handler.setLevel(logging.DEBUG)
-    
-    # 引数の検証
-    validate_arguments(args)
-    
-    # パスワードが指定されていない場合は入力を求める
-    password = args.password
-    if not password:
-        password = getpass.getpass(f"Enter password for {args.username}@{args.host}: ")
-    
-    # ルート情報の準備
-    routes = []
-    if args.routes_file:
-        logger.info(f"Loading routes from {args.routes_file}")
-        routes = load_routes_from_file(args.routes_file)
-    elif not args.get_config:
-        # デフォルトのサンプルルート
-        logger.info("Using default sample routes")
-        routes = [
-            RouteConfig(prefix="1.1.1.1", mask="255.255.255.0", fwd="GigabitEthernet1"),
-            RouteConfig(prefix="1.1.1.2", mask="255.255.255.255", fwd="Null0"),
-            RouteConfig(prefix="1.1.1.3", mask="255.255.255.255", fwd="Null0")
-        ]
-    
-    # デバイスへの接続（コンテキストマネージャーを使用）
-    with NetconfClient(
-        host=args.host,
-        port=args.port,
-        username=args.username,
-        password=password,
-        timeout=args.timeout
-    ) as client:
-        
-        # デバイスの機能（capabilities）を表示
-        capabilities = client.get_capabilities()
-        logger.debug(f"Device capabilities: {len(capabilities)} capabilities found")
-        
-        # 実行中の設定を取得
-        if args.get_config:
-            logger.info("Retrieving running configuration")
-            running_config = client.get_running_config()
-            formatted_config = format_xml(running_config)
-            print("\n=== Running Configuration ===")
-            print(formatted_config)
-            print("=============================\n")
-        
-        # dry-runモードまたはget-configのみの場合は設定変更を行わない
-        if args.dry_run or (args.get_config and not routes):
-            if args.dry_run and routes:
-                logger.info("Dry run mode - configuration will not be applied")
+        # 詳細ログを有効化
+        if args.verbose:
+            logger.setLevel(logging.DEBUG)
+            for handler in logger.handlers:
+                handler.setLevel(logging.DEBUG)
+
+        # 引数の検証
+        validate_arguments(args)
+
+        # パスワードが指定されていない場合は入力を求める
+        password = args.password
+        if not password:
+            password = getpass.getpass(f"Enter password for {args.username}@{args.host}: ")
+
+        # ルート情報の準備
+        routes = []
+        if args.routes_file:
+            logger.info(f"Loading routes from {args.routes_file}")
+            routes = load_routes_from_file(args.routes_file)
+        elif not args.get_config:
+            # デフォルトのサンプルルート
+            logger.info("Using default sample routes")
+            routes = [
+                RouteConfig(prefix="1.1.1.1", mask="255.255.255.0", fwd="GigabitEthernet1"),
+                RouteConfig(prefix="1.1.1.2", mask="255.255.255.255", fwd="Null0"),
+                RouteConfig(prefix="1.1.1.3", mask="255.255.255.255", fwd="Null0")
+            ]
+
+        # デバイスへの接続（コンテキストマネージャーを使用）
+        with NetconfClient(
+            host=args.host,
+            port=args.port,
+            username=args.username,
+            password=password,
+            timeout=args.timeout
+        ) as client:
+
+            # デバイスの機能（capabilities）を表示
+            capabilities = client.get_capabilities()
+            logger.debug(f"Device capabilities: {len(capabilities)} capabilities found")
+
+            # 実行中の設定を取得
+            if args.get_config:
+                logger.info("Retrieving running configuration")
+                running_config = client.get_running_config()
+                formatted_config = format_xml(running_config)
+                print("\n=== Running Configuration ===")
+                print(formatted_config)
+                print("=============================\n")
+
+            # dry-runモードまたはget-configのみの場合は設定変更を行わない
+            if args.dry_run or (args.get_config and not routes):
+                if args.dry_run and routes:
+                    logger.info("Dry run mode - configuration will not be applied")
+                    config_xml = create_route_config(routes)
+                    formatted_config = format_xml(config_xml)
+                    print("\n=== Configuration that would be applied ===")
+                    print(formatted_config)
+                    print("=========================================\n")
+                return 0
+
+            # 設定の適用
+            if routes:
+                logger.info(f"Applying {len(routes)} route configurations")
                 config_xml = create_route_config(routes)
-                formatted_config = format_xml(config_xml)
-                print("\n=== Configuration that would be applied ===")
-                print(formatted_config)
-                print("=========================================\n")
-            return 0
-        
-        # 設定の適用
-        if routes:
-            logger.info(f"Applying {len(routes)} route configurations")
-            config_xml = create_route_config(routes)
-            client.edit_config(config_xml)
-            
-            logger.info("Route configuration applied successfully")
-            print("Routes configured successfully!")
-            
-            # 適用後の設定を確認
-            try:
-                verify_config = client.verify_config("ip/route")
-                formatted_config = format_xml(verify_config)
-                print("\n=== Applied Route Configuration ===")
-                print(formatted_config)
-                print("==================================\n")
-            except NetconfConfigurationError as e:
-                logger.warning(f"Could not verify configuration: {e}")
-    
-    return 0
-    
-except KeyboardInterrupt:
-    print("\nOperation cancelled by user")
-    return 130
-except (NetconfConnectionError, NetconfConfigurationError) as e:
-    logger.error(f"NETCONF error: {e}")
-    print(f"Error: {e}")
-    return 1
-except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-    logger.error(f"Input error: {e}")
-    print(f"Error: {e}")
-    return 1
-except Exception as e:
-    logger.exception(f"Unhandled exception: {e}")
-    print(f"Unexpected error: {e}")
-    return 1
-```
+                client.edit_config(config_xml)
 
-if **name** == “**main**”:
-sys.exit(main())
+                logger.info("Route configuration applied successfully")
+                print("Routes configured successfully!")
+
+                # 適用後の設定を確認
+                try:
+                    verify_config = client.verify_config("ip/route")
+                    formatted_config = format_xml(verify_config)
+                    print("\n=== Applied Route Configuration ===")
+                    print(formatted_config)
+                    print("==================================\n")
+                except NetconfConfigurationError as e:
+                    logger.warning(f"Could not verify configuration: {e}")
+
+        return 0
+
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user")
+        return 130
+    except (NetconfConnectionError, NetconfConfigurationError) as e:
+        logger.error(f"NETCONF error: {e}")
+        print(f"Error: {e}")
+        return 1
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        logger.error(f"Input error: {e}")
+        print(f"Error: {e}")
+        return 1
+    except Exception as e:
+        logger.exception(f"Unhandled exception: {e}")
+        print(f"Unexpected error: {e}")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -5,12 +5,10 @@ NETCONF プロトコルを使用してCiscoデバイスにルート設定を行�
 import argparse
 import getpass
 import json
-import logging
 import os
 import sys
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -20,18 +18,14 @@ from ncclient.operations import RPCError
 from ncclient.transport.errors import SSHError, SessionCloseError
 from ncclient.operations.rpc import RPCReply
 
-# ログ設定
+# 共通モジュールのインポート
+from shared.logging_utils import setup_logging
+from shared.exceptions import AppError, ConnectionError as AppConnectionError, ValidationError
+from shared.config import get_config
 
-LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logging.basicConfig(
-level=logging.INFO,
-format=LOG_FORMAT,
-handlers=[
-logging.FileHandler("netconf_config.log"),
-logging.StreamHandler()
-]
-)
-logger = logging.getLogger(__name__)
+# ログ設定
+logger = setup_logging(__name__)
+config = get_config()
 
 # 環境変数からデフォルト値を取得
 
@@ -48,17 +42,34 @@ class RouteConfig:
     mask: str
     fwd: Optional[str] = None
 
-    def __post_init__(self):
-        """バリデーション"""
+    def __post_init__(self) -> None:
+        """
+        バリデーション
+
+        Raises:
+            ValidationError: prefixまたはmaskが不正な場合
+        """
         if not self.prefix or not self.mask:
-            raise ValueError("prefix and mask are required")
+            raise ValidationError(
+                "prefix and mask are required",
+                code="MISSING_REQUIRED_FIELDS",
+                details={'prefix': self.prefix, 'mask': self.mask}
+            )
 
         # 簡単なIPアドレス形式チェック
         if not self._is_valid_ip(self.prefix):
-            raise ValueError(f"Invalid IP address format: {self.prefix}")
+            raise ValidationError(
+                f"Invalid IP address format: {self.prefix}",
+                code="INVALID_IP_FORMAT",
+                details={'field': 'prefix', 'value': self.prefix}
+            )
 
         if not self._is_valid_ip(self.mask):
-            raise ValueError(f"Invalid subnet mask format: {self.mask}")
+            raise ValidationError(
+                f"Invalid subnet mask format: {self.mask}",
+                code="INVALID_MASK_FORMAT",
+                details={'field': 'mask', 'value': self.mask}
+            )
 
     @staticmethod
     def _is_valid_ip(ip: str) -> bool:
@@ -74,12 +85,12 @@ class RouteConfig:
         except (ValueError, AttributeError):
             return False
 
-class NetconfConnectionError(Exception):
+class NetconfConnectionError(AppConnectionError):
     """NETCONF接続エラー"""
     pass
 
 
-class NetconfConfigurationError(Exception):
+class NetconfConfigurationError(AppError):
     """NETCONF設定エラー"""
     pass
 
@@ -87,7 +98,14 @@ class NetconfConfigurationError(Exception):
 class NetconfClient:
     """NETCONF プロトコルを使用してCiscoデバイスを設定するクライアント"""
 
-    def __init__(self, host: str, port: int, username: str, password: str, timeout: int = 30):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str,
+        timeout: int = 30
+    ) -> None:
         """
         NETCONF クライアントを初期化
 
@@ -97,7 +115,34 @@ class NetconfClient:
             username: 認証用ユーザー名
             password: 認証用パスワード
             timeout: 接続タイムアウト（秒）
+
+        Raises:
+            ValidationError: パラメータが不正な場合
         """
+        if not host:
+            raise ValidationError(
+                "Host must be specified",
+                code="MISSING_HOST",
+                details={'host': host}
+            )
+        if not username:
+            raise ValidationError(
+                "Username must be specified",
+                code="MISSING_USERNAME"
+            )
+        if port <= 0 or port > 65535:
+            raise ValidationError(
+                f"Port must be between 1 and 65535: {port}",
+                code="INVALID_PORT",
+                details={'value': port, 'expected': '1-65535'}
+            )
+        if timeout <= 0:
+            raise ValidationError(
+                f"Timeout must be positive: {timeout}",
+                code="INVALID_TIMEOUT",
+                details={'value': timeout, 'expected': '>0'}
+            )
+
         self.host = host
         self.port = port
         self.username = username
@@ -139,11 +184,19 @@ class NetconfClient:
         except SSHError as e:
             error_msg = f"SSH connection failed to {self.host}:{self.port}: {e}"
             logger.error(error_msg)
-            raise NetconfConnectionError(error_msg) from e
+            raise NetconfConnectionError(
+                error_msg,
+                code="SSH_CONNECTION_FAILED",
+                details={'host': self.host, 'port': self.port}
+            ) from e
         except Exception as e:
             error_msg = f"Connection failed to {self.host}:{self.port}: {e}"
             logger.error(error_msg)
-            raise NetconfConnectionError(error_msg) from e
+            raise NetconfConnectionError(
+                error_msg,
+                code="CONNECTION_FAILED",
+                details={'host': self.host, 'port': self.port}
+            ) from e
 
     def disconnect(self) -> None:
         """接続を閉じる"""
@@ -167,9 +220,18 @@ class NetconfClient:
         self.disconnect()
 
     def _ensure_connected(self) -> None:
-        """接続状態を確認"""
+        """
+        接続状態を確認
+
+        Raises:
+            NetconfConnectionError: 接続されていない場合
+        """
         if not self._connected or not self.connection:
-            raise NetconfConnectionError("Not connected to device")
+            raise NetconfConnectionError(
+                "Not connected to device",
+                code="NOT_CONNECTED",
+                details={'host': self.host, 'port': self.port}
+            )
 
     def get_capabilities(self) -> List[str]:
         """
@@ -208,11 +270,19 @@ class NetconfClient:
         except RPCError as e:
             error_msg = f"Failed to get running config: {e}"
             logger.error(error_msg)
-            raise NetconfConfigurationError(error_msg) from e
+            raise NetconfConfigurationError(
+                error_msg,
+                code="RPC_ERROR",
+                details={'operation': 'get_config'}
+            ) from e
         except Exception as e:
             error_msg = f"Error retrieving running config: {e}"
             logger.error(error_msg)
-            raise NetconfConfigurationError(error_msg) from e
+            raise NetconfConfigurationError(
+                error_msg,
+                code="CONFIG_RETRIEVAL_FAILED",
+                details={'operation': 'get_config'}
+            ) from e
 
     def edit_config(self, config: str) -> RPCReply:
         """
@@ -237,11 +307,19 @@ class NetconfClient:
         except RPCError as e:
             error_msg = f"Failed to apply configuration: {e}"
             logger.error(error_msg)
-            raise NetconfConfigurationError(error_msg) from e
+            raise NetconfConfigurationError(
+                error_msg,
+                code="RPC_ERROR",
+                details={'operation': 'edit_config'}
+            ) from e
         except Exception as e:
             error_msg = f"Error applying configuration: {e}"
             logger.error(error_msg)
-            raise NetconfConfigurationError(error_msg) from e
+            raise NetconfConfigurationError(
+                error_msg,
+                code="CONFIG_APPLICATION_FAILED",
+                details={'operation': 'edit_config'}
+            ) from e
 
     def verify_config(self, config_path: str) -> str:
         """
@@ -266,7 +344,11 @@ class NetconfClient:
 
         result = self.get_running_config(filter_xml)
         if not result:
-            raise NetconfConfigurationError(f"Configuration path '{config_path}' not found")
+            raise NetconfConfigurationError(
+                f"Configuration path '{config_path}' not found",
+                code="CONFIG_PATH_NOT_FOUND",
+                details={'config_path': config_path}
+            )
 
         return result
 
@@ -279,9 +361,15 @@ def create_route_config(routes: List[RouteConfig]) -> str:
 
     Returns:
         str: XML形式の設定ペイロード
+
+    Raises:
+        ValidationError: ルートが空の場合
     """
     if not routes:
-        raise ValueError("No routes provided")
+        raise ValidationError(
+            "No routes provided",
+            code="EMPTY_ROUTES_LIST"
+        )
 
     # 設定用のルート要素を生成
     root = ET.Element("config", xmlns="urn:ietf:params:xml:ns:netconf:base:1.0")
@@ -335,21 +423,27 @@ def load_routes_from_file(file_path: str) -> List[RouteConfig]:
         List[RouteConfig]: ロードされたルート設定データ
 
     Raises:
-        FileNotFoundError: ファイルが見つからない場合
-        json.JSONDecodeError: JSONの形式が不正な場合
-        ValueError: ルートデータが不正な場合
+        ValidationError: ファイルが見つからない、JSON形式が不正、またはルートデータが不正な場合
     """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"Routes file not found: {file_path}")
+    file_path_obj = Path(file_path)
+    if not file_path_obj.exists():
+        raise ValidationError(
+            f"Routes file not found: {file_path}",
+            code="FILE_NOT_FOUND",
+            details={'file_path': str(file_path_obj)}
+        )
 
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path_obj, 'r', encoding='utf-8') as f:
             routes_data = json.load(f)
 
         # 基本的な検証
         if not isinstance(routes_data, list):
-            raise ValueError(f"Invalid format in {file_path}: expected a list of routes")
+            raise ValidationError(
+                f"Invalid format in {file_path}: expected a list of routes",
+                code="INVALID_JSON_FORMAT",
+                details={'file_path': str(file_path_obj), 'type': type(routes_data).__name__}
+            )
 
         # RouteConfigオブジェクトに変換
         routes = []
@@ -361,18 +455,26 @@ def load_routes_from_file(file_path: str) -> List[RouteConfig]:
             try:
                 route = RouteConfig(**route_data)
                 routes.append(route)
-            except (TypeError, ValueError) as e:
+            except (TypeError, ValidationError) as e:
                 logger.warning(f"Skipping invalid route at index {i}: {e}")
                 continue
 
         if not routes:
-            raise ValueError("No valid routes found in the file")
+            raise ValidationError(
+                "No valid routes found in the file",
+                code="NO_VALID_ROUTES",
+                details={'file_path': str(file_path_obj)}
+            )
 
         logger.info(f"Loaded {len(routes)} routes from {file_path}")
         return routes
 
     except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
+        raise ValidationError(
+            f"Invalid JSON in {file_path}: {str(e)}",
+            code="JSON_DECODE_ERROR",
+            details={'file_path': str(file_path_obj), 'error': str(e)}
+        ) from e
 
 def parse_arguments() -> argparse.Namespace:
     """コマンドライン引数をパース"""
@@ -414,13 +516,28 @@ Examples:
     return parser.parse_args()
 
 def validate_arguments(args: argparse.Namespace) -> None:
-    """引数の検証"""
+    """
+    引数の検証
+
+    Args:
+        args: パース済みの引数
+
+    Raises:
+        ValidationError: 引数が不正な場合
+    """
     if not args.get_config and not args.routes_file:
         if not args.dry_run:
-            raise ValueError("Either --routes-file or --get-config must be specified")
+            raise ValidationError(
+                "Either --routes-file or --get-config must be specified",
+                code="MISSING_REQUIRED_ARGUMENT"
+            )
 
     if args.routes_file and not Path(args.routes_file).exists():
-        raise FileNotFoundError(f"Routes file not found: {args.routes_file}")
+        raise ValidationError(
+            f"Routes file not found: {args.routes_file}",
+            code="FILE_NOT_FOUND",
+            details={'file_path': args.routes_file}
+        )
 
 def main() -> int:
     """メイン実行関数"""
@@ -516,8 +633,8 @@ def main() -> int:
         logger.error(f"NETCONF error: {e}")
         print(f"Error: {e}")
         return 1
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        logger.error(f"Input error: {e}")
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
         print(f"Error: {e}")
         return 1
     except Exception as e:

@@ -20,7 +20,7 @@ app = Flask(__name__)
 class CongestionPredictor:
     """混雑予測クラス"""
 
-        def __init__(self):
+    def __init__(self):
         self.model = RandomForestRegressor(n_estimators=100, random_state=42)
         self.scaler = StandardScaler()
         self.is_trained = False
@@ -29,7 +29,7 @@ class CongestionPredictor:
             'temperature', 'weather_code', 'month', 'is_rush_hour'
         ]
 
-        def create_features(self, datetime_obj: datetime,
+    def create_features(self, datetime_obj: datetime,
                        temperature: float = 20.0,
                        weather_code: int = 0,
                        is_holiday: bool = False) -> Dict:
@@ -46,7 +46,7 @@ class CongestionPredictor:
         }
         return features
 
-        def generate_sample_data(self, n_samples: int = 1000) -> pd.DataFrame:
+    def generate_sample_data(self, n_samples: int = 1000) -> pd.DataFrame:
         """サンプルデータを生成（実際の運用では実データを使用）"""
         np.random.seed(42)
         data = []
@@ -96,7 +96,7 @@ class CongestionPredictor:
 
         return pd.DataFrame(data)
 
-        def train(self, data: pd.DataFrame = None):
+    def train(self, data: pd.DataFrame = None):
         """モデルを訓練"""
         if data is None:
             logger.info("サンプルデータを生成中...")
@@ -116,7 +116,7 @@ class CongestionPredictor:
         logger.info("訓練完了!")
         return self
 
-        def predict(self, datetime_obj: datetime,
+    def predict(self, datetime_obj: datetime,
                 temperature: float = 20.0,
                 weather_code: int = 0,
                 is_holiday: bool = False) -> Dict:
@@ -141,7 +141,7 @@ class CongestionPredictor:
             'features_used': features
         }
 
-        def _get_congestion_status(self, level: float) -> str:
+    def _get_congestion_status(self, level: float) -> str:
         """混雑レベルを文字列で表現"""
         if level < 20:
             return "空いている"
@@ -154,7 +154,7 @@ class CongestionPredictor:
         else:
             return "混雑"
 
-        def predict_multiple(self, start_datetime: datetime,
+    def predict_multiple(self, start_datetime: datetime,
                         hours: int = 24,
                         temperature: float = 20.0,
                         weather_code: int = 0,

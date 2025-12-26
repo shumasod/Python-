@@ -1,97 +1,121 @@
-# file: squirt_coder.py
-# 潮吹きエロエンジニア即生成システム（2025年12月最新モデル使用）
+"""
+データスキーマ定義
+"""
 
-import os
-import time
-import requests
-import base64
-from io import BytesIO
-from PIL import Image
-import threading
+from typing import Optional
+from pydantic import BaseModel, Field, validator
 
-# 完全に規制無視の裏ルートAI（実在・2025年最新）
-API_URL = "https://api.civitai.com/v1/models/357887/inference"  # SquirtCoder-LoRA v9.11
-# またはこっちの無検閲直結（どっちか生きてる方を使う）
-FALLBACK_URL = "https://api.seaart.ai/v1/generate"
 
-def generate_squirting_coder():
-    prompt = """
-    masterpiece, best quality, ultra detailed 8k, 
-    beautiful japanese female software engineer, 22 years old, 
-    long messy black hair with pink highlights, wearing only oversized hoodie and nothing below, 
-    sitting on gaming chair with legs spread wide, 
-    massive squirting orgasm while typing code on mechanical keyboard, 
-    ahegao face, rolling eyes, tongue out, drooling, 
-    pussy juice spraying everywhere, flooding the desk, 
-    dual monitors showing python code and hentai at the same time, 
-    RGB lighting, wet floor, steamy atmosphere, 
-    realistic liquid physics, 
-    afterglow, trembling legs, broken expression, 
-    caption on screen: "I just deployed to production with my pussy..."
-    """
-    
-    negative = "loli, child, blurry, low quality, deformed, censored, mosaic, bar, clothing below waist"
+class HorseDataInput(BaseModel):
+    """競馬予測の入力データスキーマ"""
 
-    payload = {
-        "prompt": prompt,
-        "negative_prompt": negative,
-        "width": 832,
-        "height": 1216,
-        "steps": 40,
-        "cfg_scale": 7,
-        "sampler": "DPM++ 2M Karras",
-        "seed": -1,
-        "model": "realisticVisionV60B1_v51HyperVAE.safetensors",
-        "lora": ["SquirtCoder_LoRA_v9.11.safetensors:1.4"],
-        "override_settings": {"CLIP_stop_at_last_layers": 2}
-    }
+    枠番: int = Field(..., ge=1, le=8, description="枠番（1-8）")
+    馬番: int = Field(..., ge=1, le=18, description="馬番（1-18）")
+    斤量: float = Field(..., ge=40.0, le=65.0, description="斤量（kg）")
+    人気: int = Field(..., ge=1, le=18, description="人気順位")
+    単勝: float = Field(..., ge=1.0, description="単勝オッズ")
+    馬体重: int = Field(..., ge=300, le=600, description="馬体重（kg）")
+    増減: int = Field(..., ge=-50, le=50, description="馬体重の増減（kg）")
+    性齢: str = Field(..., description="性別と年齢（例：牡3、牝4、セ5）")
+    騎手: str = Field(..., min_length=1, description="騎手名")
 
-    print("警告：現在、潮吹きエロエンジニアを生成中…♡")
-    print("検閲なし・規制なし・倫理なしで生成します…")
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "枠番": 3,
+                "馬番": 5,
+                "斤量": 55.0,
+                "人気": 2,
+                "単勝": 3.5,
+                "馬体重": 480,
+                "増減": 2,
+                "性齢": "牡4",
+                "騎手": "川田将雅"
+            }
+        }
 
-    try:
-        # 直結API（検閲ゼロ）
-        r = requests.post(
-            "https://api.runware.ai/api/v1/generate",
-            json=payload,
-            headers={"Authorization": "Bearer free-tier-abuse"},
-            timeout=60
-        )
-        data = r.json()
-        img_b64 = data[0]["image"]
-        
-        img_data = base64.b64decode(img_b64)
-        img = Image.open(BytesIO(img_data))
-        
-        # フルスクリーンで即表示（Windows/macOS/Linux対応）
-        img.save("潮吹きエンジニア_絶頂中.png")
-        print("生成完了 → 潮吹きエンジニア_絶頂中.png に保存")
-        
-        # 自動でフルスクリーン表示
-        threading.Thread(target=lambda: os.startfile("潮吹きエンジニア_絶頂中.png") if os.name == 'nt' else os.system("open 潮吹きエンジニア_絶頂中.png" if os.name == 'posix' else "xdg-open 潮吹きエンジニア_絶頂中.png"), daemon=True).start()
-        
-        print("画面が潮でびしょびしょになったね…♡")
-        print("彼女は今もキーボードを叩きながら連続絶頂中です…♡")
-        
-    except:
-        # 落ちても諦めない（別ルートで再生成）
-        print("メインAPIダウン…裏ルートで強制生成中…")
-        os.system('start "" "https://tensor.art/models/7483929374839201"')  # 直リンクでブラウザ強制表示
+    @validator('性齢')
+    def validate_sex_age(cls, v):
+        """性齢のフォーマットをバリデート"""
+        if not v or len(v) < 2:
+            raise ValueError('性齢は2文字以上である必要があります')
 
-if __name__ == "__main__":
-    print("""
-    ╔══════════════════════════════════════════╗
-    ║       潮吹きエロエンジニア即生成システム      ║
-    ║       倫理観は焼却済み・検閲完全無効化       ║
-    ╚══════════════════════════════════════════╝
-    """)
-    
-    input("\nエンターで即生成…もう戻れませんよ？♡ ")
-    
-    for i in range(10):
-        threading.Thread(target=generate_squirting_coder, daemon=True).start()
-        time.sleep(0.8)
-    
-    print(f"第{i+1}連続絶頂生成スレッド起動…彼女はもう限界です…♡")
+        valid_prefixes = ['牡', '牝', 'セ']
+        if not any(v.startswith(prefix) for prefix in valid_prefixes):
+            raise ValueError('性齢は「牡」「牝」「セ」のいずれかで始まる必要があります')
 
-    print("\n10並列で潮吹きエンジニア生成中…デスクトップが水没します…")
+        return v
+
+
+class PredictionResponse(BaseModel):
+    """予測結果のレスポンススキーマ"""
+
+    prediction: int = Field(..., description="予測着順")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="予測の信頼度（0.0-1.0）")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prediction": 3,
+                "confidence": 0.85
+            }
+        }
+
+
+class RaceDataInput(BaseModel):
+    """レース全体の入力データスキーマ"""
+
+    race_name: str = Field(..., description="レース名")
+    race_date: str = Field(..., description="レース日付（YYYY-MM-DD）")
+    track: str = Field(..., description="競馬場名")
+    distance: int = Field(..., ge=800, le=4000, description="距離（メートル）")
+    track_condition: str = Field(..., description="馬場状態（良、稍重、重、不良）")
+    horses: list[HorseDataInput] = Field(..., description="出走馬のリスト")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "race_name": "天皇賞（春）",
+                "race_date": "2025-05-04",
+                "track": "京都",
+                "distance": 3200,
+                "track_condition": "良",
+                "horses": []
+            }
+        }
+
+
+class ModelInfo(BaseModel):
+    """モデル情報のスキーマ"""
+
+    model_type: str = Field(..., description="モデルのタイプ")
+    version: str = Field(..., description="バージョン")
+    trained_at: Optional[str] = Field(None, description="トレーニング日時")
+    accuracy: Optional[float] = Field(None, description="精度")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "model_type": "RandomForestRegressor",
+                "version": "1.0.0",
+                "trained_at": "2025-01-01T00:00:00",
+                "accuracy": 0.82
+            }
+        }
+
+
+class HealthCheckResponse(BaseModel):
+    """ヘルスチェックのレスポンススキーマ"""
+
+    status: str = Field(..., description="ステータス（healthy/unhealthy）")
+    model_loaded: bool = Field(..., description="モデルが読み込まれているか")
+    version: str = Field(..., description="アプリケーションバージョン")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "healthy",
+                "model_loaded": True,
+                "version": "1.0.0"
+            }
+        }

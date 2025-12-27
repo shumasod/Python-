@@ -3,13 +3,9 @@ const PredictionResult = ({ prediction, loading, error }) => {
   if (loading) {
     return (
       <div className="card">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <span className="text-3xl mr-3">🔮</span>
-          予測結果
-        </h2>
         <div className="flex flex-col items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-primary-600 mb-4"></div>
-          <p className="text-gray-600 text-lg">予測を計算しています...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-jra-green mb-4"></div>
+          <p className="text-gray-600 text-lg font-medium">予測を計算しています...</p>
         </div>
       </div>
     )
@@ -19,11 +15,7 @@ const PredictionResult = ({ prediction, loading, error }) => {
   if (error) {
     return (
       <div className="card">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <span className="text-3xl mr-3">🔮</span>
-          予測結果
-        </h2>
-        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+        <div className="bg-red-50 border-l-4 border-red-500 p-6">
           <div className="flex items-center space-x-3 mb-3">
             <span className="text-3xl">⚠️</span>
             <h3 className="text-lg font-bold text-red-800">エラーが発生しました</h3>
@@ -40,14 +32,10 @@ const PredictionResult = ({ prediction, loading, error }) => {
   // 予測結果がない状態
   if (!prediction) {
     return (
-      <div className="card">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-          <span className="text-3xl mr-3">🔮</span>
-          予測結果
-        </h2>
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-          <div className="text-6xl mb-4">🏇</div>
-          <p className="text-lg">左側のフォームから予測を実行してください</p>
+      <div className="card bg-gray-50">
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+          <div className="text-7xl mb-4">🏇</div>
+          <p className="text-lg font-medium">左側のフォームから予測を実行してください</p>
         </div>
       </div>
     )
@@ -81,41 +69,36 @@ const PredictionResult = ({ prediction, loading, error }) => {
 
   return (
     <div className="card">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-        <span className="text-3xl mr-3">🔮</span>
-        予測結果
-      </h2>
-
       {/* 予測着順 */}
-      <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-8 mb-6 border-2 border-primary-200">
+      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-8 mb-6 border-2 border-jra-green-light">
         <div className="text-center">
           <div className="text-6xl mb-4">{getRankMedal()}</div>
-          <p className="text-gray-600 text-sm mb-2">予測着順</p>
-          <div className="text-7xl font-bold text-primary-600 mb-2">
+          <p className="text-gray-600 text-sm font-semibold mb-2">予測着順</p>
+          <div className="text-7xl font-bold text-jra-green mb-2">
             {rank}
-            <span className="text-3xl">位</span>
+            <span className="text-4xl">位</span>
           </div>
-          <p className="text-gray-500 text-sm">
-            この馬は{rank}着と予測されます
+          <p className="text-gray-600 text-sm mt-2">
+            この馬は<span className="font-bold text-jra-green">{rank}着</span>と予測されます
           </p>
         </div>
       </div>
 
       {/* 信頼度 */}
-      <div className="bg-white rounded-xl p-6 border-2 border-gray-200 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-gray-700 font-semibold">予測の信頼度</span>
+      <div className="bg-white rounded-lg p-6 border border-gray-200 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-gray-700 font-bold">予測の信頼度</span>
           <span className={`text-2xl font-bold ${getConfidenceColor()}`}>
             {confidencePercent}%
           </span>
         </div>
 
         {/* 信頼度バー */}
-        <div className="w-full bg-gray-200 rounded-full h-4 mb-2">
+        <div className="w-full bg-gray-200 rounded-full h-5 mb-3">
           <div
-            className={`h-4 rounded-full transition-all duration-500 ${
+            className={`h-5 rounded-full transition-all duration-500 ${
               confidence >= 0.8
-                ? 'bg-green-500'
+                ? 'bg-jra-green'
                 : confidence >= 0.6
                 ? 'bg-yellow-500'
                 : 'bg-orange-500'
@@ -124,21 +107,30 @@ const PredictionResult = ({ prediction, loading, error }) => {
           ></div>
         </div>
 
-        <p className={`text-sm font-semibold ${getConfidenceColor()}`}>
+        <p className={`text-sm font-bold ${getConfidenceColor()}`}>
           {getConfidenceMessage()}
         </p>
       </div>
 
       {/* 補足情報 */}
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-semibold text-gray-800 mb-2 flex items-center">
+      <div className="bg-green-50 border-l-4 border-jra-green rounded p-4">
+        <h3 className="font-bold text-gray-800 mb-3 flex items-center">
           <span className="mr-2">ℹ️</span>
           補足情報
         </h3>
-        <ul className="text-sm text-gray-600 space-y-1">
-          <li>• この予測は機械学習モデルによるものです</li>
-          <li>• 実際のレース結果を保証するものではありません</li>
-          <li>• 信頼度が高いほど予測の確度が高いことを示します</li>
+        <ul className="text-sm text-gray-700 space-y-2">
+          <li className="flex items-start">
+            <span className="text-jra-green mr-2">•</span>
+            <span>この予測は機械学習モデルによるものです</span>
+          </li>
+          <li className="flex items-start">
+            <span className="text-jra-green mr-2">•</span>
+            <span>実際のレース結果を保証するものではありません</span>
+          </li>
+          <li className="flex items-start">
+            <span className="text-jra-green mr-2">•</span>
+            <span>信頼度が高いほど予測の確度が高いことを示します</span>
+          </li>
         </ul>
       </div>
     </div>

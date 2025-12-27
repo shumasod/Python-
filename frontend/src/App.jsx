@@ -45,19 +45,20 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gray-50">
       <Header />
 
       <main className="container mx-auto px-4 py-8 max-w-7xl">
         {/* ヘルスステータス */}
-        <div className="mb-6">
+        <div className="mb-8">
           <HealthStatus status={healthStatus} />
         </div>
 
         {/* メインコンテンツ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* 予測フォーム */}
           <div>
+            <h2 className="section-title">馬情報入力</h2>
             <PredictionForm
               onSubmit={handlePredict}
               loading={loading}
@@ -66,6 +67,7 @@ function App() {
 
           {/* 予測結果 */}
           <div>
+            <h2 className="section-title">予測結果</h2>
             <PredictionResult
               prediction={prediction}
               loading={loading}
@@ -76,37 +78,47 @@ function App() {
 
         {/* 使い方 */}
         <div className="mt-12">
-          <div className="card">
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">
-              使い方
-            </h2>
-            <div className="space-y-3 text-gray-600">
-              <p>
-                <span className="font-semibold">1.</span> 左側のフォームに馬の情報を入力してください
-              </p>
-              <p>
-                <span className="font-semibold">2.</span> すべての項目を入力したら「予測を実行」ボタンをクリック
-              </p>
-              <p>
-                <span className="font-semibold">3.</span> 右側に予測着順と信頼度が表示されます
-              </p>
-              <p className="text-sm text-gray-500 mt-4">
-                ※ このシステムは機械学習モデルによる予測です。実際の競馬の結果を保証するものではありません。
-              </p>
+          <div className="card bg-green-50/50">
+            <h2 className="section-title">使い方</h2>
+            <div className="space-y-4 text-gray-700">
+              <div className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-8 h-8 bg-jra-green text-white rounded-full flex items-center justify-center font-bold text-sm">1</span>
+                <p className="pt-1">左側のフォームに馬の情報を入力してください</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-8 h-8 bg-jra-green text-white rounded-full flex items-center justify-center font-bold text-sm">2</span>
+                <p className="pt-1">すべての項目を入力したら「予測を実行」ボタンをクリック</p>
+              </div>
+              <div className="flex items-start space-x-3">
+                <span className="flex-shrink-0 w-8 h-8 bg-jra-green text-white rounded-full flex items-center justify-center font-bold text-sm">3</span>
+                <p className="pt-1">右側に予測着順と信頼度が表示されます</p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-green-200">
+                <p className="text-sm text-gray-600">
+                  ※ このシステムは機械学習モデルによる予測です。実際の競馬の結果を保証するものではありません。
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </main>
 
       {/* フッター */}
-      <footer className="bg-gray-800 text-white py-8 mt-16">
-        <div className="container mx-auto px-4 text-center">
-          <p className="text-gray-300">
-            JRA競馬予測システム v1.0.0
-          </p>
-          <p className="text-gray-400 text-sm mt-2">
-            Machine Learning Powered Horse Racing Prediction
-          </p>
+      <footer className="bg-jra-green text-white py-10 mt-16">
+        <div className="container mx-auto px-4">
+          <div className="text-center">
+            <p className="text-lg font-semibold mb-2">
+              JRA競馬予測システム v1.0.0
+            </p>
+            <p className="text-green-100 text-sm">
+              Machine Learning Powered Horse Racing Prediction
+            </p>
+            <div className="mt-6 pt-6 border-t border-green-600">
+              <p className="text-xs text-green-200">
+                © 2024 JRA競馬予測システム. All rights reserved.
+              </p>
+            </div>
+          </div>
         </div>
       </footer>
     </div>

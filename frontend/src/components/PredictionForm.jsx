@@ -118,12 +118,7 @@ const PredictionForm = ({ onSubmit, loading }) => {
 
   return (
     <div className="card">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800 flex items-center">
-        <span className="text-3xl mr-3">📝</span>
-        馬の情報入力
-      </h2>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {/* 枠番 */}
         <div>
           <label className="label">枠番 (1-8)</label>

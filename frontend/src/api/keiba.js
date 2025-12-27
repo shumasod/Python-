@@ -36,7 +36,7 @@ api.interceptors.response.use(
  */
 export const predictHorse = async (horseData) => {
   try {
-    const response = await api.post('/predict', horseData)
+    const response = await api.post('/api/v1/predict', horseData)
     return response.data
   } catch (error) {
     console.error('予測API エラー:', error)

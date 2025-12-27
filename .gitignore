@@ -136,3 +136,9 @@ Thumbs.db
 # Project specific
 *.log
 netconf_config.log
+
+# Node.js
+node_modules/
+package-lock.json
+frontend/node_modules/
+frontend/package-lock.json

@@ -4,8 +4,10 @@ import PredictionResult from './components/PredictionResult'
 import Header from './components/Header'
 import HealthStatus from './components/HealthStatus'
 import { predictHorse, checkHealth } from './api/keiba'
+import { useTheme } from './contexts/ThemeContext'
 
 function App() {
+  const { organization } = useTheme()
   const [prediction, setPrediction] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -107,15 +109,21 @@ function App() {
       <footer className="bg-jra-green text-white py-10 mt-16">
         <div className="container mx-auto px-4">
           <div className="text-center">
-            <p className="text-lg font-semibold mb-2">
-              JRA競馬予測システム v1.0.0
+            <div className="flex items-center justify-center space-x-2 mb-3">
+              <span className="text-3xl">{organization.logo}</span>
+              <p className="text-lg font-semibold">
+                {organization.name} 競馬予測システム v1.0.0
+              </p>
+            </div>
+            <p className="text-green-100 text-sm mb-2">
+              {organization.fullName} - {organization.description}
             </p>
             <p className="text-green-100 text-sm">
               Machine Learning Powered Horse Racing Prediction
             </p>
             <div className="mt-6 pt-6 border-t border-green-600">
               <p className="text-xs text-green-200">
-                © 2024 JRA競馬予測システム. All rights reserved.
+                © 2024 {organization.name} 競馬予測システム. All rights reserved.
               </p>
             </div>
           </div>

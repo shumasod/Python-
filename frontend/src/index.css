@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* デフォルトのJRAカラー */
+    --color-primary: #006937;
+    --color-primary-light: #00a968;
+    --color-primary-dark: #005028;
+    --color-secondary: #ffffff;
+    --color-accent: #f0f9ff;
+  }
+
   body {
     @apply bg-white text-gray-900;
   }

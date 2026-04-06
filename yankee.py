@@ -124,6 +124,7 @@ class Yankee:
         self.max_hp = 100
         self.base_atk = 0       # 修行で上がる攻撃力
         self.respect = 0        # 仁義ポイント
+        self.gold = 0           # 所持金
         self.is_angry = False
         self.win_streak = 0     # 連勝数
         self.rivals: list["Yankee"] = []
@@ -154,6 +155,7 @@ class Yankee:
         print(f"  縄張り : {', '.join(self.territories_owned)}")
         print(f"  ランク : {icon} {rank}")
         print(f"  仁義   : {self.respect} pt")
+        print(f"  所持金 : {self.gold} 円")
         print(f"  攻撃力 : {self.atk:+d}")
         print(f"  HP     : {'█' * filled}{'░' * (10 - filled)} {self.hp}/{emhp}")
         print(f"  連勝   : {self.win_streak} 連勝")
@@ -309,10 +311,13 @@ class Yankee:
         print(f"{'='*44}")
         print(f"{winner.name}: 「立てよ、まだ終わってねーだろ。」")
 
+        prize = random.randint(30, 80)
+        winner.gold       += prize
         winner.respect    += 50
         winner.win_streak += 1
         loser.hp           = 1       # 死なせない（仁義）
         loser.win_streak   = 0
+        print(f"  {winner.name} は {prize} 円を手に入れた！")
 
         # ランクアップ通知
         rank, icon = get_rank(winner.respect)
@@ -344,6 +349,7 @@ class Yankee:
             "rank":              f"{icon}{rank}",
             "hp":                f"{self.hp}/{self.effective_max_hp}",
             "atk":               self.atk,
+            "gold":              self.gold,
             "respect":           self.respect,
             "win_streak":        self.win_streak,
             "is_angry":          self.is_angry,
@@ -359,6 +365,7 @@ class Yankee:
             "territories_owned": self.territories_owned,
             "max_hp":            self.max_hp,
             "base_atk":          self.base_atk,
+            "gold":              self.gold,
             "respect":           self.respect,
             "win_streak":        self.win_streak,
             "items":             [it.name for it in self.items],
@@ -372,9 +379,10 @@ class Yankee:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         y = cls(data["name"], data["territory"])
         y.territories_owned = data.get("territories_owned", [data["territory"]])
-        y.max_hp    = data.get("max_hp",    100)
-        y.base_atk  = data.get("base_atk",  0)
-        y.respect   = data.get("respect",   0)
+        y.max_hp     = data.get("max_hp",     100)
+        y.base_atk   = data.get("base_atk",   0)
+        y.gold       = data.get("gold",       0)
+        y.respect    = data.get("respect",    0)
         y.win_streak = data.get("win_streak", 0)
         catalog = {it.name: it for it in ITEM_CATALOG}
         y.items = [catalog[n] for n in data.get("items", []) if n in catalog]
@@ -448,6 +456,130 @@ class YankeeGroup:
         return sum(m.respect for m in self.members)
 
 
+# ─── ショップ ────────────────────────────────────────────
+SHOP_STOCK: list[tuple[Item, int]] = [   # (アイテム, 価格)
+    (ITEM_CATALOG[0], 50),    # 木刀       50円
+    (ITEM_CATALOG[1], 120),   # 鉄パイプ  120円
+    (ITEM_CATALOG[2], 80),    # 特攻服     80円
+    (ITEM_CATALOG[3], 60),    # ドカン     60円
+    (ITEM_CATALOG[4], 150),   # 義理の鉢巻き150円
+    (ITEM_CATALOG[5], 300),   # 番長の指輪 300円
+]
+
+
+def visit_shop(player: Yankee) -> None:
+    """道具屋を訪ねる"""
+    print(f"\n  ── 道具屋 ──────────────────────────────")
+    print(f"  おじさん: 「いらっしゃい。所持金 {player.gold} 円だな。」")
+    print(f"{'─'*44}")
+    for i, (item, price) in enumerate(SHOP_STOCK, 1):
+        owned = "（所持）" if item in player.items else f"  {price}円"
+        print(f"  [{i}] {item.name:12s} {owned}")
+    print(f"  [0] 店を出る")
+    print(f"{'─'*44}")
+
+    while True:
+        sel = input("  選択 > ").strip()
+        if sel == "0":
+            print(f"  おじさん: 「またな。」")
+            break
+        if not sel.isdigit() or not (1 <= int(sel) <= len(SHOP_STOCK)):
+            continue
+        item, price = SHOP_STOCK[int(sel) - 1]
+        if item in player.items:
+            print(f"  おじさん: 「もう持ってるじゃねーか。」")
+        elif player.gold < price:
+            print(f"  おじさん: 「金が足りねーぞ。あと {price - player.gold} 円だ。」")
+        else:
+            player.gold -= price
+            player.equip(item)
+            print(f"  残り所持金: {player.gold} 円")
+
+
+# ─── ランダムイベント ─────────────────────────────────────
+def random_event(player: Yankee) -> None:
+    """移動中にランダムイベントが発生する"""
+    events = [
+        _event_find_money,
+        _event_stray_cat,
+        _event_surprise_attack,
+        _event_old_man,
+        _event_training_partner,
+    ]
+    event = random.choice(events)
+    print(f"\n  ── 移動中のできごと ──")
+    event(player)
+
+
+def _event_find_money(player: Yankee) -> None:
+    amount = random.randint(10, 50)
+    player.gold += amount
+    print(f"  道端に落とし物を発見…  {amount} 円拾った（ちゃんと交番に届けようとしたが誰も来なかった）")
+
+
+def _event_stray_cat(player: Yankee) -> None:
+    player.hp = min(player.effective_max_hp, player.hp + 10)
+    print(f"  野良猫に餌をやった。なんか元気が出た。  HP +10")
+    player.respect += 5
+    print(f"  {player.name}: 「……かわいいな。」  仁義 +5")
+
+
+def _event_surprise_attack(player: Yankee) -> None:
+    goons = Yankee("名無しのチンピラ", "どこか")
+    print(f"  ！ 背後から不意打ち！  {goons.name} が飛び出してきた！")
+    player.fight(goons)
+
+
+def _event_old_man(player: Yankee) -> None:
+    gain = random.randint(3, 8)
+    player.base_atk += gain
+    print(f"  年老いた元番長に出会った。短い時間、技を教わった。  ATK +{gain}")
+    print(f"  老人: 「…お前には素質がある。行け。」")
+
+
+def _event_training_partner(player: Yankee) -> None:
+    hp_gain = random.randint(5, 15)
+    player.max_hp += hp_gain
+    print(f"  見知らぬヤンキーと走り込みを一緒にした。  最大HP +{hp_gain}")
+    print(f"  見知らぬ男: 「名乗るほどの者じゃねー。またな。」")
+
+
+# ─── 縄張りマップ ─────────────────────────────────────────
+# セル: (表示名, 行, 列)
+_MAP_CELLS: list[tuple[str, int, int]] = [
+    ("河川敷",   0, 0),
+    ("山の上",   0, 2),
+    ("路地裏",   1, 0),
+    ("東側",     1, 1),
+    ("西側",     1, 2),
+    ("港",       1, 3),
+    ("廃工場",   2, 0),
+    ("駅前",     2, 1),
+    ("頂上",     2, 2),
+]
+_MAP_ROWS = 3
+_MAP_COLS = 4
+_CELL_W   = 8   # 1セルの表示幅
+
+
+def show_territory_map(owned: list[str]) -> None:
+    """縄張りをASCIIグリッドで表示する"""
+    grid: list[list[str]] = [["        "] * _MAP_COLS for _ in range(_MAP_ROWS)]
+    for name, r, c in _MAP_CELLS:
+        mark = "【" + name + "】" if name in owned else " " + name + " "
+        # 8文字に揃える
+        grid[r][c] = f"{mark:^8s}"
+
+    border = "+" + (("─" * _CELL_W + "+") * _MAP_COLS)
+    print(f"\n  ── 縄張りマップ ──────────────────────────")
+    print(f"  {border}")
+    for row in grid:
+        print(f"  |" + "|".join(row) + "|")
+        print(f"  {border}")
+    owned_str = ", ".join(owned) if owned else "（なし）"
+    print(f"  支配中: {owned_str}")
+
+
 # ─── インタラクティブゲーム ───────────────────────────────
 STORY_STAGES = [
     {
@@ -483,15 +615,15 @@ def _show_main_menu(player: Yankee, stage_idx: int) -> str:
     filled = player.hp * 10 // emhp if emhp else 0
     print(f"\n  {player.name}  {icon}{rank}  "
           f"HP:{'█'*filled}{'░'*(10-filled)} {player.hp}/{emhp}  "
-          f"仁義:{player.respect}pt  ATK:{player.atk:+d}")
-    print(f"  縄張り: {', '.join(player.territories_owned)}")
+          f"仁義:{player.respect}pt  💴{player.gold}円  ATK:{player.atk:+d}")
     print(f"{'─'*44}")
     print(f"  [1] 次のステージへ進む  (第{stage_idx+1}章)")
     print(f"  [2] 修行する")
-    print(f"  [3] アイテムを見る")
+    print(f"  [3] 道具屋へ行く")
     print(f"  [4] 休む（HP回復）")
-    print(f"  [5] セーブ")
+    print(f"  [5] 縄張りマップを見る")
     print(f"  [6] ステータス確認")
+    print(f"  [7] セーブ")
     print(f"  [0] やめる")
     print(f"{'─'*44}")
     return input("  選択 > ").strip()
@@ -523,6 +655,11 @@ def play_interactive(save_path: str = "yankee_save.json") -> None:
         cmd = _show_main_menu(player, stage_idx)
 
         if cmd == "1":
+            # ランダムイベント（30%の確率）
+            if random.random() < 0.30:
+                random_event(player)
+                input("\n  [Enter] で続ける…")
+
             stage = STORY_STAGES[stage_idx]
             print(f"\n{'━'*50}")
             print(f"  {stage['title']}")
@@ -563,25 +700,19 @@ def play_interactive(save_path: str = "yankee_save.json") -> None:
             player.train(max(1, min(5, rounds)))
 
         elif cmd == "3":
-            print(f"\n  ── 所持アイテム ──")
-            if not player.items:
-                print("  （なし）")
-            else:
-                for i, it in enumerate(player.items, 1):
-                    print(f"  {i}. {it}")
-            print(f"\n  ── 入手可能アイテム ──")
-            for it in ITEM_CATALOG:
-                mark = "✓" if it in player.items else " "
-                print(f"  [{mark}] {it}")
+            visit_shop(player)
 
         elif cmd == "4":
             player.rest()
 
         elif cmd == "5":
-            player.save(save_path)
+            show_territory_map(player.territories_owned)
 
         elif cmd == "6":
             player.show_face()
+
+        elif cmd == "7":
+            player.save(save_path)
 
         elif cmd == "0":
             print(f"\n  {player.name}: 「また来る。」")

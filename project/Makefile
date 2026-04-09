@@ -80,6 +80,12 @@ simulate:
 backtest:
 	$(PYTHON) backtester.py --n-races 500
 
+backtest-wf:
+	$(PYTHON) backtester.py --walk-forward --n-periods 5
+
+analyze:
+	$(PYTHON) scripts/analyze_model.py --save-dir output/analysis
+
 scrape:
 	$(PYTHON) scraper.py --dry-run --target results
 

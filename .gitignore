@@ -145,6 +145,12 @@ frontend/package-lock.json
 
 # 競艇AIシステム
 project/models/*.pkl
+# Terraform 機密ファイル
+project/terraform/terraform.tfvars
+project/terraform/.terraform/
+project/terraform/*.tfstate
+project/terraform/*.tfstate.backup
+project/terraform/.terraform.lock.hcl
 project/models/*.json
 project/data/scraped/
 project/logs/

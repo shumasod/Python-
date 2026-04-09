@@ -142,3 +142,13 @@ node_modules/
 package-lock.json
 frontend/node_modules/
 frontend/package-lock.json
+
+# 競艇AIシステム
+project/models/*.pkl
+project/models/*.json
+project/data/scraped/
+project/logs/
+project/.env
+.env
+output/
+*.png

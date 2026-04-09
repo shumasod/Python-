@@ -114,6 +114,13 @@ airflow-down:
 scrape:
 	$(PYTHON) scraper.py --dry-run --target results
 
+fetch-odds:
+	$(PYTHON) scripts/fetch_odds.py --jyo 01 --dry-run --race 1
+
+# ---- API Key 生成 ----
+gen-key:
+	$(PYTHON) -c "from app.api.auth import generate_api_key; print(generate_api_key())"
+
 # ---- Docker ----
 
 docker-build:

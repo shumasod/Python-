@@ -20,5 +20,8 @@ matplotlib==3.8.4
 # DB接続（オプション: 予測ログ保存に必要）
 asyncpg==0.29.0
 
+# 監視・メトリクス（オプション）
+prometheus-client==0.20.0
+
 # ユーティリティ
 python-dotenv==1.0.1

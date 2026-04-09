@@ -86,6 +86,31 @@ backtest-wf:
 analyze:
 	$(PYTHON) scripts/analyze_model.py --save-dir output/analysis
 
+# ---- モデルバージョン管理 ----
+
+train-register:
+	$(PYTHON) scripts/train_model.py --use-sample --auto-promote --notes "auto-registered"
+
+versions:
+	$(PYTHON) scripts/promote_model.py --list
+
+promote:
+	$(PYTHON) scripts/promote_model.py --latest
+
+cleanup-models:
+	$(PYTHON) scripts/promote_model.py --cleanup --keep 10
+
+# ---- Airflow ----
+
+airflow-init:
+	docker compose -f docker-compose.airflow.yml --profile init up airflow-init
+
+airflow-up:
+	docker compose -f docker-compose.airflow.yml up -d
+
+airflow-down:
+	docker compose -f docker-compose.airflow.yml down
+
 scrape:
 	$(PYTHON) scraper.py --dry-run --target results
 

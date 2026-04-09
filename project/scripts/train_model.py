@@ -56,6 +56,17 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Cross Validation の分割数",
     )
+    parser.add_argument(
+        "--auto-promote",
+        action="store_true",
+        help="学習後に自動で本番モデルへ昇格する",
+    )
+    parser.add_argument(
+        "--notes",
+        type=str,
+        default="",
+        help="バージョン登録時の備考（データ期間・変更内容など）",
+    )
     return parser.parse_args()
 
 
@@ -94,6 +105,22 @@ def main() -> None:
     print("学習メトリクス")
     print("=" * 50)
     print(json.dumps(metrics, ensure_ascii=False, indent=2))
+
+    # --- バージョン管理レジストリへ登録 ---
+    from app.model.versioning import ModelRegistry
+    registry = ModelRegistry()
+    version = registry.register(model, metrics, notes=args.notes)
+    logger.info(f"レジストリに登録: {version}")
+
+    if args.auto_promote:
+        registry.promote(version)
+        logger.info(f"本番モデルへ昇格: {version}")
+    else:
+        logger.info(
+            f"本番昇格するには: python scripts/promote_model.py --version {version}"
+        )
+
+    registry.print_summary()
 
 
 if __name__ == "__main__":

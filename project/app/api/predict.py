@@ -2,13 +2,21 @@
 予測APIルーター
 POST /predict エンドポイントを定義する
 """
+import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field, validator
 
 from app.model.predict import predict_race
 from app.utils.logger import get_logger
+
+# DB ログ保存（asyncpg 未インストール時は警告のみ）
+try:
+    from app.db import log_prediction
+    _DB_AVAILABLE = True
+except ImportError:
+    _DB_AVAILABLE = False
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -82,7 +90,10 @@ class PredictResponse(BaseModel):
 # ---- エンドポイント ----
 
 @router.post("/predict", response_model=PredictResponse, summary="競艇レース予測")
-async def predict_endpoint(request: RaceRequest) -> PredictResponse:
+async def predict_endpoint(
+    request: RaceRequest,
+    background_tasks: BackgroundTasks,
+) -> PredictResponse:
     """
     競艇レース情報を受け取り、各艇の1着確率・三連単推奨を返す
 
@@ -90,13 +101,25 @@ async def predict_endpoint(request: RaceRequest) -> PredictResponse:
     - **trifecta**: モデルが計算した三連単上位10点（確率降順）
     - **recommendations**: 期待値フィルタを通過した買い目推奨
     """
+    start_ms = time.monotonic()
     try:
         logger.info(f"予測リクエスト受信: race_id={request.race_id}")
         result = predict_race(request.race)
-        return PredictResponse(
-            race_id=request.race_id,
-            **result,
-        )
+        response = PredictResponse(race_id=request.race_id, **result)
+
+        # 予測ログを非同期でDBに保存（レスポンスを遅延させない）
+        if _DB_AVAILABLE:
+            latency_ms = int((time.monotonic() - start_ms) * 1000)
+            background_tasks.add_task(
+                log_prediction,
+                race_id=request.race_id,
+                request_body=request.race,
+                response_body=result,
+                latency_ms=latency_ms,
+            )
+
+        return response
+
     except FileNotFoundError as e:
         # モデルファイルが見つからない場合
         logger.error(f"モデルファイルエラー: {e}")
@@ -110,3 +133,18 @@ async def predict_endpoint(request: RaceRequest) -> PredictResponse:
     except Exception as e:
         logger.exception(f"予測処理中に予期しないエラーが発生しました: {e}")
         raise HTTPException(status_code=500, detail="内部サーバーエラー")
+
+
+@router.get("/stats", summary="予測統計情報")
+async def stats_endpoint(days: int = 7) -> Dict[str, Any]:
+    """
+    過去N日間の予測API利用統計を返す（DB接続が必要）
+
+    - **total_requests**: 総リクエスト数
+    - **avg_latency_ms**: 平均レイテンシ
+    """
+    if not _DB_AVAILABLE:
+        return {"message": "DB接続が設定されていません（asyncpg をインストールしてください）"}
+
+    from app.db import get_prediction_stats
+    return await get_prediction_stats(days=days)

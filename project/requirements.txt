@@ -1,0 +1,21 @@
+# Web フレームワーク
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+
+# 機械学習
+lightgbm==4.3.0
+scikit-learn==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+
+# データ収集（スクレイパー用）
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.2.1
+
+# 可視化（シミュレーター用）
+matplotlib==3.8.4
+
+# ユーティリティ
+python-dotenv==1.0.1

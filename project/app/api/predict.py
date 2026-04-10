@@ -1,28 +1,50 @@
 """
 予測APIルーター
 POST /predict エンドポイントを定義する
+
+機能:
+  - Redisキャッシュ（CACHE_ENABLED=true 時）
+  - API Key 認証（API_AUTH_ENABLED=true 時）
+  - レートリミット（RATE_LIMIT_ENABLED=true 時）
+  - DBへの予測ログ保存（BackgroundTask）
+  - Prometheusメトリクス記録
 """
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel, Field, validator
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 
 from app.model.predict import predict_race
+from app.api.auth import verify_api_key
 from app.utils.logger import get_logger
 
-# DB ログ保存（asyncpg 未インストール時は警告のみ）
+# オプション依存モジュール
 try:
     from app.db import log_prediction
     _DB_AVAILABLE = True
 except ImportError:
     _DB_AVAILABLE = False
 
+try:
+    from app.cache import get_cached_prediction, set_cached_prediction
+    _CACHE_AVAILABLE = True
+except ImportError:
+    _CACHE_AVAILABLE = False
+
+try:
+    from app.api.metrics import record_predict_request
+    _METRICS_AVAILABLE = True
+except ImportError:
+    _METRICS_AVAILABLE = False
+
 logger = get_logger(__name__)
 router = APIRouter()
 
 
-# ---- リクエストスキーマ ----
+# ============================================================
+# リクエスト / レスポンス スキーマ
+# ============================================================
 
 class BoatInfo(BaseModel):
     """1艇分の選手・機材情報"""
@@ -50,7 +72,8 @@ class RaceRequest(BaseModel):
     race_id: Optional[str] = Field(None, description="レースID（任意）")
     race: Dict[str, Any] = Field(..., description="レース情報")
 
-    @validator("race")
+    @field_validator("race")
+    @classmethod
     def validate_race(cls, v: Dict) -> Dict:
         boats = v.get("boats", [])
         if len(boats) != 6:
@@ -58,17 +81,13 @@ class RaceRequest(BaseModel):
         return v
 
 
-# ---- レスポンススキーマ ----
-
 class TrifectaItem(BaseModel):
-    """三連単1点の情報"""
     combination: List[int] = Field(..., description="艇番の順序 [1着, 2着, 3着]")
-    probability: float = Field(..., description="推定確率")
-    rank: int = Field(..., description="確率順位")
+    probability: float
+    rank: int
 
 
 class RecommendationItem(BaseModel):
-    """買い目推奨1点の情報"""
     combination: List[int]
     probability: float
     odds: float
@@ -78,50 +97,82 @@ class RecommendationItem(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    """POST /predict のレスポンスボディ"""
     race_id: Optional[str] = None
-    win_probabilities: List[float] = Field(
-        ..., description="各艇の1着確率（1号艇〜6号艇の順）"
-    )
+    win_probabilities: List[float] = Field(..., description="各艇の1着確率（1〜6号艇）")
     trifecta: List[TrifectaItem] = Field(..., description="三連単上位10点")
     recommendations: List[RecommendationItem] = Field(..., description="推奨買い目")
+    cached: bool = Field(False, description="キャッシュから返した結果か")
 
 
-# ---- エンドポイント ----
+# ============================================================
+# エンドポイント
+# ============================================================
 
-@router.post("/predict", response_model=PredictResponse, summary="競艇レース予測")
+@router.post(
+    "/predict",
+    response_model=PredictResponse,
+    summary="競艇レース予測",
+    description=(
+        "競艇レース情報を受け取り、各艇の1着確率・三連単推奨を返す。\n\n"
+        "認証: `X-API-Key` ヘッダーに有効なキーを設定してください。"
+    ),
+)
 async def predict_endpoint(
     request: RaceRequest,
     background_tasks: BackgroundTasks,
+    _api_key: str = Depends(verify_api_key),
 ) -> PredictResponse:
     """
-    競艇レース情報を受け取り、各艇の1着確率・三連単推奨を返す
+    レース予測メインエンドポイント
 
-    - **win_probabilities**: 1号艇〜6号艇の順に1着確率を並べたリスト
-    - **trifecta**: モデルが計算した三連単上位10点（確率降順）
-    - **recommendations**: 期待値フィルタを通過した買い目推奨
+    処理フロー:
+    1. API Key 認証
+    2. Redis キャッシュ確認（ヒット時はそのまま返す）
+    3. LightGBM 推論
+    4. キャッシュ保存 + DB ログ記録（BackgroundTask）
     """
-    start_ms = time.monotonic()
-    try:
-        logger.info(f"予測リクエスト受信: race_id={request.race_id}")
-        result = predict_race(request.race)
-        response = PredictResponse(race_id=request.race_id, **result)
+    start = time.monotonic()
+    race_id = request.race_id
 
-        # 予測ログを非同期でDBに保存（レスポンスを遅延させない）
+    try:
+        logger.info(f"予測リクエスト受信: race_id={race_id}")
+
+        # ---- キャッシュ確認 ----
+        if _CACHE_AVAILABLE:
+            cached = await get_cached_prediction(request.race, race_id)
+            if cached is not None:
+                latency = time.monotonic() - start
+                if _METRICS_AVAILABLE:
+                    record_predict_request("cache_hit", latency)
+                return PredictResponse(race_id=race_id, cached=True, **cached)
+
+        # ---- 推論 ----
+        result = predict_race(request.race)
+        latency = time.monotonic() - start
+
+        if _METRICS_AVAILABLE:
+            record_predict_request("success", latency)
+
+        # ---- バックグラウンド処理（キャッシュ保存・DBログ） ----
+        if _CACHE_AVAILABLE:
+            background_tasks.add_task(
+                set_cached_prediction, request.race, result, race_id
+            )
         if _DB_AVAILABLE:
-            latency_ms = int((time.monotonic() - start_ms) * 1000)
             background_tasks.add_task(
                 log_prediction,
-                race_id=request.race_id,
+                race_id=race_id,
                 request_body=request.race,
                 response_body=result,
-                latency_ms=latency_ms,
+                latency_ms=int(latency * 1000),
             )
 
-        return response
+        return PredictResponse(race_id=race_id, cached=False, **result)
 
     except FileNotFoundError as e:
-        # モデルファイルが見つからない場合
+        latency = time.monotonic() - start
+        if _METRICS_AVAILABLE:
+            record_predict_request("model_not_found", latency)
         logger.error(f"モデルファイルエラー: {e}")
         raise HTTPException(
             status_code=503,
@@ -131,20 +182,43 @@ async def predict_endpoint(
         logger.error(f"入力値エラー: {e}")
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.exception(f"予測処理中に予期しないエラーが発生しました: {e}")
+        latency = time.monotonic() - start
+        if _METRICS_AVAILABLE:
+            record_predict_request("error", latency)
+        logger.exception(f"予測処理中に予期しないエラー: {e}")
         raise HTTPException(status_code=500, detail="内部サーバーエラー")
 
 
 @router.get("/stats", summary="予測統計情報")
-async def stats_endpoint(days: int = 7) -> Dict[str, Any]:
-    """
-    過去N日間の予測API利用統計を返す（DB接続が必要）
+async def stats_endpoint(
+    days: int = 7,
+    _api_key: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """過去N日間の予測API利用統計（DB接続が必要）"""
+    stats: Dict[str, Any] = {}
 
-    - **total_requests**: 総リクエスト数
-    - **avg_latency_ms**: 平均レイテンシ
-    """
-    if not _DB_AVAILABLE:
-        return {"message": "DB接続が設定されていません（asyncpg をインストールしてください）"}
+    if _DB_AVAILABLE:
+        from app.db import get_prediction_stats
+        stats["db"] = await get_prediction_stats(days=days)
+    else:
+        stats["db"] = {"message": "asyncpg 未インストール"}
 
-    from app.db import get_prediction_stats
-    return await get_prediction_stats(days=days)
+    if _CACHE_AVAILABLE:
+        from app.cache import get_cache_stats
+        stats["cache"] = await get_cache_stats()
+
+    return stats
+
+
+@router.delete("/cache/{race_id}", summary="キャッシュ無効化")
+async def invalidate_cache_endpoint(
+    race_id: str,
+    _api_key: str = Depends(verify_api_key),
+) -> Dict[str, Any]:
+    """指定レースIDのキャッシュを削除する"""
+    if not _CACHE_AVAILABLE:
+        return {"message": "キャッシュが無効です"}
+
+    from app.cache import invalidate_cache
+    deleted = await invalidate_cache(race_id)
+    return {"race_id": race_id, "deleted": deleted}

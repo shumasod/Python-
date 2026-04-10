@@ -20,8 +20,17 @@ matplotlib==3.8.4
 # DB接続（オプション: 予測ログ保存に必要）
 asyncpg==0.29.0
 
+# キャッシュ（オプション: Redis予測キャッシュ）
+redis[asyncio]==5.0.4
+
+# レートリミット（オプション）
+slowapi==0.1.9
+
 # 監視・メトリクス（オプション）
 prometheus-client==0.20.0
+
+# 管理CLI
+click==8.1.7
 
 # ユーティリティ
 python-dotenv==1.0.1

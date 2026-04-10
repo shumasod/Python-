@@ -295,8 +295,19 @@ class ABTestRouter:
         """ログエントリをJSONLファイルに追記保存する"""
         AB_LOG_DIR.mkdir(parents=True, exist_ok=True)
         path = AB_LOG_DIR / f"{self.name}.jsonl"
+
+        def _to_serializable(obj):
+            if isinstance(obj, np.integer):
+                return int(obj)
+            if isinstance(obj, np.floating):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return obj
+
+        entry = {k: _to_serializable(v) for k, v in {"race_id": race_id, **log}.items()}
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"race_id": race_id, **log}, ensure_ascii=False) + "\n")
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
     @classmethod
     def from_registry(

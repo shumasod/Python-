@@ -11,6 +11,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.api.auth import verify_api_key
+
+# 認証を無効化（テスト用）
+app.dependency_overrides[verify_api_key] = lambda: "test-key"
 
 client = TestClient(app)
 

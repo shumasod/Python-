@@ -117,9 +117,21 @@ scrape:
 fetch-odds:
 	$(PYTHON) scripts/fetch_odds.py --jyo 01 --dry-run --race 1
 
-# ---- API Key 生成 ----
+convert-data:
+	$(PYTHON) scripts/convert_data.py --dry-run
+
+# ---- CLI ----
+cli:
+	$(PYTHON) -m app.cli --help
+
 gen-key:
-	$(PYTHON) -c "from app.api.auth import generate_api_key; print(generate_api_key())"
+	$(PYTHON) -m app.cli api keygen
+
+health:
+	$(PYTHON) -m app.cli api health
+
+drift:
+	$(PYTHON) -m app.cli model drift
 
 # ---- Docker ----
 

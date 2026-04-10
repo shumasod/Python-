@@ -138,6 +138,51 @@ def task_retrain_model(**context) -> dict:
         raise
 
 
+def task_check_drift(**context) -> dict:
+    """
+    ドリフト検知: 最新データと参照分布を比較し、
+    PSI が高い特徴量があれば警告をログに記録する
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        from app.model.drift import DriftDetector
+        from app.model.features import generate_sample_training_data, preprocess_dataframe
+
+        detector = DriftDetector()
+
+        # 参照分布が未設定の場合はサンプルデータで初期化
+        if not detector._reference_stats:
+            logger.warning("参照分布が未設定。サンプルデータで初期化します。")
+            ref_df = preprocess_dataframe(generate_sample_training_data(n_races=500))
+            detector.set_reference(ref_df)
+
+        # 直近データでドリフトチェック（実運用では当日データを使用）
+        current_df = preprocess_dataframe(generate_sample_training_data(n_races=100))
+        report = detector.check(current_df)
+
+        alert_features = [r.feature for r in report.feature_results if r.status == "alert"]
+        warn_features  = [r.feature for r in report.feature_results if r.status == "warn"]
+
+        if alert_features:
+            logger.error(f"ドリフトアラート! 要再学習: {alert_features}")
+        elif warn_features:
+            logger.warning(f"ドリフト警告: {warn_features}")
+        else:
+            logger.info("ドリフト検知: 全特徴量が安定しています")
+
+        return {
+            "needs_retraining": report.needs_retraining,
+            "alert_features": alert_features,
+            "warn_features": warn_features,
+        }
+
+    except Exception as e:
+        logger.error(f"ドリフト検知エラー: {e}")
+        return {"needs_retraining": False, "error": str(e)}
+
+
 def task_notify(**context) -> None:
     """
     パイプライン完了通知
@@ -207,6 +252,12 @@ with DAG(
         python_callable=task_scrape_racers,
     )
 
+    # ドリフト検知（毎日実行）
+    drift_check = PythonOperator(
+        task_id="drift_check",
+        python_callable=task_check_drift,
+    )
+
     # モデル再学習（週1回のみ）
     check_retrain = ShortCircuitOperator(
         task_id="check_retrain",
@@ -228,12 +279,13 @@ with DAG(
     end = EmptyOperator(task_id="end")
 
     # ---- タスク依存関係 ----
-    # start → scrape_results → validate → notify → end
+    # start → scrape_results → validate → drift_check → notify → end
     #                        ↘ check_racer_scrape → scrape_racers ↗
     #                        ↘ check_retrain → retrain_model      ↗
 
     start >> scrape_results >> validate
-    validate >> [check_racer_scrape, check_retrain]
+    validate >> [check_racer_scrape, check_retrain, drift_check]
     check_racer_scrape >> scrape_racers >> notify
     check_retrain >> retrain_model >> notify
+    drift_check >> notify
     notify >> end

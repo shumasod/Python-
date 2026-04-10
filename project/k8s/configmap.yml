@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: boat-race-config
+  namespace: boat-race
+data:
+  LOG_LEVEL: "INFO"
+  CACHE_ENABLED: "true"
+  CACHE_TTL_SEC: "300"
+  API_AUTH_ENABLED: "true"
+  USE_DB: "true"
+  DB_PORT: "5432"
+  DB_NAME: "boatracedb"
+  DB_USER: "admin"
+  REDIS_URL: "redis://boat-race-redis:6379/0"
+  AWS_DEFAULT_REGION: "ap-northeast-1"

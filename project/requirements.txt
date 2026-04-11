@@ -1,0 +1,36 @@
+# Web フレームワーク
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+
+# 機械学習
+lightgbm==4.3.0
+scikit-learn==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+
+# データ収集（スクレイパー用）
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.2.1
+
+# 可視化（シミュレーター用）
+matplotlib==3.8.4
+
+# DB接続（オプション: 予測ログ保存に必要）
+asyncpg==0.29.0
+
+# キャッシュ（オプション: Redis予測キャッシュ）
+redis[asyncio]==5.0.4
+
+# レートリミット（オプション）
+slowapi==0.1.9
+
+# 監視・メトリクス（オプション）
+prometheus-client==0.20.0
+
+# 管理CLI
+click==8.1.7
+
+# ユーティリティ
+python-dotenv==1.0.1

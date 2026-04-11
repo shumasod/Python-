@@ -1,0 +1,40 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: boat-race-api-hpa
+  namespace: boat-race
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: boat-race-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # CPU 使用率 70% でスケールアウト
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # メモリ使用率 80% でスケールアウト
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # 5分間安定してからスケールイン
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120

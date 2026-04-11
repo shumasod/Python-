@@ -25,12 +25,19 @@ def registry(tmp_path, monkeypatch):
     return ModelRegistry()
 
 
+class _PicklableModel:
+    """pickle 可能なダミーモデル（MagicMock は pickle 不可）"""
+    feature_importances_ = [1.0] * 12
+
+    def predict_proba(self, X):
+        import numpy as np
+        return np.ones((len(X), 6)) / 6
+
+
 @pytest.fixture
 def mock_model():
-    """ダミー LGBMClassifier"""
-    model = MagicMock()
-    model.feature_importances_ = [1.0] * 12
-    return model
+    """pickle 可能なダミーモデル"""
+    return _PicklableModel()
 
 
 @pytest.fixture

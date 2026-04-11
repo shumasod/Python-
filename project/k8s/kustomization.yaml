@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boat-race
+
+resources:
+  - namespace.yml
+  - configmap.yml
+  - secret.yml
+  - pvc.yml
+  - redis-deployment.yml
+  - service.yml
+  - deployment.yml
+  - hpa.yml
+  - ingress.yml
+
+# イメージタグは CI/CD パイプラインで上書き
+# kubectl kustomize を使う場合: kustomize edit set image YOUR_ECR_URI=<new-tag>
+images:
+  - name: YOUR_ECR_URI/boat-race-api
+    newTag: latest

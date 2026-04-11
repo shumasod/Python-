@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boat-race
+
+bases:
+  - ../../
+
+patches:
+  # 本番: Pod Disruption Budget を追加（最低1Pod稼働保証）
+  - patch: |-
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: boat-race-api-pdb
+        namespace: boat-race
+      spec:
+        minAvailable: 1
+        selector:
+          matchLabels:
+            app: boat-race-api
+    target:
+      kind: Deployment
+      name: boat-race-api
+
+configMapGenerator:
+  - name: boat-race-config
+    behavior: merge
+    literals:
+      - API_AUTH_ENABLED=true
+      - LOG_LEVEL=INFO
+      - CACHE_TTL_SEC=600

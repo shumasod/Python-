@@ -140,6 +140,9 @@ module "cloudwatch" {
   source             = "./modules/cloudwatch"
   project_name       = var.project_name
   log_retention_days = var.log_retention_days
+  alert_email        = var.alert_email
+  alb_arn_suffix     = module.ecs.alb_arn_suffix
+  rds_identifier     = module.rds.db_instance_identifier
 }
 
 module "rds" {

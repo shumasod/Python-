@@ -125,6 +125,12 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "alert_email" {
+  description = "CloudWatch アラーム通知先メールアドレス（空文字で無効化）"
+  type        = string
+  default     = ""
+}
+
 # ---- タグ ----
 
 variable "tags" {

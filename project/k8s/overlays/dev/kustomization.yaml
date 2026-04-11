@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: boat-race-dev
+
+bases:
+  - ../../
+
+patches:
+  # 開発環境: レプリカ数を最小に
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: boat-race-api
+
+  # 開発環境: HPA スケール範囲を縮小
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+    target:
+      kind: HorizontalPodAutoscaler
+      name: boat-race-api-hpa
+
+configMapGenerator:
+  - name: boat-race-config
+    behavior: merge
+    literals:
+      - API_AUTH_ENABLED=false
+      - LOG_LEVEL=DEBUG

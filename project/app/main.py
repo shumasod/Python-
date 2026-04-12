@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.predict import router as predict_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router, metrics_middleware
+from app.api.feedback import router as feedback_router
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -81,11 +82,15 @@ app = FastAPI(
         "## 認証\n"
         "`X-API-Key` ヘッダーに発行済みキーを設定してください。\n\n"
         "## エンドポイント\n"
-        "- `POST /api/v1/predict` : レース予測（1着確率・三連単・推奨買い目）\n"
-        "- `GET  /api/v1/stats`   : 予測API利用統計（DB接続時のみ）\n"
-        "- `GET  /health`         : 簡易ヘルスチェック\n"
-        "- `GET  /health/detail`  : 詳細ヘルスチェック（DB・モデル状態）\n"
-        "- `GET  /metrics`        : Prometheusメトリクス\n"
+        "- `POST /api/v1/predict`         : レース予測（1着確率・三連単・推奨買い目）\n"
+        "- `POST /api/v1/predict/batch`   : バッチ予測（最大20レース）\n"
+        "- `POST /api/v1/result/{id}`     : レース結果を記録（予測精度追跡）\n"
+        "- `GET  /api/v1/result/{id}`     : 記録済み結果を取得\n"
+        "- `GET  /api/v1/result/summary`  : 的中率サマリー\n"
+        "- `GET  /api/v1/stats`           : 予測API利用統計（DB接続時のみ）\n"
+        "- `GET  /health`                 : 簡易ヘルスチェック\n"
+        "- `GET  /health/detail`          : 詳細ヘルスチェック（DB・モデル状態）\n"
+        "- `GET  /metrics`                : Prometheusメトリクス\n"
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -110,6 +115,7 @@ app.add_middleware(
 
 # ---- ルーター登録 ----
 app.include_router(predict_router, prefix="/api/v1", tags=["predict"])
+app.include_router(feedback_router, prefix="/api/v1", tags=["feedback"])
 app.include_router(health_router, tags=["health"])
 app.include_router(metrics_router, tags=["observability"])
 

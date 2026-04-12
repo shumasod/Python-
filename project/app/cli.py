@@ -335,6 +335,185 @@ def simulate_backtest(n_races, walk_forward, ev_threshold):
 
 
 # ============================================================
+# shadow グループ（シャドウモード管理）
+# ============================================================
+
+@cli.group()
+def shadow():
+    """シャドウモード管理コマンド"""
+    pass
+
+
+@shadow.command("stats")
+@click.option("--name", default="shadow", help="シャドウログ名（data/shadow_logs/<name>.jsonl）")
+def shadow_stats(name):
+    """シャドウモードの累積統計を表示する"""
+    import json
+    from pathlib import Path
+
+    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    if not log_path.exists():
+        click.echo(f"シャドウログが見つかりません: {log_path}")
+        return
+
+    n_sampled = 0
+    n_match = 0
+    kl_sum = 0.0
+
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            n_sampled += 1
+            if entry.get("top1_match"):
+                n_match += 1
+            kl_sum += entry.get("kl_divergence", 0.0)
+
+    if n_sampled == 0:
+        click.echo("記録なし")
+        return
+
+    click.echo(f"\n{'='*50}")
+    click.echo(f" シャドウモード統計: {name}")
+    click.echo(f"{'='*50}")
+    click.echo(f" サンプル数  : {n_sampled}")
+    click.echo(f" 1位一致率   : {n_match/n_sampled*100:.1f}%")
+    click.echo(f" 平均KL距離  : {kl_sum/n_sampled:.6f}")
+    click.echo("=" * 50)
+
+
+@shadow.command("clear")
+@click.option("--name", default="shadow", help="シャドウログ名")
+@click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
+def shadow_clear(name, yes):
+    """シャドウモードのログをクリアする"""
+    from pathlib import Path
+
+    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    if not log_path.exists():
+        click.echo(f"ログファイルが見つかりません: {log_path}")
+        return
+
+    if not yes:
+        click.confirm(f"{log_path} を削除しますか？", abort=True)
+
+    log_path.unlink()
+    click.echo(f"削除しました: {log_path}")
+
+
+# ============================================================
+# result グループ（レース結果管理）
+# ============================================================
+
+@cli.group()
+def result():
+    """レース結果管理コマンド"""
+    pass
+
+
+@result.command("record")
+@click.argument("race_id")
+@click.argument("winner", type=click.IntRange(1, 6))
+@click.option("--second", type=click.IntRange(1, 6), default=None, help="2着艇番")
+@click.option("--third", type=click.IntRange(1, 6), default=None, help="3着艇番")
+@click.option("--note", default=None, help="備考")
+def result_record(race_id, winner, second, third, note):
+    """レース結果を記録する
+
+    \b
+    例:
+      python -m app.cli result record race_20240415_01 3
+      python -m app.cli result record race_20240415_01 3 --second 1 --third 5
+    """
+    import json
+    from pathlib import Path
+
+    result_dir = Path("data/race_results")
+    result_dir.mkdir(parents=True, exist_ok=True)
+    path = result_dir / f"{race_id}.json"
+
+    if path.exists():
+        click.echo(f"エラー: {race_id} の結果は既に記録されています", err=True)
+        sys.exit(1)
+
+    from datetime import datetime, timezone
+    record = {
+        "race_id": race_id,
+        "true_winner": winner,
+        "second_place": second,
+        "third_place": third,
+        "note": note,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "predicted_winner": None,
+        "is_correct": None,
+        "prediction_rank": None,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(record, f, ensure_ascii=False, indent=2)
+
+    click.echo(f"記録完了: {race_id} → 1着: {winner}号艇")
+
+
+@result.command("summary")
+@click.option("--n", default=None, type=int, help="直近N件のみ集計")
+def result_summary(n):
+    """的中率サマリーを表示する"""
+    import json
+    from pathlib import Path
+
+    result_dir = Path("data/race_results")
+    if not result_dir.exists():
+        click.echo("記録なし")
+        return
+
+    files = sorted(result_dir.glob("*.json"))
+    if n:
+        files = files[-n:]
+
+    if not files:
+        click.echo("記録なし")
+        return
+
+    total = 0
+    correct = 0
+    rank_sum = 0.0
+    n_with_rank = 0
+    top3 = 0
+
+    for p in files:
+        try:
+            with open(p, encoding="utf-8") as f:
+                rec = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        total += 1
+        if rec.get("is_correct"):
+            correct += 1
+        pred_rank = rec.get("prediction_rank")
+        if pred_rank is not None:
+            rank_sum += pred_rank
+            n_with_rank += 1
+            if pred_rank <= 3:
+                top3 += 1
+
+    hit_rate = correct / total if total else 0
+    top3_rate = top3 / n_with_rank if n_with_rank else 0
+    avg_rank = rank_sum / n_with_rank if n_with_rank else 0
+
+    label = f"直近{n}件" if n else "全件"
+    click.echo(f"\n{'='*50}")
+    click.echo(f" 予測精度サマリー ({label})")
+    click.echo(f"{'='*50}")
+    click.echo(f" 記録数     : {total}")
+    click.echo(f" 1着的中率  : {hit_rate*100:.1f}%")
+    click.echo(f" Top-3率    : {top3_rate*100:.1f}%")
+    click.echo(f" 平均予測順位: {avg_rank:.2f}")
+    click.echo("=" * 50)
+
+
+# ============================================================
 # エントリーポイント
 # ============================================================
 

@@ -222,3 +222,92 @@ async def invalidate_cache_endpoint(
     from app.cache import invalidate_cache
     deleted = await invalidate_cache(race_id)
     return {"race_id": race_id, "deleted": deleted}
+
+
+# ============================================================
+# バッチ予測エンドポイント
+# ============================================================
+
+class BatchRaceRequest(BaseModel):
+    """POST /predict/batch のリクエストボディ"""
+    races: List[RaceRequest] = Field(..., min_length=1, max_length=20, description="レースリスト（最大20件）")
+
+
+class BatchPredictResponse(BaseModel):
+    total: int
+    succeeded: int
+    failed: int
+    results: List[Dict[str, Any]]
+
+
+@router.post(
+    "/predict/batch",
+    response_model=BatchPredictResponse,
+    summary="バッチ予測（複数レース一括）",
+    description="複数レースをまとめて予測します（最大20件）。個別のエラーは results 内に記録されます。",
+)
+async def predict_batch_endpoint(
+    request: BatchRaceRequest,
+    background_tasks: BackgroundTasks,
+    _api_key: str = Depends(verify_api_key),
+) -> BatchPredictResponse:
+    """複数レースを一括で予測する"""
+    results = []
+    succeeded = 0
+    failed = 0
+
+    for race_req in request.races:
+        race_id = race_req.race_id
+        try:
+            # キャッシュ確認
+            if _CACHE_AVAILABLE:
+                cached = await get_cached_prediction(race_req.race, race_id)
+                if cached is not None:
+                    results.append({
+                        "race_id": race_id,
+                        "status": "success",
+                        "cached": True,
+                        **cached,
+                    })
+                    succeeded += 1
+                    continue
+
+            # 推論
+            result = predict_race(race_req.race)
+
+            if _CACHE_AVAILABLE:
+                background_tasks.add_task(
+                    set_cached_prediction, race_req.race, result, race_id
+                )
+
+            results.append({
+                "race_id": race_id,
+                "status": "success",
+                "cached": False,
+                **result,
+            })
+            succeeded += 1
+
+        except FileNotFoundError:
+            results.append({
+                "race_id": race_id,
+                "status": "error",
+                "error": "モデルが未学習です",
+            })
+            failed += 1
+        except Exception as e:
+            logger.error(f"バッチ予測エラー race_id={race_id}: {e}")
+            results.append({
+                "race_id": race_id,
+                "status": "error",
+                "error": str(e),
+            })
+            failed += 1
+
+    logger.info(f"バッチ予測完了: {succeeded}/{len(request.races)} 成功")
+    return BatchPredictResponse(
+        total=len(request.races),
+        succeeded=succeeded,
+        failed=failed,
+        results=results,
+    )

@@ -3,7 +3,8 @@
 # 使い方: make <target>
 # ============================================================
 
-.PHONY: help install train serve test lint fmt docker-build docker-up docker-down simulate backtest clean
+.PHONY: help install train serve test lint fmt docker-build docker-up docker-down \
+        simulate backtest clean result-summary shadow-stats
 
 PYTHON   := python
 UVICORN  := uvicorn
@@ -12,25 +13,29 @@ RUFF     := ruff
 
 # デフォルトターゲット: ヘルプ表示
 help:
-	@echo "============================================"
+	@echo "======================================================"
 	@echo " 競艇予想AI - 利用可能なコマンド"
-	@echo "============================================"
-	@echo "  make install       依存パッケージのインストール"
-	@echo "  make train         サンプルデータでモデル学習"
-	@echo "  make train-real    実データ(data/training.csv)でモデル学習"
-	@echo "  make serve         APIサーバー起動（開発モード）"
-	@echo "  make test          テスト実行"
-	@echo "  make test-cov      カバレッジ付きテスト"
-	@echo "  make lint          Ruff リント"
-	@echo "  make fmt           Ruff フォーマット"
-	@echo "  make simulate      回収率シミュレーション実行"
-	@echo "  make backtest      バックテスト実行"
-	@echo "  make scrape        スクレイパードライラン"
-	@echo "  make docker-build  Docker イメージビルド"
-	@echo "  make docker-up     docker compose 起動"
-	@echo "  make docker-down   docker compose 停止"
-	@echo "  make clean         生成ファイルの削除"
-	@echo "============================================"
+	@echo "======================================================"
+	@echo "  make install         依存パッケージのインストール"
+	@echo "  make train           サンプルデータでモデル学習"
+	@echo "  make train-real      実データ(data/training.csv)でモデル学習"
+	@echo "  make serve           APIサーバー起動（開発モード）"
+	@echo "  make test            テスト実行"
+	@echo "  make test-cov        カバレッジ付きテスト"
+	@echo "  make lint            Ruff リント"
+	@echo "  make fmt             Ruff フォーマット"
+	@echo "  make simulate        回収率シミュレーション実行"
+	@echo "  make backtest        バックテスト実行"
+	@echo "  make scrape          スクレイパードライラン"
+	@echo "  make result-summary  予測的中率サマリー表示"
+	@echo "  make shadow-stats    シャドウモード統計表示"
+	@echo "  make drift           ドリフト検知実行"
+	@echo "  make versions        登録済みモデルバージョン一覧"
+	@echo "  make docker-build    Docker イメージビルド"
+	@echo "  make docker-up       docker compose 起動"
+	@echo "  make docker-down     docker compose 停止"
+	@echo "  make clean           生成ファイルの削除"
+	@echo "======================================================"
 
 # ---- セットアップ ----
 
@@ -132,6 +137,19 @@ health:
 
 drift:
 	$(PYTHON) -m app.cli model drift
+
+# ---- 結果記録・精度確認 ----
+result-summary:
+	$(PYTHON) -m app.cli result summary
+
+result-record:
+	$(PYTHON) -m app.cli result record $(RACE) $(WINNER)
+
+shadow-stats:
+	$(PYTHON) -m app.cli shadow stats
+
+shadow-clear:
+	$(PYTHON) -m app.cli shadow clear --yes
 
 # ---- Docker ----
 

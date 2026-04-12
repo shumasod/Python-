@@ -151,6 +151,13 @@ shadow-stats:
 shadow-clear:
 	$(PYTHON) -m app.cli shadow clear --yes
 
+# ---- レポート生成 ----
+report:
+	$(PYTHON) scripts/generate_report.py --days 7
+
+report-monthly:
+	$(PYTHON) scripts/generate_report.py --days 30 --out output/report/monthly
+
 # ---- Docker ----
 
 docker-build:

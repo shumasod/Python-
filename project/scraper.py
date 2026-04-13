@@ -38,6 +38,8 @@ import logging
 import requests
 from bs4 import BeautifulSoup
 
+from app.utils.retry import CircuitBreaker, CircuitOpenError, retry
+
 # ---- 設定 ----
 BASE_URL = "https://www.boatrace.jp"  # 公式サイト（robots.txt要確認）
 RESULTS_URL = f"{BASE_URL}/owpc/pc/race/resultlist"
@@ -46,8 +48,6 @@ MOTOR_URL = f"{BASE_URL}/owpc/pc/data/motorInfo"
 
 MIN_SLEEP = 2.0   # リクエスト間の最小待機秒数（robots.txt の Crawl-delay に従う）
 MAX_SLEEP = 5.0   # リクエスト間の最大待機秒数
-MAX_RETRY = 3     # リトライ最大回数
-RETRY_BACKOFF = 2.0  # リトライ間隔の基底（指数バックオフ）
 
 OUTPUT_DIR = Path("data/scraped")
 
@@ -57,6 +57,14 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# ---- サーキットブレーカー（公式サイトへの過剰アクセスを防止） ----
+_site_cb = CircuitBreaker(
+    name="boatrace-site",
+    failure_threshold=5,    # 5回連続失敗で OPEN
+    recovery_timeout=120.0, # 2分後に HALF_OPEN へ
+    success_threshold=2,    # 2回成功で CLOSED に復帰
+)
 
 # HTTPセッション（接続プールの再利用）
 session = requests.Session()
@@ -94,11 +102,29 @@ def check_robots(url: str) -> bool:
     return allowed
 
 
-# ---- HTTPリクエスト（リトライ付き） ----
+# ---- HTTPリクエスト（リトライ + サーキットブレーカー付き） ----
+
+@retry(
+    max_attempts=3,
+    base_delay=2.0,
+    max_delay=30.0,
+    backoff_factor=2.0,
+    jitter=True,
+    exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+)
+def _get_with_retry(url: str, params: Optional[Dict]) -> requests.Response:
+    """
+    タイムアウト・接続エラー時にリトライする内部 GET ヘルパー。
+    404 などの HTTP エラーはリトライしない（呼び出し元で処理する）。
+    """
+    resp = session.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    return resp
+
 
 def fetch_page(url: str, params: Optional[Dict] = None, dry_run: bool = False) -> Optional[str]:
     """
-    ページHTMLを取得する（指数バックオフリトライ付き）
+    ページHTMLを取得する（リトライ + サーキットブレーカー付き）
 
     Args:
         url: 取得先URL
@@ -115,30 +141,26 @@ def fetch_page(url: str, params: Optional[Dict] = None, dry_run: bool = False) -
     if not check_robots(url):
         return None
 
-    for attempt in range(1, MAX_RETRY + 1):
-        try:
-            resp = session.get(url, params=params, timeout=15)
-            resp.raise_for_status()
-            resp.encoding = resp.apparent_encoding  # 文字コード自動検出
-            logger.info(f"取得成功: {resp.url} ({resp.status_code})")
-            return resp.text
+    try:
+        resp = _site_cb.execute(_get_with_retry, url, params)
+        resp.encoding = resp.apparent_encoding  # 文字コード自動検出
+        logger.info(f"取得成功: {resp.url} ({resp.status_code})")
+        return resp.text
 
-        except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
-                logger.warning(f"404 Not Found: {url}")
-                return None
-            logger.warning(f"HTTPエラー (試行 {attempt}/{MAX_RETRY}): {e}")
+    except CircuitOpenError as e:
+        logger.error(f"サーキットブレーカー OPEN: {e}")
+        return None
 
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"リクエストエラー (試行 {attempt}/{MAX_RETRY}): {e}")
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 404:
+            logger.warning(f"404 Not Found: {url}")
+        else:
+            logger.error(f"HTTPエラー（リトライ上限到達）: {e}")
+        return None
 
-        if attempt < MAX_RETRY:
-            wait = RETRY_BACKOFF ** attempt
-            logger.info(f"{wait:.1f}秒後にリトライします...")
-            time.sleep(wait)
-
-    logger.error(f"最大リトライ回数に達しました: {url}")
-    return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"リクエストエラー（リトライ上限到達）: {e}")
+        return None
 
 
 def polite_sleep() -> None:

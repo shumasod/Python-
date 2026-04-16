@@ -29,6 +29,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.utils.logger import get_logger
+from app.utils.retry import CircuitBreaker, CircuitOpenError, retry
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,59 @@ _session.headers.update({
     "User-Agent": "BoatRaceResearcher/1.0 (educational; contact: your@email.com)",
     "Accept-Language": "ja,en;q=0.9",
 })
+
+# ---- サーキットブレーカー（オッズサイトへの過剰アクセスを防止） ----
+_odds_cb = CircuitBreaker(
+    name="boatrace-odds",
+    failure_threshold=5,    # 5回連続失敗で OPEN
+    recovery_timeout=120.0, # 2分後に HALF_OPEN へ
+    success_threshold=2,    # 2回成功で CLOSED に復帰
+)
+
+
+# ============================================================
+# 内部 HTTP ヘルパー（リトライ付き）
+# ============================================================
+
+@retry(
+    max_attempts=3,
+    base_delay=2.0,
+    max_delay=30.0,
+    backoff_factor=2.0,
+    jitter=True,
+    exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+)
+def _get_with_retry(url: str, params: Dict) -> requests.Response:
+    """
+    タイムアウト・接続エラー時にリトライする内部 GET ヘルパー。
+    HTTPError (例: 404) はリトライしない。
+    """
+    resp = _session.get(url, params=params, timeout=15)
+    resp.raise_for_status()
+    return resp
+
+
+def _fetch_html(url: str, params: Dict) -> Optional[str]:
+    """
+    サーキットブレーカー経由で HTML を取得する共通ヘルパー。
+
+    Returns:
+        HTML 文字列、取得失敗時は None
+    """
+    try:
+        resp = _odds_cb.execute(_get_with_retry, url, params)
+        resp.encoding = resp.apparent_encoding
+        return resp.text
+    except CircuitOpenError as e:
+        logger.error(f"サーキットブレーカー OPEN (オッズ取得スキップ): {e}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response is not None else "?"
+        logger.warning(f"HTTP {code} エラー: {url} params={params}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"リクエストエラー（リトライ上限到達）: {e}")
+        return None
 
 
 # ============================================================
@@ -75,13 +129,10 @@ def fetch_win_odds(
         }
 
     params = {"hd": race_date, "jcd": jyo_code, "rno": race_no}
-    try:
-        resp = _session.get(WIN_ODDS_URL, params=params, timeout=15)
-        resp.raise_for_status()
-        return _parse_win_odds(resp.text)
-    except requests.RequestException as e:
-        logger.warning(f"単勝オッズ取得失敗: {e}")
+    html = _fetch_html(WIN_ODDS_URL, params)
+    if html is None:
         return {}
+    return _parse_win_odds(html)
 
 
 def _parse_win_odds(html: str) -> Dict[str, float]:
@@ -140,13 +191,10 @@ def fetch_trifecta_odds(
         }
 
     params = {"hd": race_date, "jcd": jyo_code, "rno": race_no}
-    try:
-        resp = _session.get(ODDS_URL, params=params, timeout=15)
-        resp.raise_for_status()
-        return _parse_trifecta_odds(resp.text)
-    except requests.RequestException as e:
-        logger.warning(f"三連単オッズ取得失敗: {e}")
+    html = _fetch_html(ODDS_URL, params)
+    if html is None:
         return {}
+    return _parse_trifecta_odds(html)
 
 
 def _parse_trifecta_odds(html: str) -> Dict[str, float]:

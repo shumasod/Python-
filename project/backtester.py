@@ -131,7 +131,7 @@ def run_simple_backtest(
     proba_matrix = model.predict_proba(X_test)
     y_pred = model.predict(X_test)
 
-    ll = log_loss(y_test, proba_matrix)
+    ll = log_loss(y_test, proba_matrix, labels=list(range(6)))
     acc = accuracy_score(y_test, y_pred)
 
     # レース単位（6艇ずつ）で購入判断
@@ -257,7 +257,7 @@ def run_walk_forward(
         proba_matrix = model.predict_proba(X_test)
         y_pred = model.predict(X_test)
 
-        ll  = log_loss(y_test, proba_matrix)
+        ll  = log_loss(y_test, proba_matrix, labels=list(range(6)))
         acc = accuracy_score(y_test, y_pred)
 
         # 購入シミュレーション（レース単位）

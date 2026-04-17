@@ -119,3 +119,113 @@ class TestPredictEndpoint:
         """モデル未学習の場合に 503 が返ることを確認"""
         resp = client.post("/api/v1/predict", json=VALID_REQUEST)
         assert resp.status_code == 503
+
+
+# ============================================================
+# バッチ予測エンドポイント
+# ============================================================
+
+def _make_batch_request(n: int):
+    """n 件のバッチ予測リクエストを組み立てる"""
+    return {
+        "races": [
+            {
+                "race_id": f"r_{i}",
+                "race": VALID_REQUEST["race"],
+            }
+            for i in range(n)
+        ]
+    }
+
+
+class TestPredictBatchEndpoint:
+    @patch("app.api.predict.predict_race", return_value=MOCK_PREDICT_RESULT)
+    def test_batch_success(self, mock_predict):
+        """3 件のバッチが全て成功すること"""
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(3))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 3
+        assert body["succeeded"] == 3
+        assert body["failed"] == 0
+        assert len(body["results"]) == 3
+
+    @patch("app.api.predict.predict_race", return_value=MOCK_PREDICT_RESULT)
+    def test_batch_race_ids_preserved(self, mock_predict):
+        """結果に元の race_id が含まれること"""
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(2))
+        ids = [r["race_id"] for r in resp.json()["results"]]
+        assert ids == ["r_0", "r_1"]
+
+    @patch(
+        "app.api.predict.predict_race",
+        side_effect=FileNotFoundError("モデルなし"),
+    )
+    def test_batch_model_not_found_records_failure(self, mock_predict):
+        """モデル未学習時に失敗として記録されること（全体は200）"""
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(2))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["failed"] == 2
+        assert body["succeeded"] == 0
+        assert all(r["status"] == "error" for r in body["results"])
+
+    @patch("app.api.predict.predict_race", return_value=MOCK_PREDICT_RESULT)
+    def test_batch_mixed_success_failure(self, mock_predict):
+        """一部が失敗しても全体は200で返ること"""
+        call_count = {"n": 0}
+
+        def _side_effect(race):
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise RuntimeError("不正な入力")
+            return MOCK_PREDICT_RESULT
+
+        mock_predict.side_effect = _side_effect
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(3))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["succeeded"] == 2
+        assert body["failed"] == 1
+
+    def test_batch_empty_list_rejected(self):
+        """空のレースリストは 422 で拒否されること"""
+        resp = client.post("/api/v1/predict/batch", json={"races": []})
+        assert resp.status_code == 422
+
+    def test_batch_over_max_rejected(self):
+        """上限 20 件超で 422 が返ること"""
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(21))
+        assert resp.status_code == 422
+
+
+# ============================================================
+# /stats エンドポイント
+# ============================================================
+
+class TestStatsEndpoint:
+    def test_stats_returns_json(self):
+        """/stats が JSON を返すこと（DB/キャッシュ未接続でもエラーなく動く）"""
+        resp = client.get("/api/v1/stats?days=7")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "db" in body
+
+    def test_stats_accepts_days_param(self):
+        """days パラメータを受け付けること"""
+        resp = client.get("/api/v1/stats?days=30")
+        assert resp.status_code == 200
+
+
+# ============================================================
+# /cache/{race_id} 削除エンドポイント
+# ============================================================
+
+class TestInvalidateCacheEndpoint:
+    def test_delete_returns_200(self):
+        """DELETE /cache/{race_id} が 200 を返すこと"""
+        resp = client.delete("/api/v1/cache/race_001")
+        assert resp.status_code == 200
+        body = resp.json()
+        # race_id が返る、もしくはキャッシュ無効メッセージが返る
+        assert "race_id" in body or "message" in body

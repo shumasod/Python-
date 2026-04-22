@@ -149,6 +149,7 @@ project/models/*.json
 project/models/versions/
 project/data/drift_reports/
 project/data/race_results/
+project/data/prediction_logs/
 project/data/ab_test_logs/
 project/data/shadow_logs/
 project/logs/

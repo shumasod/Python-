@@ -514,6 +514,175 @@ def result_summary(n):
 
 
 # ============================================================
+# scoring グループ（予測スコアリング）
+# ============================================================
+
+@cli.group()
+def scoring():
+    """予測スコアリング管理コマンド"""
+    pass
+
+
+@scoring.command("overview")
+@click.option("--date", default=None, help="集計対象日 (YYYYMMDD)")
+@click.option("--venue", "-v", default=None, help="場コードでフィルター (01〜24)")
+def scoring_overview(date, venue):
+    """予測と実結果を突き合わせた的中率概要を表示する"""
+    import json
+    from pathlib import Path
+    import numpy as np
+
+    pred_dir   = Path("data/prediction_logs")
+    result_dir = Path("data/race_results")
+
+    preds = {}
+    if pred_dir.exists():
+        for p in pred_dir.glob("*.json"):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    preds[p.stem] = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    results = {}
+    if result_dir.exists():
+        for r in result_dir.glob("*.json"):
+            try:
+                with open(r, encoding="utf-8") as f:
+                    results[r.stem] = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+    matched = [(rid, preds[rid], results[rid]) for rid in set(preds) & set(results)]
+
+    if date:
+        matched = [(rid, p, r) for rid, p, r in matched if p.get("race_date") == date]
+    if venue:
+        matched = [(rid, p, r) for rid, p, r in matched if p.get("jyo_code") == venue]
+
+    if not matched:
+        click.echo("集計対象データなし")
+        return
+
+    n_correct = 0
+    rank_sum = 0.0
+    n_with_rank = 0
+    top3 = 0
+
+    for _, pred, result in matched:
+        proba = pred.get("win_probabilities") or pred.get("proba") or []
+        true_winner = result.get("true_winner")
+        if not proba or true_winner is None:
+            continue
+        arr   = np.array(proba)
+        order = np.argsort(arr)[::-1]
+        predicted = int(order[0]) + 1
+        if predicted == true_winner:
+            n_correct += 1
+        winner_idx = true_winner - 1
+        if 0 <= winner_idx < len(arr):
+            rank = int(np.where(order == winner_idx)[0][0]) + 1
+            rank_sum += rank
+            n_with_rank += 1
+            if rank <= 3:
+                top3 += 1
+
+    n = len(matched)
+    filter_str = ""
+    if date:
+        filter_str += f"  日付: {date}"
+    if venue:
+        filter_str += f"  場: {venue}"
+
+    click.echo(f"\n{'='*50}")
+    click.echo(" 予測スコアリング概要" + (f" [{filter_str.strip()}]" if filter_str else ""))
+    click.echo(f"{'='*50}")
+    click.echo(f" 予測ログ数  : {len(preds)}")
+    click.echo(f" 結果ログ数  : {len(results)}")
+    click.echo(f" 突き合わせ数: {n}")
+    click.echo(f" 的中数      : {n_correct}")
+    click.echo(f" 1着的中率   : {n_correct/n*100:.1f}%" if n else " 1着的中率   : N/A")
+    click.echo(f" Top-3率     : {top3/n_with_rank*100:.1f}%" if n_with_rank else " Top-3率     : N/A")
+    click.echo(f" 平均予測順位: {rank_sum/n_with_rank:.2f}" if n_with_rank else " 平均予測順位: N/A")
+    click.echo("=" * 50)
+
+
+@scoring.command("race")
+@click.argument("race_id")
+def scoring_race(race_id):
+    """指定レースの予測と実結果を表示する
+
+    \b
+    例:
+      python -m app.cli scoring race 20260420_01_R01
+    """
+    import json
+    import numpy as np
+    from pathlib import Path
+
+    pred_path   = Path("data/prediction_logs") / f"{race_id}.json"
+    result_path = Path("data/race_results")    / f"{race_id}.json"
+
+    pred   = None
+    result = None
+
+    if pred_path.exists():
+        try:
+            with open(pred_path, encoding="utf-8") as f:
+                pred = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if result_path.exists():
+        try:
+            with open(result_path, encoding="utf-8") as f:
+                result = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if pred is None and result is None:
+        click.secho(f"レースID {race_id} の予測も結果も見つかりません", fg="red", err=True)
+        sys.exit(1)
+
+    click.echo(f"\n{'='*50}")
+    click.echo(f" レース: {race_id}")
+    click.echo(f"{'='*50}")
+    click.echo(f" 予測ログ: {'あり' if pred else 'なし'}")
+    click.echo(f" 結果ログ: {'あり' if result else 'なし'}")
+
+    if pred and result:
+        proba = pred.get("win_probabilities") or pred.get("proba") or []
+        true_winner = result.get("true_winner")
+        if proba and true_winner is not None:
+            arr   = np.array(proba)
+            order = np.argsort(arr)[::-1]
+            predicted = int(order[0]) + 1
+            is_correct = predicted == true_winner
+            winner_idx = true_winner - 1
+            rank = int(np.where(order == winner_idx)[0][0]) + 1 if 0 <= winner_idx < len(arr) else None
+
+            click.echo(f" 予測1位   : {predicted}号艇  (確率: {arr[order[0]]*100:.1f}%)")
+            click.echo(f" 実際の1着 : {true_winner}号艇")
+            if rank:
+                click.echo(f" 正解艇の予測順位: {rank}位")
+            color = "green" if is_correct else "red"
+            label = "✓ 的中" if is_correct else "✗ 外れ"
+            click.secho(f" 結果      : {label}", fg=color)
+    elif pred:
+        proba = pred.get("win_probabilities") or pred.get("proba") or []
+        if proba:
+            arr   = __import__("numpy").array(proba)
+            order = arr.argsort()[::-1]
+            click.echo(f" 予測1位   : {int(order[0])+1}号艇  (確率: {arr[order[0]]*100:.1f}%)")
+        click.echo(" 結果未記録")
+    elif result:
+        click.echo(f" 実際の1着 : {result.get('true_winner')}号艇")
+        click.echo(" 予測なし")
+
+    click.echo("=" * 50)
+
+
+# ============================================================
 # エントリーポイント
 # ============================================================
 

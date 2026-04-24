@@ -22,8 +22,9 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 router = APIRouter()
 
-# 結果ログの保存先
-RESULT_LOG_DIR = Path("data/race_results")
+# ログ保存先（テストで monkeypatch 可能なモジュール変数）
+RESULT_LOG_DIR     = Path("data/race_results")
+PREDICTION_LOG_DIR = Path("data/prediction_logs")
 RESULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -70,19 +71,36 @@ def _result_path(race_id: str) -> Path:
 
 
 def _load_prediction_log(race_id: str) -> Optional[Dict]:
-    """predict エンドポイントが記録した予測ログを読み込む"""
-    # cache module からキャッシュを確認するか、DB から取得するのが本来の実装
-    # ここでは ab_test ログから検索する（簡易実装）
+    """
+    予測ログを読み込む。
+
+    検索順:
+    1. data/prediction_logs/{race_id}.json  (run_daily_pipeline が保存)
+    2. data/ab_test_logs/*.jsonl            (ab_test ルーターが保存)
+    """
+    # 1. 予測ログディレクトリ（run_daily_pipeline.py の出力）
+    pred_log_path = PREDICTION_LOG_DIR / f"{race_id}.json"
+    if pred_log_path.exists():
+        try:
+            with open(pred_log_path, encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # 2. A/B テストログ（フォールバック）
     ab_log_dir = Path("data/ab_test_logs")
     for log_file in ab_log_dir.glob("*.jsonl"):
-        with open(log_file, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    entry = json.loads(line)
-                    if entry.get("race_id") == race_id:
-                        return entry
-                except json.JSONDecodeError:
-                    continue
+        try:
+            with open(log_file, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("race_id") == race_id:
+                            return entry
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            continue
     return None
 
 
@@ -101,7 +119,8 @@ def _compare_prediction(
     if pred_log is None:
         return comparison
 
-    proba = pred_log.get("proba", [])
+    # run_daily_pipeline → "win_probabilities",  ab_test → "proba"
+    proba = pred_log.get("win_probabilities") or pred_log.get("proba", [])
     if not proba:
         return comparison
 

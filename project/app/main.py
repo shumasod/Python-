@@ -14,6 +14,7 @@ from app.api.metrics import router as metrics_router, metrics_middleware
 from app.api.feedback import router as feedback_router
 from app.api.admin import router as admin_router
 from app.api.explain import router as explain_router
+from app.api.scoring import router as scoring_router
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -116,12 +117,13 @@ app.add_middleware(
 )
 
 # ---- ルーター登録 ----
-app.include_router(predict_router, prefix="/api/v1", tags=["predict"])
-app.include_router(explain_router, prefix="/api/v1", tags=["explain"])
+app.include_router(predict_router,  prefix="/api/v1", tags=["predict"])
+app.include_router(explain_router,  prefix="/api/v1", tags=["explain"])
 app.include_router(feedback_router, prefix="/api/v1", tags=["feedback"])
-app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
-app.include_router(health_router, tags=["health"])
-app.include_router(metrics_router, tags=["observability"])
+app.include_router(scoring_router,  prefix="/api/v1", tags=["scoring"])
+app.include_router(admin_router,    prefix="/api/v1", tags=["admin"])
+app.include_router(health_router,   tags=["health"])
+app.include_router(metrics_router,  tags=["observability"])
 
 
 @app.get("/health", tags=["health"], include_in_schema=False)

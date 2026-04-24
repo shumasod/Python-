@@ -4,7 +4,8 @@
 # ============================================================
 
 .PHONY: help install train serve test lint fmt docker-build docker-up docker-down \
-        simulate backtest clean result-summary shadow-stats
+        simulate backtest clean result-summary shadow-stats \
+        daily auto-retrain scoring ci
 
 PYTHON   := python
 UVICORN  := uvicorn
@@ -31,6 +32,12 @@ help:
 	@echo "  make shadow-stats    シャドウモード統計表示"
 	@echo "  make drift           ドリフト検知実行"
 	@echo "  make versions        登録済みモデルバージョン一覧"
+	@echo "  make daily           日次予測パイプライン（ドライラン）"
+	@echo "  make daily-live      日次予測パイプライン（本番実行）"
+	@echo "  make auto-retrain    ドリフト検知 → 自動再学習"
+	@echo "  make scoring         予測スコアリング概要表示"
+	@echo "  make ci              lint + テスト（CI チェック）"
+	@echo "  make ci-full         lint + カバレッジ付きテスト"
 	@echo "  make docker-build    Docker イメージビルド"
 	@echo "  make docker-up       docker compose 起動"
 	@echo "  make docker-down     docker compose 停止"
@@ -124,6 +131,33 @@ fetch-odds:
 
 convert-data:
 	$(PYTHON) scripts/convert_data.py --dry-run
+
+# ---- 日次パイプライン・自動再学習 ----
+
+daily:
+	$(PYTHON) scripts/run_daily_pipeline.py --dry-run
+
+daily-live:
+	$(PYTHON) scripts/run_daily_pipeline.py
+
+auto-retrain:
+	$(PYTHON) scripts/auto_retrain.py
+
+# ---- スコアリング ----
+
+scoring:
+	$(PYTHON) -m app.cli scoring overview
+
+scoring-race:
+	$(PYTHON) -m app.cli scoring race $(RACE)
+
+# ---- CI（lint + test） ----
+
+ci: lint test
+	@echo "CI チェック完了"
+
+ci-full: lint test-cov
+	@echo "CI フルチェック完了"
 
 # ---- CLI ----
 cli:

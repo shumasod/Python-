@@ -307,6 +307,135 @@ class TestShadowStats:
 # エントリー / バージョン
 # ============================================================
 
+# ============================================================
+# scoring グループ
+# ============================================================
+
+def _write_pred(path: Path, race_id: str, win_proba: list,
+                jyo_code: str = "01", race_date: str = "20260420") -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    record = {
+        "race_id":           race_id,
+        "jyo_code":          jyo_code,
+        "race_date":         race_date,
+        "win_probabilities": win_proba,
+    }
+    (path / f"{race_id}.json").write_text(
+        json.dumps(record, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _write_res(path: Path, race_id: str, true_winner: int) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    record = {"race_id": race_id, "true_winner": true_winner}
+    (path / f"{race_id}.json").write_text(
+        json.dumps(record, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+class TestScoringCli:
+    def test_overview_no_data(self, runner, tmp_path, monkeypatch):
+        """予測・結果データなしのとき 'データなし' が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview"])
+        assert result.exit_code == 0
+        assert "データなし" in result.output
+
+    def test_overview_with_data(self, runner, tmp_path, monkeypatch):
+        """予測と結果が揃っているとき的中率が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir   = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        _write_pred(pred_dir, "r1", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+        _write_pred(pred_dir, "r2", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+        _write_res(result_dir, "r1", true_winner=1)   # 的中
+        _write_res(result_dir, "r2", true_winner=3)   # 外れ
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview"])
+        assert result.exit_code == 0
+        assert "突き合わせ数" in result.output
+        assert "50.0%" in result.output
+
+    def test_overview_date_filter(self, runner, tmp_path, monkeypatch):
+        """--date フィルターが動作すること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir   = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        _write_pred(pred_dir, "r1", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1], race_date="20260420")
+        _write_pred(pred_dir, "r2", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1], race_date="20260421")
+        _write_res(result_dir, "r1", true_winner=1)
+        _write_res(result_dir, "r2", true_winner=1)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview", "--date", "20260420"])
+        assert result.exit_code == 0
+        assert "20260420" in result.output
+
+    def test_overview_venue_filter(self, runner, tmp_path, monkeypatch):
+        """--venue フィルターが動作すること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir   = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        _write_pred(pred_dir, "r1", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1], jyo_code="06")
+        _write_res(result_dir, "r1", true_winner=1)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview", "--venue", "06"])
+        assert result.exit_code == 0
+        assert "06" in result.output
+
+    def test_race_both_present(self, runner, tmp_path, monkeypatch):
+        """予測と結果が両方あるとき照合結果が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir   = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        _write_pred(pred_dir, "r_match", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+        _write_res(result_dir, "r_match", true_winner=1)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_match"])
+        assert result.exit_code == 0
+        assert "的中" in result.output
+        assert "1号艇" in result.output
+
+    def test_race_miss(self, runner, tmp_path, monkeypatch):
+        """予測1位と実際の1着が異なるとき '外れ' が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir   = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        _write_pred(pred_dir, "r_miss", [0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+        _write_res(result_dir, "r_miss", true_winner=3)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_miss"])
+        assert result.exit_code == 0
+        assert "外れ" in result.output
+
+    def test_race_not_found(self, runner, tmp_path, monkeypatch):
+        """存在しない race_id のとき exit_code=1 になること"""
+        monkeypatch.chdir(tmp_path)
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "no_such_race"])
+        assert result.exit_code == 1
+
+    def test_race_prediction_only(self, runner, tmp_path, monkeypatch):
+        """予測のみ（結果未記録）のとき '結果未記録' が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        _write_pred(pred_dir, "r_pred_only", [1/6] * 6)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_pred_only"])
+        assert result.exit_code == 0
+        assert "結果未記録" in result.output
+
+
+# ============================================================
+# エントリー / バージョン
+# ============================================================
+
 class TestCliEntry:
     def test_version_flag(self, runner):
         """--version オプションが動作すること"""
@@ -320,3 +449,4 @@ class TestCliEntry:
         from app.cli import cli
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
+        assert "scoring" in result.output

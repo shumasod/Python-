@@ -171,3 +171,54 @@ class TestShadowPersistence:
         log_path = tmp_path / "shadow_logs" / "test.jsonl"
         lines = log_path.read_text().strip().split("\n")
         assert len(lines) == 3
+
+
+# ============================================================
+# 未カバー行: 例外パス / from_registry
+# ============================================================
+
+class TestShadowUncovered:
+    def test_run_shadow_exception_returns_none(self, tmp_path, monkeypatch):
+        """shadow モデルが例外を投げるとき None を返すこと"""
+        import app.model.shadow as shadow_module
+        from app.model.shadow import ShadowRunner
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(shadow_module, "SHADOW_LOG_DIR", tmp_path / "shadow_logs")
+
+        bad_model = MagicMock()
+        bad_model.predict_proba.side_effect = RuntimeError("model error")
+        runner = ShadowRunner(shadow_model=bad_model, sample_rate=1.0, name="err_test")
+
+        prod_proba = np.array([0.5, 0.1, 0.1, 0.1, 0.1, 0.1])
+        X = np.zeros((6, 12))
+        result = runner.run_shadow(X, "err_race", prod_proba)
+        assert result is None
+
+    def test_from_registry_builds_runner(self, tmp_path, monkeypatch):
+        """from_registry が ModelRegistry からモデルを読み込んで ShadowRunner を返すこと"""
+        import app.model.versioning as ver_mod
+        import app.model.shadow as shadow_module
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+        monkeypatch.setattr(shadow_module, "SHADOW_LOG_DIR", tmp_path / "shadow_logs")
+
+        from tests.test_versioning import _PicklableModel
+        from app.model.versioning import ModelRegistry
+        from app.model.shadow import ShadowRunner
+
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 500, "feature_columns": ["x"] * 12,
+        }
+        version = registry.register(_PicklableModel(), metrics)
+
+        runner = ShadowRunner.from_registry(
+            shadow_version=version,
+            sample_rate=0.5,
+            name="shadow_from_reg",
+        )
+        assert runner.sample_rate == 0.5
+        assert runner.name == "shadow_from_reg"

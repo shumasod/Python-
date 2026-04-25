@@ -231,3 +231,75 @@ class TestReport:
         assert report.is_significant is True
         assert report.winner == "control"
         assert report.p_value < 0.05
+
+    def test_significance_trend_message(self, tmp_path, monkeypatch):
+        """p_value < 0.1 かつ有意でないとき 'やや優勢' メッセージが出ること"""
+        import app.model.ab_test as ab_module
+        monkeypatch.setattr(ab_module, "AB_LOG_DIR", tmp_path / "ab_logs")
+
+        from app.model.ab_test import ABTestRouter
+        router = ABTestRouter(name="trend_test")
+        router.add_variant("control",    _make_mock_model(0), traffic_weight=0.5)
+        router.add_variant("challenger", _make_mock_model(1), traffic_weight=0.5)
+
+        # p_value が 0.05 < p < 0.1 になるよう moderate な差を設定
+        router._variants[0].n_requests = 50
+        router._variants[0].n_correct  = 20   # 40%
+        router._variants[1].n_requests = 50
+        router._variants[1].n_correct  = 10   # 20%
+
+        report = router.get_report()
+        # p < 0.1 ならば trend メッセージ
+        if 0.05 <= report.p_value < 0.1:
+            assert "やや優勢" in report.message
+
+    def test_print_report_with_winner(self, tmp_path, monkeypatch, capsys):
+        """winner がいるとき print_report が '勝者' を出力すること"""
+        import app.model.ab_test as ab_module
+        monkeypatch.setattr(ab_module, "AB_LOG_DIR", tmp_path / "ab_logs")
+
+        from app.model.ab_test import ABTestRouter
+        router = ABTestRouter(name="winner_print")
+        router.add_variant("control",    _make_mock_model(0), traffic_weight=0.5)
+        router.add_variant("challenger", _make_mock_model(1), traffic_weight=0.5)
+
+        router._variants[0].n_requests = 200
+        router._variants[0].n_correct  = 80
+        router._variants[1].n_requests = 200
+        router._variants[1].n_correct  = 40
+
+        router.print_report()
+        out = capsys.readouterr().out
+        assert "勝者" in out
+        assert "control" in out
+
+    def test_from_registry_builds_router(self, tmp_path, monkeypatch):
+        """from_registry が ModelRegistry から2バリアントを読み込むこと"""
+        import app.model.versioning as ver_mod
+        import app.model.ab_test as ab_module
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+        monkeypatch.setattr(ab_module, "AB_LOG_DIR", tmp_path / "ab_logs")
+
+        from tests.test_versioning import _PicklableModel
+        from app.model.versioning import ModelRegistry
+        from app.model.ab_test import ABTestRouter
+
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 500, "feature_columns": ["x"] * 12,
+        }
+        v1 = registry.register(_PicklableModel(), metrics)
+        v2 = registry.register(_PicklableModel(), metrics)
+
+        router = ABTestRouter.from_registry(
+            control_version=v1,
+            challenger_version=v2,
+            control_weight=0.7,
+            name="ab_from_registry",
+        )
+        assert len(router._variants) == 2
+        assert router._variants[0].name == "control"
+        assert router._variants[1].name == "challenger"

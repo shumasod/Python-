@@ -245,3 +245,85 @@ class TestCacheEnabledMocked:
         from app.cache import set_cached_prediction
         result = await set_cached_prediction({}, {})
         assert result is False
+
+
+# ============================================================
+# get_redis / close_redis（未カバー行）
+# ============================================================
+
+class TestGetRedis:
+    @pytest.mark.anyio
+    async def test_get_redis_creates_client(self, monkeypatch):
+        """get_redis が redis.asyncio.from_url でクライアントを生成すること"""
+        import types
+        import app.cache as cache_module
+
+        monkeypatch.setattr(cache_module, "_CACHE_ENABLED", True)
+        monkeypatch.setattr(cache_module, "_redis_client", None)
+
+        mock_client = AsyncMock()
+        fake_aioredis = types.SimpleNamespace(
+            from_url=MagicMock(return_value=mock_client)
+        )
+        fake_redis_pkg = types.SimpleNamespace(asyncio=fake_aioredis)
+
+        import sys
+        monkeypatch.setitem(sys.modules, "redis", fake_redis_pkg)
+        monkeypatch.setitem(sys.modules, "redis.asyncio", fake_aioredis)
+
+        from app.cache import get_redis
+        client = await get_redis()
+        assert client is mock_client
+
+    @pytest.mark.anyio
+    async def test_close_redis_clears_client(self, monkeypatch):
+        """close_redis が接続をクローズしてクライアントをリセットすること"""
+        import app.cache as cache_module
+
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        monkeypatch.setattr(cache_module, "_redis_client", mock_client)
+
+        from app.cache import close_redis
+        await close_redis()
+
+        mock_client.aclose.assert_called_once()
+        assert cache_module._redis_client is None
+
+    @pytest.mark.anyio
+    async def test_close_redis_when_none(self, monkeypatch):
+        """_redis_client が None のとき close_redis は何もしないこと"""
+        import app.cache as cache_module
+        monkeypatch.setattr(cache_module, "_redis_client", None)
+
+        from app.cache import close_redis
+        await close_redis()  # 例外にならないこと
+
+    @pytest.mark.anyio
+    async def test_invalidate_error_returns_false(self, monkeypatch):
+        """invalidate_cached_prediction が Redis エラーのとき False を返すこと"""
+        import app.cache as cache_module
+        monkeypatch.setattr(cache_module, "_CACHE_ENABLED", True)
+
+        mock_redis = AsyncMock()
+        mock_redis.delete = AsyncMock(side_effect=ConnectionError("down"))
+        monkeypatch.setattr(cache_module, "_redis_client", mock_redis)
+
+        from app.cache import invalidate_cache
+        result = await invalidate_cache("race_123")
+        assert result is False
+
+    @pytest.mark.anyio
+    async def test_get_cache_stats_error_returns_dict(self, monkeypatch):
+        """get_cache_stats が Redis エラーのとき error キー付き dict を返すこと"""
+        import app.cache as cache_module
+        monkeypatch.setattr(cache_module, "_CACHE_ENABLED", True)
+
+        mock_redis = AsyncMock()
+        mock_redis.info = AsyncMock(side_effect=ConnectionError("down"))
+        monkeypatch.setattr(cache_module, "_redis_client", mock_redis)
+
+        from app.cache import get_cache_stats
+        stats = await get_cache_stats()
+        assert stats["enabled"] is True
+        assert "error" in stats

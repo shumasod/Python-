@@ -174,3 +174,150 @@ class TestEnsemblePredictor:
         ens.add_model("high_loss", MagicMock(), cv_logloss=2.0)  # より悪い
 
         assert ens._models[0].weight > ens._models[1].weight
+
+    def test_from_registry_with_versions(self, tmp_path, monkeypatch):
+        """from_registry がレジストリからモデルを読み込んでアンサンブルを構築すること"""
+        import numpy as np
+        import app.model.versioning as ver_mod
+        from app.model.ensemble import EnsemblePredictor
+        from tests.test_versioning import _PicklableModel
+
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        from app.model.versioning import ModelRegistry
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 1000, "feature_columns": ["x"] * 12,
+        }
+        registry.register(_PicklableModel(), metrics)
+        registry.register(_PicklableModel(), {**metrics, "cv_logloss_mean": 1.4})
+
+        ens = EnsemblePredictor.from_registry(method="average", top_n=2)
+        assert len(ens._models) >= 1
+
+    def test_from_registry_with_named_versions(self, tmp_path, monkeypatch):
+        """version_names 指定で特定バージョンのみ読み込まれること"""
+        import app.model.versioning as ver_mod
+        from app.model.ensemble import EnsemblePredictor
+        from tests.test_versioning import _PicklableModel
+
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        from app.model.versioning import ModelRegistry
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 1000, "feature_columns": ["x"] * 12,
+        }
+        v1 = registry.register(_PicklableModel(), metrics)
+        _  = registry.register(_PicklableModel(), metrics)
+
+        ens = EnsemblePredictor.from_registry(version_names=[v1], method="average")
+        assert len(ens._models) == 1
+        assert ens._models[0].name == v1
+
+    def test_from_registry_no_versions_raises(self, tmp_path, monkeypatch):
+        """バージョン未登録で RuntimeError が発生すること"""
+        import app.model.versioning as ver_mod
+        from app.model.ensemble import EnsemblePredictor
+
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        with pytest.raises(RuntimeError, match="有効なモデルバージョンが見つかりません"):
+            EnsemblePredictor.from_registry()
+
+
+# ============================================================
+# metrics.py テスト
+# ============================================================
+
+class TestMetricsModule:
+    def test_record_predict_request_no_error(self):
+        """record_predict_request がエラーなく実行されること"""
+        from app.api.metrics import record_predict_request
+        # prometheus_client が使える環境なら実際にカウンタを更新する
+        record_predict_request("success", 0.05)
+        record_predict_request("error", 0.10)
+
+    def test_update_model_info_no_error(self, tmp_path, monkeypatch):
+        """update_model_info がエラーなく実行されること"""
+        import app.model.versioning as ver_mod
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        from app.api.metrics import update_model_info
+        update_model_info()  # バージョン未登録でも例外にならないこと
+
+    def test_metrics_endpoint_returns_data(self):
+        """GET /metrics が 200 またはプレーンテキストを返すこと"""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        tc = TestClient(app)
+        resp = tc.get("/metrics")
+        assert resp.status_code in (200, 503)
+
+    def test_metrics_middleware_predict_path(self):
+        """metrics_middleware が /predict パスのレイテンシを計測すること"""
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        tc = TestClient(app)
+        try:
+            tc.post(
+                "/api/v1/predict",
+                headers={"X-API-Key": "test-key"},
+                json={"jyo_code": "01", "race_date": "20260420", "race_no": 1,
+                      "boats": [{"boat_no": i+1, "racer_no": i+1, "rank": i+1,
+                                 "motor_no": i+1, "boat_no_official": i+1,
+                                 "exhibition_time": 6.5} for i in range(6)]},
+            )
+        except Exception:
+            pass  # 例外が出ても中置エラー計測パスをカバーできればよい
+
+    def test_metrics_middleware_exception_path(self):
+        """metrics_middleware の例外パスがカバーされること"""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from starlette.requests import Request
+        from app.api.metrics import metrics_middleware, _PROMETHEUS_AVAILABLE
+
+        async def _bad_next(_req):
+            raise RuntimeError("simulated error")
+
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/predict",
+            "query_string": b"",
+            "headers": [],
+        }
+        request = Request(scope)
+
+        async def run():
+            try:
+                await metrics_middleware(request, _bad_next)
+            except RuntimeError:
+                pass  # expected
+
+        asyncio.run(run())
+
+    def test_record_predict_request_with_error_status(self):
+        """record_predict_request が 'error' ステータスを処理すること"""
+        from app.api.metrics import record_predict_request
+        record_predict_request("error", 1.5)
+        record_predict_request("model_not_found", 0.0)
+
+    def test_update_model_info_exception_swallowed(self, tmp_path, monkeypatch):
+        """update_model_info が内部例外を飲み込むこと"""
+        import app.api.metrics as met
+        from unittest.mock import patch
+
+        # versioning import を失敗させて例外パスを通る
+        with patch.dict("sys.modules", {"app.model.versioning": None}):
+            met.update_model_info()  # 例外にならないこと

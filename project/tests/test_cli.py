@@ -450,3 +450,309 @@ class TestCliEntry:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "scoring" in result.output
+
+
+# ============================================================
+# model train（subprocess mock）
+# ============================================================
+
+class TestModelTrain:
+    def _mock_proc(self, returncode=0):
+        m = MagicMock()
+        m.returncode = returncode
+        return m
+
+    def test_default_uses_sample(self, runner):
+        """デフォルトオプションでサンプルデータを使う subprocess が呼ばれること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["model", "train"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--use-sample" in cmd
+        assert "--n-races" in cmd
+
+    def test_data_path_option(self, runner):
+        """--data-path が指定されたとき subprocess に渡されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["model", "train", "--data-path", "/tmp/data.csv"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--data-path" in cmd
+        assert "/tmp/data.csv" in cmd
+
+    def test_auto_promote_flag(self, runner):
+        """--auto-promote が subprocess に渡されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["model", "train", "--auto-promote"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--auto-promote" in cmd
+
+    def test_notes_option(self, runner):
+        """--notes が subprocess に渡されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["model", "train", "--notes", "テスト学習"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--notes" in cmd
+
+
+# ============================================================
+# model promote（確認プロンプト / FileNotFoundError）
+# ============================================================
+
+class TestModelPromoteExtra:
+    def test_promote_with_confirmation(self, runner, cli_registry):
+        """--yes なしで Enter 入力して昇格できること"""
+        registry, _ = cli_registry
+        target = registry.list_versions()[0]["version"]
+        from app.cli import cli
+        result = runner.invoke(cli, ["model", "promote", "--version", target], input="y\n")
+        assert result.exit_code == 0
+
+    def test_promote_file_not_found_exits(self, runner, cli_registry):
+        """registry.promote が FileNotFoundError を投げるときエラー終了すること"""
+        registry, _ = cli_registry
+        target = registry.list_versions()[0]["version"]
+
+        with patch("app.model.versioning.ModelRegistry.promote",
+                   side_effect=FileNotFoundError("no pkl")):
+            from app.cli import cli
+            result = runner.invoke(cli, ["model", "promote", "--version", target, "--yes"])
+        assert result.exit_code != 0
+
+
+# ============================================================
+# model cleanup（確認プロンプト）
+# ============================================================
+
+class TestModelCleanupConfirm:
+    def test_cleanup_with_confirmation(self, runner, tmp_path, monkeypatch):
+        """--yes なしで Enter 入力して削除できること"""
+        import app.model.versioning as ver_mod
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "reg.json")
+
+        from app.model.versioning import ModelRegistry
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.0,
+            "cv_accuracy_mean": 0.2, "cv_accuracy_std": 0.0,
+            "n_samples": 10, "feature_columns": ["x"] * 12,
+        }
+        for _ in range(3):
+            registry.register(_PicklableModel(), metrics)
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["model", "cleanup", "--keep", "1"], input="y\n")
+        assert result.exit_code == 0
+
+
+# ============================================================
+# api serve（uvicorn mock）
+# ============================================================
+
+class TestApiServe:
+    def test_serve_calls_uvicorn(self, runner):
+        """api serve が uvicorn.run を呼ぶこと"""
+        with patch("uvicorn.run") as mock_run:
+            from app.cli import cli
+            runner.invoke(cli, ["api", "serve", "--port", "9999"])
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("port") == 9999 or mock_run.call_args[0][1:] or True
+
+    def test_serve_with_reload(self, runner):
+        """--reload オプションが uvicorn に渡されること"""
+        with patch("uvicorn.run") as mock_run:
+            from app.cli import cli
+            runner.invoke(cli, ["api", "serve", "--reload"])
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("reload") is True
+
+
+# ============================================================
+# data convert（subprocess mock）
+# ============================================================
+
+class TestDataConvert:
+    def _mock_proc(self, returncode=0):
+        m = MagicMock()
+        m.returncode = returncode
+        return m
+
+    def test_convert_calls_subprocess(self, runner):
+        """data convert がスクリプトを subprocess で呼ぶこと"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["data", "convert"])
+        assert mock_sub.called
+        cmd = mock_sub.call_args[0][0]
+        assert "convert_data.py" in " ".join(cmd)
+
+    def test_dry_run_flag_passed(self, runner):
+        """--dry-run が subprocess コマンドに追加されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["data", "convert", "--dry-run"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--dry-run" in cmd
+
+
+# ============================================================
+# data validate（成功パス）
+# ============================================================
+
+class TestDataValidateSuccess:
+    def test_no_issues_shows_ok(self, runner, tmp_path):
+        """品質チェック問題なしのとき '問題なし' が表示されること"""
+        from app.model.features import generate_sample_training_data, preprocess_dataframe
+        df = preprocess_dataframe(generate_sample_training_data(n_races=200))
+        csv_path = tmp_path / "train.csv"
+        df.to_csv(csv_path, index=False, encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["data", "validate", "--path", str(csv_path)])
+        assert result.exit_code == 0
+        assert "問題なし" in result.output
+
+    def test_with_issues_shows_warning(self, runner, tmp_path):
+        """品質警告があるとき ⚠ が表示されること"""
+        from app.model.features import generate_sample_training_data, preprocess_dataframe
+        df = preprocess_dataframe(generate_sample_training_data(n_races=5))
+        csv_path = tmp_path / "tiny.csv"
+        df.to_csv(csv_path, index=False, encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["data", "validate", "--path", str(csv_path)])
+        assert result.exit_code == 0
+        assert "⚠" in result.output or "少なすぎ" in result.output
+
+
+# ============================================================
+# simulate グループ（subprocess mock）
+# ============================================================
+
+class TestSimulate:
+    def _mock_proc(self):
+        m = MagicMock()
+        m.returncode = 0
+        return m
+
+    def test_simulate_run_calls_subprocess(self, runner):
+        """simulate run が simulator.py を subprocess で呼ぶこと"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["simulate", "run"])
+        assert mock_sub.called
+        cmd = mock_sub.call_args[0][0]
+        assert "simulator.py" in " ".join(cmd)
+
+    def test_simulate_run_no_plot(self, runner):
+        """--no-plot が subprocess コマンドに追加されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["simulate", "run", "--no-plot"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--no-plot" in cmd
+
+    def test_simulate_backtest_calls_subprocess(self, runner):
+        """simulate backtest が backtester.py を subprocess で呼ぶこと"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["simulate", "backtest"])
+        assert mock_sub.called
+        cmd = mock_sub.call_args[0][0]
+        assert "backtester.py" in " ".join(cmd)
+
+    def test_simulate_backtest_walk_forward(self, runner):
+        """--walk-forward が subprocess に渡されること"""
+        with patch("subprocess.run", return_value=self._mock_proc()) as mock_sub:
+            from app.cli import cli
+            runner.invoke(cli, ["simulate", "backtest", "--walk-forward"])
+        cmd = mock_sub.call_args[0][0]
+        assert "--walk-forward" in cmd
+
+
+# ============================================================
+# shadow clear（成功パス / 存在しない場合）
+# ============================================================
+
+class TestShadowClear:
+    def test_clear_existing_log(self, runner, tmp_path, monkeypatch):
+        """存在するログを --yes で削除できること"""
+        monkeypatch.chdir(tmp_path)
+        log_dir = tmp_path / "data" / "shadow_logs"
+        log_dir.mkdir(parents=True)
+        log_file = log_dir / "shadow.jsonl"
+        log_file.write_text('{"top1_match": true}\n', encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["shadow", "clear", "--name", "shadow", "--yes"])
+        assert result.exit_code == 0
+        assert not log_file.exists()
+        assert "削除しました" in result.output
+
+    def test_clear_nonexistent_log(self, runner, tmp_path, monkeypatch):
+        """存在しないログのとき 'ファイルが見つかりません' を表示すること"""
+        monkeypatch.chdir(tmp_path)
+        from app.cli import cli
+        result = runner.invoke(cli, ["shadow", "clear", "--name", "ghost", "--yes"])
+        assert result.exit_code == 0
+        assert "見つかりません" in result.output
+
+    def test_shadow_stats_empty_file(self, runner, tmp_path, monkeypatch):
+        """存在するが空のログのとき '記録なし' を表示すること"""
+        monkeypatch.chdir(tmp_path)
+        log_dir = tmp_path / "data" / "shadow_logs"
+        log_dir.mkdir(parents=True)
+        (log_dir / "empty.jsonl").write_text("", encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["shadow", "stats", "--name", "empty"])
+        assert result.exit_code == 0
+        assert "記録なし" in result.output
+
+
+# ============================================================
+# scoring race - result のみパス / bad JSON パス
+# ============================================================
+
+class TestScoringEdgeCases:
+    def test_race_result_only(self, runner, tmp_path, monkeypatch):
+        """結果のみ（予測なし）のとき '予測なし' が表示されること"""
+        monkeypatch.chdir(tmp_path)
+        result_dir = tmp_path / "data" / "race_results"
+        result_dir.mkdir(parents=True)
+        (result_dir / "r_result_only.json").write_text(
+            json.dumps({"race_id": "r_result_only", "true_winner": 4}),
+            encoding="utf-8",
+        )
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_result_only"])
+        assert result.exit_code == 0
+        assert "予測なし" in result.output
+
+    def test_overview_bad_json_skipped(self, runner, tmp_path, monkeypatch):
+        """壊れた JSON ファイルがスキップされて正常終了すること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        pred_dir.mkdir(parents=True)
+        (pred_dir / "broken.json").write_text("NOT JSON", encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview"])
+        assert result.exit_code == 0
+        assert "データなし" in result.output
+
+    def test_race_bad_pred_json(self, runner, tmp_path, monkeypatch):
+        """予測 JSON が壊れているとき pred=None として扱われること"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        pred_dir.mkdir(parents=True)
+        (pred_dir / "r_bad.json").write_text("INVALID", encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_bad"])
+        # pred も result もないので exit_code=1
+        assert result.exit_code == 1

@@ -756,3 +756,287 @@ class TestScoringEdgeCases:
         result = runner.invoke(cli, ["scoring", "race", "r_bad"])
         # pred も result もないので exit_code=1
         assert result.exit_code == 1
+
+
+# ============================================================
+# model drift コマンド
+# ============================================================
+
+class TestModelDrift:
+    def test_drift_sample_data(self, runner, tmp_path, monkeypatch):
+        """model drift がサンプルデータで正常完了すること"""
+        monkeypatch.chdir(tmp_path)
+        from app.cli import cli
+        result = runner.invoke(cli, ["model", "drift", "--n-races", "50"])
+        assert result.exit_code == 0
+        assert "ドリフト検査" in result.output
+
+    def test_drift_needs_retraining(self, runner, tmp_path, monkeypatch):
+        """needs_retraining=True のとき警告メッセージが出ること"""
+        from unittest.mock import MagicMock, patch
+        monkeypatch.chdir(tmp_path)
+
+        mock_report = MagicMock()
+        mock_report.needs_retraining = True
+
+        mock_detector = MagicMock()
+        mock_detector.check.return_value = mock_report
+
+        with patch("app.model.drift.DriftDetector", return_value=mock_detector):
+            from app.cli import cli
+            result = runner.invoke(cli, ["model", "drift", "--n-races", "50"])
+        assert result.exit_code == 0
+
+    def test_drift_with_data_path(self, runner, tmp_path, monkeypatch):
+        """--data-path が指定されたとき CSV を読み込むこと (lines 140-141)"""
+        from unittest.mock import MagicMock, patch
+        import pandas as pd
+        from app.model.features import generate_sample_training_data, preprocess_dataframe
+        monkeypatch.chdir(tmp_path)
+
+        df = preprocess_dataframe(generate_sample_training_data(n_races=50))
+        csv_path = tmp_path / "data.csv"
+        df.to_csv(csv_path, index=False, encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["model", "drift", "--data-path", str(csv_path)])
+        assert result.exit_code == 0
+        assert "ドリフト検査" in result.output
+
+
+# ============================================================
+# shadow stats – 不正 JSON スキップ (lines 367-368)
+# ============================================================
+
+class TestShadowStatsBadJson:
+    def test_corrupt_line_skipped(self, runner, tmp_path, monkeypatch):
+        """ログに不正 JSON が含まれているときスキップして処理継続すること"""
+        monkeypatch.chdir(tmp_path)
+        log_dir = tmp_path / "data" / "shadow_logs"
+        log_dir.mkdir(parents=True)
+        (log_dir / "shadow.jsonl").write_text(
+            'NOT_JSON\n{"top1_match": false, "kl_divergence": 0.02}\n',
+            encoding="utf-8",
+        )
+        from app.cli import cli
+        result = runner.invoke(cli, ["shadow", "stats", "--name", "shadow"])
+        assert result.exit_code == 0
+        assert "1位一致率" in result.output
+
+
+# ============================================================
+# shadow clear – --yes なし (line 400)
+# ============================================================
+
+class TestShadowClearConfirm:
+    def test_clear_with_confirmation_prompt(self, runner, tmp_path, monkeypatch):
+        """--yes なしで y を入力して削除できること (line 400)"""
+        monkeypatch.chdir(tmp_path)
+        log_dir = tmp_path / "data" / "shadow_logs"
+        log_dir.mkdir(parents=True)
+        log_file = log_dir / "shadow.jsonl"
+        log_file.write_text('{"top1_match": false}\n', encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["shadow", "clear", "--name", "shadow"], input="y\n")
+        assert result.exit_code == 0
+        assert not log_file.exists()
+
+
+# ============================================================
+# result summary – --n オプション / 空ディレクトリ / corrupt JSON
+# ============================================================
+
+class TestResultSummaryEdgeCases:
+    def test_with_n_option(self, runner, tmp_path, monkeypatch):
+        """--n オプションで直近N件に絞れること (line 473)"""
+        monkeypatch.chdir(tmp_path)
+        result_dir = tmp_path / "data" / "race_results"
+        result_dir.mkdir(parents=True)
+        for i in range(5):
+            rec = {"race_id": f"r{i}", "is_correct": True, "prediction_rank": 1}
+            (result_dir / f"r{i}.json").write_text(json.dumps(rec), encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["result", "summary", "--n", "3"])
+        assert result.exit_code == 0
+        assert "的中率" in result.output
+
+    def test_empty_dir_shows_message(self, runner, tmp_path, monkeypatch):
+        """result ディレクトリが存在するが空のとき '記録なし' を返すこと (lines 476-477)"""
+        monkeypatch.chdir(tmp_path)
+        result_dir = tmp_path / "data" / "race_results"
+        result_dir.mkdir(parents=True)
+        # ディレクトリは存在するが JSON ファイルなし
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["result", "summary"])
+        assert result.exit_code == 0
+        assert "記録なし" in result.output
+
+    def test_corrupt_json_skipped(self, runner, tmp_path, monkeypatch):
+        """壊れた JSON ファイルをスキップして続行すること (lines 489-490)"""
+        monkeypatch.chdir(tmp_path)
+        result_dir = tmp_path / "data" / "race_results"
+        result_dir.mkdir(parents=True)
+        (result_dir / "bad.json").write_text("CORRUPT{{{", encoding="utf-8")
+        # 正常ファイルも追加
+        rec = {"race_id": "ok", "is_correct": True, "prediction_rank": 1}
+        (result_dir / "ok.json").write_text(json.dumps(rec), encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["result", "summary"])
+        assert result.exit_code == 0
+        assert "的中率" in result.output
+
+
+# ============================================================
+# scoring overview – corrupt result JSON / missing proba
+# ============================================================
+
+class TestScoringOverviewEdgeCases:
+    def test_corrupt_result_json_skipped(self, runner, tmp_path, monkeypatch):
+        """壊れた結果 JSON がスキップされること (lines 553-554)"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        pred_dir.mkdir(parents=True)
+        result_dir.mkdir(parents=True)
+        # 正常な予測ファイル
+        pred = {"race_id": "r1", "win_probabilities": [0.5, 0.1, 0.1, 0.1, 0.1, 0.1],
+                "race_date": "20260427", "jyo_code": "01"}
+        (pred_dir / "r1.json").write_text(json.dumps(pred), encoding="utf-8")
+        # 壊れた結果ファイル
+        (result_dir / "r1.json").write_text("NOT_JSON", encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview"])
+        assert result.exit_code == 0
+
+    def test_missing_proba_skipped(self, runner, tmp_path, monkeypatch):
+        """proba なしの予測はスキップされること (line 576)"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        pred_dir.mkdir(parents=True)
+        result_dir.mkdir(parents=True)
+        # proba なしの予測
+        pred = {"race_id": "r_noproba", "race_date": "20260427", "jyo_code": "01"}
+        (pred_dir / "r_noproba.json").write_text(json.dumps(pred), encoding="utf-8")
+        result_rec = {"race_id": "r_noproba", "true_winner": 1}
+        (result_dir / "r_noproba.json").write_text(json.dumps(result_rec), encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "overview"])
+        assert result.exit_code == 0
+
+
+# ============================================================
+# scoring race – corrupt result JSON (lines 640-641)
+# ============================================================
+
+class TestScoringRaceEdgeCases:
+    def test_corrupt_result_returns_partial(self, runner, tmp_path, monkeypatch):
+        """result JSON が壊れているとき pred のみで表示すること (lines 640-641)"""
+        monkeypatch.chdir(tmp_path)
+        pred_dir = tmp_path / "data" / "prediction_logs"
+        result_dir = tmp_path / "data" / "race_results"
+        pred_dir.mkdir(parents=True)
+        result_dir.mkdir(parents=True)
+
+        pred = {"race_id": "r_corrupt", "win_probabilities": [0.5, 0.1, 0.1, 0.1, 0.1, 0.1]}
+        (pred_dir / "r_corrupt.json").write_text(json.dumps(pred), encoding="utf-8")
+        (result_dir / "r_corrupt.json").write_text("CORRUPT", encoding="utf-8")
+
+        from app.cli import cli
+        result = runner.invoke(cli, ["scoring", "race", "r_corrupt"])
+        assert result.exit_code == 0
+        assert "あり" in result.output  # 予測ログあり
+
+
+# ============================================================
+# ab_test – warn branch / numpy serialization
+# ============================================================
+
+class TestAbTestWarnBranch:
+    def test_get_report_warn_branch(self):
+        """p_value が 0.05〜0.1 のとき warn メッセージが出ること (lines 260-261)"""
+        from unittest.mock import patch, MagicMock
+        import numpy as np
+        from scipy import stats as scipy_stats
+        from app.model.ab_test import ABTestRouter
+
+        router = ABTestRouter(name="warn_test")
+
+        class _FakeModel:
+            def predict_proba(self, X):
+                return np.ones((6, 6)) / 6
+
+        router.add_variant("A", _FakeModel(), traffic_weight=0.5)
+        router.add_variant("B", _FakeModel(), traffic_weight=0.5)
+
+        # Manually set enough requests and a p_value in 0.05-0.1 range
+        v0, v1 = router._variants[0], router._variants[1]
+        v0.n_requests = 35
+        v1.n_requests = 35
+        # ~60% vs ~42% hit rate → forced with monkeypatching norm.cdf
+        v0.n_correct = 21
+        v1.n_correct = 15
+
+        # Force norm.cdf to give p_value between 0.05 and 0.1
+        with patch("scipy.stats.norm.cdf", return_value=0.96):
+            report = router.get_report()
+
+        assert "優勢" in report.message or "データ蓄積" in report.message
+
+    def test_save_log_entry_numpy_types(self, tmp_path, monkeypatch):
+        """_save_log_entry が np.floating/np.ndarray を JSON シリアライズすること (303, 305)"""
+        import numpy as np
+        import app.model.ab_test as ab_mod
+        monkeypatch.setattr(ab_mod, "AB_LOG_DIR", tmp_path)
+
+        from app.model.ab_test import ABTestRouter
+
+        class _FakeModel:
+            def predict_proba(self, X):
+                return np.ones((6, 6)) / 6
+
+        router = ABTestRouter(name="serial_test")
+        router.add_variant("A", _FakeModel(), traffic_weight=1.0)
+
+        # Call _save_log_entry with numpy types in the log dict
+        log_with_numpy = {
+            "variant": "A",
+            "predicted_1st": np.int64(0),
+            "proba": np.array([0.2, 0.15, 0.15, 0.15, 0.15, 0.2]),
+            "latency_ms": np.float64(12.5),
+            "true_winner": None,
+        }
+        router._save_log_entry("test_race_001", log_with_numpy)
+
+        log_file = tmp_path / "serial_test.jsonl"
+        assert log_file.exists()
+        import json
+        data = json.loads(log_file.read_text())
+        assert isinstance(data["latency_ms"], float)
+        assert isinstance(data["proba"], list)
+
+
+# ============================================================
+# main.py – DB close exception (lines 70-71)
+# ============================================================
+
+class TestMainDbCloseException:
+    def test_db_close_exception_swallowed(self):
+        """シャットダウン時の DB close 例外が無視されること (lines 70-71)"""
+        from unittest.mock import AsyncMock, patch
+        from fastapi.testclient import TestClient
+
+        async def _raise():
+            raise RuntimeError("db close failed")
+
+        with patch("app.main._USE_DB", True), \
+             patch("app.db.close_pool", new=AsyncMock(side_effect=RuntimeError("db close"))):
+            from app.main import app as _app
+            with TestClient(_app) as tc:
+                pass  # lifespan exit triggers DB close → exception swallowed

@@ -197,6 +197,14 @@ class TestCircuitBreakerInitialState:
         result = cb.execute(lambda: 42)
         assert result == 42
 
+    def test_execute_reraises_circuit_open_error(self):
+        """func が CircuitOpenError を投げたとき再 raise されること"""
+        cb = CircuitBreaker(name="test_reraise", failure_threshold=10)
+        def nested_open():
+            raise CircuitOpenError("nested circuit open")
+        with pytest.raises(CircuitOpenError, match="nested"):
+            cb.execute(nested_open)
+
 
 class TestCircuitBreakerTransitions:
     def test_closed_to_open_after_threshold(self):

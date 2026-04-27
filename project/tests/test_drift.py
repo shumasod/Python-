@@ -158,8 +158,17 @@ class TestDriftDetector:
         shifted = sample_df.copy()
         shifted["win_rate"] = shifted["win_rate"] * 1.5  # 軽微なシフト
         report = detector.check(shifted)
-        # warn または stable（シフト量に依存）
         assert report.summary is not None
+
+    def test_check_warn_path_features(self, detector, sample_df, monkeypatch):
+        """PSI が warn レベルのとき warn_features に追加され '軽微なドリフト' サマリーになること"""
+        import app.model.drift as drift_mod
+        detector.set_reference(sample_df)
+
+        # Force _psi_status to return "warn" for all features → no alert, only warn
+        monkeypatch.setattr(drift_mod, "_psi_status", lambda psi: "warn")
+        report = detector.check(sample_df)
+        assert "軽微なドリフト" in report.summary
 
     def test_print_report(self, detector, sample_df, capsys):
         """print_report がコンソールに出力すること"""

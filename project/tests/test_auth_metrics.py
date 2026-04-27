@@ -69,6 +69,29 @@ class TestApiKeyAuth:
                 verify_api_key(None)
             assert exc.value.status_code == 401
 
+    def test_verify_valid_key_returns_key(self):
+        """正しい API Key を渡すとキー文字列を返すこと"""
+        import app.api.auth as auth_mod
+        test_key = "valid-test-key-xyz"
+        key_hash = auth_mod._hash_key(test_key)
+        with patch("app.api.auth._AUTH_ENABLED", True), \
+             patch("app.api.auth._VALID_KEY_HASHES", {key_hash}):
+            result = auth_mod.verify_api_key(test_key)
+        assert result == test_key
+
+    def test_load_api_keys_from_env(self, monkeypatch):
+        """API_KEYS 環境変数からキーが読み込まれること"""
+        import app.api.auth as auth_mod
+        monkeypatch.setenv("API_KEYS", "key-a, key-b , key-c")
+        original = set(auth_mod._VALID_KEY_HASHES)
+        auth_mod._VALID_KEY_HASHES.clear()
+        with patch.dict("os.environ", {"API_KEYS": "key-a,key-b,key-c"}):
+            auth_mod._load_api_keys()
+        assert len(auth_mod._VALID_KEY_HASHES) == 3
+        # 復元
+        auth_mod._VALID_KEY_HASHES.clear()
+        auth_mod._VALID_KEY_HASHES.update(original)
+
 
 # ============================================================
 # notification.py テスト
@@ -232,6 +255,33 @@ class TestEnsemblePredictor:
         with pytest.raises(RuntimeError, match="有効なモデルバージョンが見つかりません"):
             EnsemblePredictor.from_registry()
 
+    def test_from_registry_missing_file_warns_and_skips(self, tmp_path, monkeypatch):
+        """バージョンファイルが見つからないとき警告してスキップすること"""
+        import app.model.versioning as ver_mod
+        from app.model.ensemble import EnsemblePredictor
+        from tests.test_versioning import _PicklableModel
+
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        from app.model.versioning import ModelRegistry
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 1000, "feature_columns": ["x"] * 12,
+        }
+        v1 = registry.register(_PicklableModel(), metrics)
+
+        # Delete the version file to trigger FileNotFoundError in from_registry
+        (tmp_path / "versions" / f"{v1}.pkl").unlink()
+
+        # from_registry should warn and skip (ensemble has 0 models but no exception)
+        # Actually, since selected=[v1] but load fails → ensemble._models=[]
+        # from_registry calls ensemble.summary() and returns even with no models
+        ens = EnsemblePredictor.from_registry(version_names=[v1], method="average")
+        assert len(ens._models) == 0  # file was missing, so nothing loaded
+
 
 # ============================================================
 # metrics.py テスト
@@ -318,6 +368,38 @@ class TestMetricsModule:
         import app.api.metrics as met
         from unittest.mock import patch
 
-        # versioning import を失敗させて例外パスを通る
         with patch.dict("sys.modules", {"app.model.versioning": None}):
             met.update_model_info()  # 例外にならないこと
+
+    def test_record_predict_request_prometheus_disabled(self, monkeypatch):
+        """_PROMETHEUS_AVAILABLE=False のとき record_predict_request が即座に返ること"""
+        import app.api.metrics as met
+        monkeypatch.setattr(met, "_PROMETHEUS_AVAILABLE", False)
+        met.record_predict_request("success", 0.1)  # 例外にならないこと
+
+    def test_update_model_info_prometheus_disabled(self, monkeypatch):
+        """_PROMETHEUS_AVAILABLE=False のとき update_model_info が即座に返ること"""
+        import app.api.metrics as met
+        monkeypatch.setattr(met, "_PROMETHEUS_AVAILABLE", False)
+        met.update_model_info()  # 例外にならないこと
+
+    def test_metrics_endpoint_prometheus_disabled(self, monkeypatch):
+        """_PROMETHEUS_AVAILABLE=False のとき /metrics が 503 を返すこと"""
+        import app.api.metrics as met
+        monkeypatch.setattr(met, "_PROMETHEUS_AVAILABLE", False)
+
+        from fastapi.testclient import TestClient
+        from app.main import app as _app
+        tc = TestClient(_app)
+        resp = tc.get("/metrics")
+        assert resp.status_code == 503
+
+    def test_record_predict_request_counter_exception_swallowed(self, monkeypatch):
+        """PREDICT_REQUESTS.labels().inc() が例外を投げても飲み込まれること"""
+        import app.api.metrics as met
+        from unittest.mock import MagicMock
+        monkeypatch.setattr(met, "_PROMETHEUS_AVAILABLE", True)
+        bad_counter = MagicMock()
+        bad_counter.labels.return_value.inc.side_effect = RuntimeError("counter error")
+        monkeypatch.setattr(met, "PREDICT_REQUESTS", bad_counter)
+        met.record_predict_request("success", 0.05)  # 例外にならないこと

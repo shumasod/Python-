@@ -62,7 +62,6 @@ class TestHealthDetail:
             lambda: {"status": "warn", "message": "モデルファイルが見つかりません"}
         )
         resp = client.get("/health/detail")
-        # degraded になっていることを確認
         assert resp.json()["status"] == "degraded"
 
     def test_use_db_true_path(self, monkeypatch):
@@ -105,7 +104,7 @@ class TestCheckModelHelper:
                 return result
 
             def exists(self):
-                return False  # モデルは常に存在しない
+                return False
 
             def stat(self):
                 return self._p.stat()
@@ -170,7 +169,6 @@ class TestCheckDiskHelper:
         """ディレクトリが存在しないとき 'directory not found' が入ること"""
         import app.api.health as health_module
 
-        # Path を tmp_path 以下の存在しないパスに差し替え
         orig_path = health_module.Path
 
         class _P:
@@ -195,53 +193,13 @@ class TestCheckDiskHelper:
         result = health_module._check_disk()
         assert "root_free_gb" in result
 
-
-class TestHealthDetail:
-    def test_returns_200(self):
-        """GET /health/detail が 200 を返すことを確認"""
-        resp = client.get("/health/detail")
-        assert resp.status_code == 200
-
-    def test_response_keys(self):
-        """必須フィールドが含まれることを確認"""
-        resp = client.get("/health/detail")
-        body = resp.json()
-        assert "status" in body
-        assert "uptime_sec" in body
-        assert "checks" in body
-
-    def test_checks_has_model(self):
-        """checks.model フィールドが含まれることを確認"""
-        resp = client.get("/health/detail")
-        assert "model" in resp.json()["checks"]
-
-    def test_checks_has_db(self):
-        """checks.db フィールドが含まれることを確認（USE_DB=false なら disabled）"""
-        resp = client.get("/health/detail")
-        assert "db" in resp.json()["checks"]
-
-    def test_checks_has_disk(self):
-        """checks.disk フィールドが含まれることを確認"""
-        resp = client.get("/health/detail")
-        assert "disk" in resp.json()["checks"]
-
-    def test_status_values(self):
-        """status が ok/degraded/down のいずれかであることを確認"""
-        resp = client.get("/health/detail")
-        assert resp.json()["status"] in ("ok", "degraded", "down")
-
-    def test_uptime_positive(self):
-        """uptime_sec が正の整数であることを確認"""
-        resp = client.get("/health/detail")
-        assert resp.json()["uptime_sec"] >= 0
-
-    def test_model_warn_when_missing(self, tmp_path, monkeypatch):
-        """モデルファイルが存在しない場合 warn ステータスになることを確認"""
+    def test_check_disk_usage_exception_returns_unknown(self, monkeypatch):
+        """shutil.disk_usage が例外を投げたとき root_free_gb が 'unknown' になること"""
         import app.api.health as health_module
-        monkeypatch.setattr(
-            health_module, "_check_model",
-            lambda: {"status": "warn", "message": "モデルファイルが見つかりません"}
-        )
-        resp = client.get("/health/detail")
-        # degraded になっていることを確認
-        assert resp.json()["status"] == "degraded"
+
+        def _raise(_path):
+            raise OSError("disk error")
+
+        monkeypatch.setattr(health_module.shutil, "disk_usage", _raise)
+        result = health_module._check_disk()
+        assert result["root_free_gb"] == "unknown"

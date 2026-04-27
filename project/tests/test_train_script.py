@@ -174,3 +174,14 @@ class TestMainDataPath:
         from scripts.train_model import main
         with pytest.raises((FileNotFoundError, SystemExit)):
             main()
+
+
+class TestLoadModelNotFound:
+    def test_load_model_raises_when_file_missing(self, tmp_path, monkeypatch):
+        """モデルファイルがないとき FileNotFoundError を投げること"""
+        import app.model.train as train_mod
+        monkeypatch.setattr(train_mod, "MODEL_DIR", tmp_path)
+
+        from app.model.train import load_model
+        with pytest.raises(FileNotFoundError, match="モデルファイルが見つかりません"):
+            load_model("nonexistent_model")

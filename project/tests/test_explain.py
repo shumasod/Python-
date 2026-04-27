@@ -57,6 +57,12 @@ class TestExplainEndpointNoModel:
             resp = client.post("/api/v1/explain", json=_race_payload())
         assert resp.status_code == 503
 
+    def test_generic_exception_returns_500(self):
+        """explain_race が予期しない例外を投げたとき 500 が返ること"""
+        with patch("app.api.explain.explain_race", side_effect=RuntimeError("unexpected")):
+            resp = client.post("/api/v1/explain", json=_race_payload())
+        assert resp.status_code == 500
+
     def test_invalid_race_returns_422(self):
         """boats が6艇でない場合に 422 を返すこと"""
         payload = _race_payload()
@@ -230,6 +236,29 @@ class TestExplainRaceLogic:
             result = explain_race(_race_payload()["race"])
 
         assert result["model_version"] == "boat_race_model_v20260412_1"
+
+    def test_zero_importances_normalizes_to_uniform(self):
+        """feature_importances_ が全ゼロのとき total=1.0 にフォールバックすること"""
+        from app.api.explain import explain_race
+
+        class _ZeroImportanceModel:
+            feature_importances_ = [0.0] * 12
+
+            def predict_proba(self, X):
+                return np.ones((6, 6)) / 6
+
+        with patch("app.api.explain.get_model", return_value=_ZeroImportanceModel()):
+            result = explain_race(_race_payload()["race"])
+
+        # 全ゼロ → normalization で全て 0.0 になる（クラッシュしないことが目標）
+        assert len(result["feature_importance"]) == 12
+
+    def test_make_summary_empty_top_factors(self):
+        """top_factors が空のとき 'データ不足' サマリーを返すこと"""
+        from app.api.explain import _make_summary
+        result = _make_summary(3, [], 0.2)
+        assert "データ不足" in result
+        assert "3" in result
 
 
 # ============================================================

@@ -75,7 +75,7 @@ def _collect_and_forward_metrics() -> dict:
     """
     # CloudWatch コレクター初期化
     # Lambda ではインスタンスプロファイルの IAM ロールが自動的に使用される
-    from .cloudwatch_collector import CloudWatchCollector
+    from rds_analyzer.collectors.cloudwatch_collector import CloudWatchCollector
     collector = CloudWatchCollector(region_name=REGION)
 
     # RDS インスタンス一覧を取得

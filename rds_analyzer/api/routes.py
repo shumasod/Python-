@@ -46,7 +46,7 @@ from ..models.metrics import (
     PerformanceAnalysisResult,
 )
 from ..models.rds import EngineType, RDSInstance, StorageType
-from .. import __version__
+from rds_analyzer import __version__
 
 logger = logging.getLogger(__name__)
 

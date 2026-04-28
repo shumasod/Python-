@@ -64,6 +64,20 @@ def _write_result(path: Path, race_id: str, true_winner: int,
 # _score_pair (unit)
 # ============================================================
 
+class TestLoadJson:
+    def test_load_json_corrupt_returns_none(self, tmp_path):
+        """破損 JSON ファイルのとき None を返すこと"""
+        from app.api.scoring import _load_json
+        bad_path = tmp_path / "bad.json"
+        bad_path.write_text("CORRUPT{{{", encoding="utf-8")
+        assert _load_json(bad_path) is None
+
+    def test_load_json_missing_returns_none(self, tmp_path):
+        """存在しないファイルのとき None を返すこと"""
+        from app.api.scoring import _load_json
+        assert _load_json(tmp_path / "nonexistent.json") is None
+
+
 class TestScorePair:
     def test_correct_prediction(self):
         """1号艇が最高確率かつ実際の1着のとき is_correct=True"""

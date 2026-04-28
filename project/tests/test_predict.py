@@ -72,6 +72,19 @@ class TestCalcTrifecta:
             assert item["rank"] == i + 1
 
 
+class TestBuildRecommendations:
+    def test_no_recommendations_returns_fallback(self):
+        """期待値閾値を高く設定するとフォールバックで最上位1点を返すこと"""
+        from app.model.predict import _build_recommendations, _calc_trifecta
+        proba = [0.35, 0.25, 0.15, 0.12, 0.08, 0.05]
+        trifecta = _calc_trifecta(proba, top_n=10)
+        # race_data with no odds_info → default 100.0 odds for all combos
+        # ev_threshold=1000.0 ensures no combo meets threshold
+        recs = _build_recommendations(trifecta, {}, ev_threshold=1000.0)
+        assert len(recs) == 1
+        assert recs[0]["note"] == "期待値閾値未達のため確率最上位点のみ推奨"
+
+
 class TestKellyCriterion:
     def test_positive_ev(self):
         """期待値>1の場合、正のケリー比率を返すことを確認"""

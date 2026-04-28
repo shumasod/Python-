@@ -5,7 +5,7 @@ FastAPI エンドポイントの統合テスト
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -229,3 +229,62 @@ class TestInvalidateCacheEndpoint:
         body = resp.json()
         # race_id が返る、もしくはキャッシュ無効メッセージが返る
         assert "race_id" in body or "message" in body
+
+    @patch("app.api.predict._CACHE_AVAILABLE", False)
+    def test_delete_cache_unavailable_returns_message(self):
+        """_CACHE_AVAILABLE=False のとき 'キャッシュが無効' メッセージを返すこと"""
+        resp = client.delete("/api/v1/cache/race_xyz")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "message" in body
+
+
+# ============================================================
+# predict.py の未カバーパス
+# ============================================================
+
+class TestPredictCacheHitPath:
+    @patch("app.api.predict._CACHE_AVAILABLE", True)
+    @patch("app.api.predict.get_cached_prediction", new_callable=AsyncMock)
+    def test_cache_hit_returns_cached_true(self, mock_get_cache):
+        """キャッシュヒット時に cached=True でレスポンスを返すこと"""
+        mock_get_cache.return_value = MOCK_PREDICT_RESULT
+        resp = client.post("/api/v1/predict", json=VALID_REQUEST)
+        assert resp.status_code == 200
+        assert resp.json()["cached"] is True
+
+    @patch("app.api.predict.predict_race", side_effect=ValueError("bad value"))
+    def test_predict_value_error_returns_422(self, mock_predict):
+        """predict_race が ValueError を投げたとき 422 が返ること"""
+        resp = client.post("/api/v1/predict", json=VALID_REQUEST)
+        assert resp.status_code == 422
+
+    @patch("app.api.predict.predict_race", side_effect=RuntimeError("unexpected"))
+    def test_predict_generic_exception_returns_500(self, mock_predict):
+        """predict_race が予期しない例外を投げたとき 500 が返ること"""
+        resp = client.post("/api/v1/predict", json=VALID_REQUEST)
+        assert resp.status_code == 500
+
+
+class TestStatsDbUnavailable:
+    @patch("app.api.predict._DB_AVAILABLE", False)
+    def test_stats_db_unavailable_message(self):
+        """_DB_AVAILABLE=False のとき asyncpg 未インストールメッセージが返ること"""
+        resp = client.get("/api/v1/stats")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "db" in body
+        assert "message" in body["db"]
+
+
+class TestBatchCacheHitPath:
+    @patch("app.api.predict._CACHE_AVAILABLE", True)
+    @patch("app.api.predict.get_cached_prediction", new_callable=AsyncMock)
+    def test_batch_cache_hit_returns_cached_true(self, mock_get_cache):
+        """バッチ予測でキャッシュヒット時に cached=True が含まれること"""
+        mock_get_cache.return_value = MOCK_PREDICT_RESULT
+        resp = client.post("/api/v1/predict/batch", json=_make_batch_request(2))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["succeeded"] == 2
+        assert all(r.get("cached") is True for r in body["results"])

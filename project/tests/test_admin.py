@@ -402,3 +402,141 @@ class TestAdminHelpers:
         assert resp.status_code == 200
         body = resp.json()
         assert body["new_version"] == version_name
+
+    def test_read_shadow_stats_corrupt_json_skipped(self, tmp_path, monkeypatch):
+        """シャドウログに破損 JSON 行があっても読み飛ばされること"""
+        import app.api.admin as admin_mod
+
+        shadow_dir = tmp_path / "shadow_logs"
+        shadow_dir.mkdir()
+        content = 'CORRUPT_JSON\n{"top1_match": true, "kl_divergence": 0.1}\n'
+        (shadow_dir / "shadow.jsonl").write_text(content, encoding="utf-8")
+
+        orig_path = admin_mod.Path
+
+        class _P:
+            def __init__(self, p):
+                self._p = shadow_dir if "shadow_logs" in str(p) else orig_path(p)
+            def __truediv__(self, other):
+                return self._p / other
+            def exists(self):
+                return self._p.exists()
+
+        monkeypatch.setattr(admin_mod, "Path", _P)
+        stats = admin_mod._read_shadow_stats("shadow")
+        assert stats["n_sampled"] == 1  # only valid line counted
+
+    def test_read_ab_stats_corrupt_json_and_true_winner(self, tmp_path, monkeypatch):
+        """AB ログに破損 JSON と true_winner 付きエントリがある場合"""
+        import app.api.admin as admin_mod
+
+        ab_dir = tmp_path / "ab_test_logs"
+        ab_dir.mkdir()
+        entries = [
+            '{"variant": "control", "race_id": "r1", "true_winner": 3}',
+            'CORRUPT_LINE',
+            '{"variant": "control", "race_id": "r2"}',
+        ]
+        (ab_dir / "exp.jsonl").write_text("\n".join(entries), encoding="utf-8")
+
+        orig_path = admin_mod.Path
+
+        class _P:
+            def __init__(self, p):
+                self._p = ab_dir if "ab_test_logs" in str(p) else orig_path(p)
+            def __truediv__(self, other):
+                return self._p / other
+            def exists(self):
+                return self._p.exists()
+            def glob(self, pat):
+                return self._p.glob(pat)
+
+        monkeypatch.setattr(admin_mod, "Path", _P)
+        stats = admin_mod._read_ab_stats()
+        assert len(stats) == 1
+        assert stats[0]["n_total_records"] == 2  # corrupt skipped
+
+    def test_latest_drift_status_no_dir(self, tmp_path, monkeypatch):
+        """ドリフトレポートディレクトリがないとき None を返すこと"""
+        monkeypatch.chdir(tmp_path)  # data/drift_reports does not exist here
+        import app.api.admin as admin_mod
+        status = admin_mod._latest_drift_status()
+        assert status is None
+
+    def test_latest_drift_status_empty_dir(self, tmp_path, monkeypatch):
+        """ドリフトレポートディレクトリが空のとき None を返すこと"""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "data" / "drift_reports").mkdir(parents=True)
+        import app.api.admin as admin_mod
+        status = admin_mod._latest_drift_status()
+        assert status is None
+
+    def test_latest_drift_status_corrupt_json(self, tmp_path, monkeypatch):
+        """ドリフトレポートが破損 JSON のとき None を返すこと"""
+        monkeypatch.chdir(tmp_path)
+        drift_dir = tmp_path / "data" / "drift_reports"
+        drift_dir.mkdir(parents=True)
+        (drift_dir / "r1.json").write_text("CORRUPT{{{", encoding="utf-8")
+        import app.api.admin as admin_mod
+        status = admin_mod._latest_drift_status()
+        assert status is None
+
+    def test_promote_exception_returns_500(self, tmp_path, monkeypatch):
+        """promote 中に例外が発生したとき 500 が返ること"""
+        import app.model.versioning as ver_mod
+        monkeypatch.setattr(ver_mod, "MODEL_DIR", tmp_path)
+        monkeypatch.setattr(ver_mod, "REGISTRY_FILE", tmp_path / "registry.json")
+
+        from tests.test_versioning import _PicklableModel
+        from app.model.versioning import ModelRegistry
+
+        registry = ModelRegistry()
+        metrics = {
+            "cv_logloss_mean": 1.5, "cv_logloss_std": 0.05,
+            "cv_accuracy_mean": 0.28, "cv_accuracy_std": 0.02,
+            "n_samples": 1000, "feature_columns": ["x"] * 12,
+        }
+        version_name = registry.register(_PicklableModel(), metrics)
+
+        with patch("app.model.versioning.ModelRegistry.promote",
+                   side_effect=RuntimeError("promote failed")):
+            resp = client.post(
+                "/api/v1/admin/models/promote",
+                json={"version": version_name},
+            )
+        assert resp.status_code == 500
+
+    def test_system_status_cache_unavailable(self, tmp_path, monkeypatch):
+        """キャッシュ取得失敗でも /admin/status が 200 を返すこと"""
+        from unittest.mock import AsyncMock
+        with patch("app.cache.get_cache_stats", new=AsyncMock(
+            side_effect=RuntimeError("cache down")
+        )):
+            resp = client.get("/api/v1/admin/status")
+        assert resp.status_code == 200
+
+
+class TestAdminDriftEndpointPaths:
+    def test_drift_no_dir_returns_message(self, tmp_path, monkeypatch):
+        """drift_reports ディレクトリがないとき message を返すこと"""
+        monkeypatch.chdir(tmp_path)
+        resp = client.get("/api/v1/admin/drift")
+        assert resp.status_code == 200
+        assert "message" in resp.json()
+
+    def test_drift_empty_dir_returns_message(self, tmp_path, monkeypatch):
+        """drift_reports ディレクトリが空のとき message を返すこと"""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "data" / "drift_reports").mkdir(parents=True)
+        resp = client.get("/api/v1/admin/drift")
+        assert resp.status_code == 200
+        assert "message" in resp.json()
+
+    def test_drift_corrupt_json_returns_500(self, tmp_path, monkeypatch):
+        """drift レポートが破損 JSON のとき 500 が返ること"""
+        monkeypatch.chdir(tmp_path)
+        drift_dir = tmp_path / "data" / "drift_reports"
+        drift_dir.mkdir(parents=True)
+        (drift_dir / "r1.json").write_text("CORRUPT{{{", encoding="utf-8")
+        resp = client.get("/api/v1/admin/drift")
+        assert resp.status_code == 500

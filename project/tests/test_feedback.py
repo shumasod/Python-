@@ -263,41 +263,51 @@ class TestLoadPredictionLogBranches:
     def test_ab_test_fallback_found(self, tmp_path, monkeypatch):
         """prediction_logs になくても ab_test_logs から見つかること"""
         import app.api.feedback as fb
-        # prediction_logs は空
         pred_dir = tmp_path / "prediction_logs"
         pred_dir.mkdir()
         monkeypatch.setattr(fb, "PREDICTION_LOG_DIR", pred_dir)
 
         ab_dir = tmp_path / "data" / "ab_test_logs"
         ab_dir.mkdir(parents=True)
-        entry = {"race_id": "ab_race", "proba": [0.3, 0.2, 0.1, 0.2, 0.1, 0.1]}
+        entry = {"race_id": "ab_race_001", "proba": [0.3, 0.2, 0.1, 0.2, 0.1, 0.1]}
         (ab_dir / "test.jsonl").write_text(json.dumps(entry), encoding="utf-8")
 
-        with patch("app.api.feedback.Path") as mock_path_cls:
-            # PREDICTION_LOG_DIR / race_id.json → pred_dir / race_id.json (not exists)
-            # "data/ab_test_logs" → ab_dir
-            real_path = Path
+        # Change CWD so Path("data/ab_test_logs") resolves to tmp_path/data/ab_test_logs
+        monkeypatch.chdir(tmp_path)
+        result = fb._load_prediction_log("ab_race_001")
+        assert result is not None
+        assert result["race_id"] == "ab_race_001"
 
-            def side_effect(p):
-                if str(p) == "data/ab_test_logs":
-                    return ab_dir
-                return real_path(p)
+    def test_ab_test_fallback_bad_json_line_skipped(self, tmp_path, monkeypatch):
+        """AB ログの行が破損 JSON のとき読み飛ばして None を返すこと"""
+        import app.api.feedback as fb
+        pred_dir = tmp_path / "prediction_logs"
+        pred_dir.mkdir()
+        monkeypatch.setattr(fb, "PREDICTION_LOG_DIR", pred_dir)
 
-            mock_path_cls.side_effect = side_effect
-            # Just call with monkeypatched PREDICTION_LOG_DIR already set
-            pass
+        ab_dir = tmp_path / "data" / "ab_test_logs"
+        ab_dir.mkdir(parents=True)
+        (ab_dir / "test.jsonl").write_text("NOT_JSON\n{\"race_id\": \"other\"}\n", encoding="utf-8")
 
-        # Direct path: use monkeypatch on the ab_test_logs path inside function
-        import unittest.mock as umock
-        with umock.patch("builtins.open", side_effect=lambda p, **kw: open(p, **kw)):
-            # The function uses Path("data/ab_test_logs") which may not exist;
-            # monkeypatch the directory path used inside the function
-            import app.api.feedback as fb2
-            original_glob = type(ab_dir).glob
-            result = fb2._load_prediction_log("ab_race")
-            # Without redirecting ab_test_logs path, result depends on real fs
-            # So just verify the function doesn't raise
-            assert result is None or isinstance(result, dict)
+        monkeypatch.chdir(tmp_path)
+        result = fb._load_prediction_log("ab_race_missing")
+        assert result is None
+
+    def test_ab_test_fallback_oserror_skipped(self, tmp_path, monkeypatch):
+        """AB ログファイルを開けない場合（OSError）は読み飛ばして None を返すこと"""
+        import app.api.feedback as fb
+        pred_dir = tmp_path / "prediction_logs"
+        pred_dir.mkdir()
+        monkeypatch.setattr(fb, "PREDICTION_LOG_DIR", pred_dir)
+
+        ab_dir = tmp_path / "data" / "ab_test_logs"
+        ab_dir.mkdir(parents=True)
+        # ディレクトリを .jsonl 名にすると open() が IsADirectoryError (OSError) を投げる
+        (ab_dir / "oserr.jsonl").mkdir()
+
+        monkeypatch.chdir(tmp_path)
+        result = fb._load_prediction_log("any_race")
+        assert result is None
 
     def test_compare_prediction_no_proba(self, monkeypatch):
         """win_probabilities も proba もない予測ログのとき None フィールドを返すこと"""
@@ -341,6 +351,46 @@ class TestLoadPredictionLogBranches:
         monkeypatch.setattr(fb, "RESULT_LOG_DIR", tmp_path)
         monkeypatch.setattr(fb, "PREDICTION_LOG_DIR", tmp_path)
 
-        # _global_router が存在しないケース（ImportError を飲み込む）
         resp = client.post("/api/v1/result/ab_notify_test", json={"true_winner": 2})
         assert resp.status_code == 200
+
+    def test_record_result_calls_global_router(self, tmp_path, monkeypatch):
+        """_global_router が存在するとき record_result が呼ばれること"""
+        from unittest.mock import MagicMock
+        import app.api.feedback as fb
+        import app.model.ab_test as ab_module
+
+        monkeypatch.setattr(fb, "RESULT_LOG_DIR", tmp_path)
+        monkeypatch.setattr(fb, "PREDICTION_LOG_DIR", tmp_path)
+
+        mock_router = MagicMock()
+        monkeypatch.setattr(ab_module, "_global_router", mock_router, raising=False)
+
+        resp = client.post("/api/v1/result/ab_router_test", json={"true_winner": 3})
+        assert resp.status_code == 200
+        mock_router.record_result.assert_called_once_with(
+            race_id="ab_router_test", true_winner=3
+        )
+
+
+class TestResultSummaryCorruptFile:
+    def test_corrupt_json_skipped_in_summary(self, tmp_path, monkeypatch):
+        """壊れた JSON ファイルはサマリー集計でスキップされること"""
+        import app.api.feedback as fb
+        monkeypatch.setattr(fb, "RESULT_LOG_DIR", tmp_path)
+
+        # 正常ファイル
+        good = {
+            "race_id": "r_ok", "true_winner": 1,
+            "recorded_at": "2026-04-20T12:00:00+00:00",
+            "is_correct": True, "prediction_rank": 1, "predicted_winner": 1,
+        }
+        (tmp_path / "r_ok.json").write_text(json.dumps(good), encoding="utf-8")
+
+        # 破損ファイル
+        (tmp_path / "r_bad.json").write_text("CORRUPT{{{", encoding="utf-8")
+
+        resp = client.get("/api/v1/result/summary")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["n_results"] == 1  # 正常ファイルだけカウント

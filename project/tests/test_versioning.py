@@ -112,10 +112,33 @@ class TestModelRegistry:
 
         for _ in range(5):
             version = registry.register(mock_model, sample_metrics)
-            # 実際のファイルを作成
             pkl_path = versions_dir / f"{version}.pkl"
             with open(pkl_path, "wb") as f:
                 pickle.dump({}, f)
 
         deleted = registry.cleanup_old_versions(keep=3)
         assert len(registry.list_versions()) <= 3
+
+    def test_promote_cache_reset_exception_swallowed(self, registry, mock_model, sample_metrics):
+        """promote() で _cached_model リセット時に例外が出ても無視されること"""
+        import sys
+        version = registry.register(mock_model, sample_metrics)
+
+        with patch.dict(sys.modules, {"app.model.predict": None}):
+            registry.promote(version)  # 例外にならないこと
+
+    def test_load_version_not_found_raises(self, registry):
+        """load_version() でファイルがないとき FileNotFoundError を投げること"""
+        with pytest.raises(FileNotFoundError):
+            registry.load_version("nonexistent_version_xyz")
+
+    def test_load_production_calls_load_model(self, registry, mock_model, sample_metrics, tmp_path, monkeypatch):
+        """load_production() が本番モデルを読み込むこと"""
+        import app.model.train as train_module
+        monkeypatch.setattr(train_module, "MODEL_DIR", tmp_path)
+
+        version = registry.register(mock_model, sample_metrics)
+        registry.promote(version)
+
+        model = registry.load_production()
+        assert model is not None

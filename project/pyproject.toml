@@ -14,6 +14,9 @@ addopts = [
     "--tb=short",
     "--strict-markers",
 ]
+filterwarnings = [
+    "ignore::PendingDeprecationWarning",
+]
 markers = [
     "slow: 実行時間の長いテスト（スキップ対象: pytest -m 'not slow'）",
     "integration: 外部サービスが必要なテスト",

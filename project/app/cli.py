@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import click
-except ImportError:
+except ImportError:  # pragma: no cover
     print("click が未インストールです。pip install click を実行してください。")
     sys.exit(1)
 
@@ -686,5 +686,5 @@ def scoring_race(race_id):
 # エントリーポイント
 # ============================================================
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     cli()

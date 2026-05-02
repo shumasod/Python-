@@ -23,19 +23,19 @@ from app.utils.logger import get_logger
 try:
     from app.db import log_prediction
     _DB_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _DB_AVAILABLE = False
 
 try:
     from app.cache import get_cached_prediction, set_cached_prediction
     _CACHE_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _CACHE_AVAILABLE = False
 
 try:
     from app.api.metrics import record_predict_request
     _METRICS_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _METRICS_AVAILABLE = False
 
 logger = get_logger(__name__)

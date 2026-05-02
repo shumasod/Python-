@@ -56,4 +56,4 @@ omit = ["tests/*", "scripts/*"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 60   # カバレッジ60%未満でCIを失敗させる
+fail_under = 100

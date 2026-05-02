@@ -38,6 +38,9 @@ def monkeypatch_session(request):
 
 @pytest.fixture(scope="session")
 def sample_race_features():
-    """セッションスコープ: テスト用の特徴量行列 shape=(6, 12)"""
+    """セッションスコープ: テスト用の特徴量 DataFrame shape=(6, 12)"""
     import numpy as np
-    return np.random.default_rng(42).random((6, 12))
+    import pandas as pd
+    from app.model.features import FEATURE_COLUMNS
+    data = np.random.default_rng(42).random((6, len(FEATURE_COLUMNS)))
+    return pd.DataFrame(data, columns=FEATURE_COLUMNS)

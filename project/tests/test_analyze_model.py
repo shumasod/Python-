@@ -35,7 +35,7 @@ def test_arrays(trained_lgbm):
     """テスト用 X_test / y_test を返す"""
     from app.model.features import FEATURE_COLUMNS, generate_sample_training_data, preprocess_dataframe
     df = preprocess_dataframe(generate_sample_training_data(n_races=60))
-    X = df[FEATURE_COLUMNS].values
+    X = df[FEATURE_COLUMNS]
     y = df["label"].values.astype(int)
     return X, y
 

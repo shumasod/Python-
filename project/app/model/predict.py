@@ -49,7 +49,7 @@ def predict_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
     model = get_model()
 
     # 各艇の1着確率を取得（shape: 6 × 6、各行が1艇の予測分布）
-    proba_matrix = model.predict_proba(feature_df.values)
+    proba_matrix = model.predict_proba(feature_df)
 
     # 1着確率: 各艇について「クラス0（1着）」の確率を取り出す
     # ※ マルチクラスモデルなので predict_proba は (n_boats, n_classes) を返す

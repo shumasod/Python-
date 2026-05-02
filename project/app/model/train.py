@@ -63,8 +63,8 @@ def train_model(
     """
     logger.info(f"モデル学習を開始します: {model_name}")
 
-    # 特徴量・ラベル分離
-    X = df[FEATURE_COLUMNS].values
+    # 特徴量・ラベル分離（DataFrameのまま保持して feature_names_in_ を正しく設定）
+    X = df[FEATURE_COLUMNS]
     y = df["label"].values.astype(int)
 
     logger.info(f"学習データ shape: X={X.shape}, y={y.shape}")
@@ -76,7 +76,7 @@ def train_model(
     cv_accuracy = []
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
-        X_train, X_val = X[train_idx], X[val_idx]
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y[train_idx], y[val_idx]
 
         model = lgb.LGBMClassifier(**LGBM_PARAMS)

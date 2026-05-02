@@ -117,7 +117,7 @@ def run_simple_backtest(
     logger.info(f"学習: {len(train_df)} 件, テスト: {len(test_df)} 件")
 
     # モデル学習
-    X_train = train_df[FEATURE_COLUMNS].values
+    X_train = train_df[FEATURE_COLUMNS]
     y_train = train_df["label"].values.astype(int)
 
     import lightgbm as lgb
@@ -125,7 +125,7 @@ def run_simple_backtest(
     model.fit(X_train, y_train)
 
     # テストデータで予測
-    X_test = test_df[FEATURE_COLUMNS].values
+    X_test = test_df[FEATURE_COLUMNS]
     y_test  = test_df["label"].values.astype(int)
 
     proba_matrix = model.predict_proba(X_test)
@@ -246,13 +246,13 @@ def run_walk_forward(
         )
 
         # 学習
-        X_train = train_df[FEATURE_COLUMNS].values
+        X_train = train_df[FEATURE_COLUMNS]
         y_train = train_df["label"].values.astype(int)
         model = lgb.LGBMClassifier(**{**LGBM_PARAMS, "n_estimators": 150})
         model.fit(X_train, y_train)
 
         # テスト
-        X_test = test_df[FEATURE_COLUMNS].values
+        X_test = test_df[FEATURE_COLUMNS]
         y_test  = test_df["label"].values.astype(int)
         proba_matrix = model.predict_proba(X_test)
         y_pred = model.predict(X_test)

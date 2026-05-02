@@ -106,7 +106,7 @@ def explain_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     model = get_model()
     feature_df = build_features(race_data)
-    X = feature_df.values.astype(float)            # (6, n_features)
+    X = feature_df.to_numpy(dtype=float)            # (6, n_features) numpy for math ops
 
     # ---- 1. モデル全体の特徴量重要度（gain ベース、正規化） ----
     raw_importance = np.array(model.feature_importances_, dtype=float)
@@ -139,7 +139,7 @@ def explain_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
     contribs   = norm_importance * z_scores         # (6, n_features) broadcast
 
     # ---- 3. 1着確率（predict と同じロジック） ----
-    proba_matrix = model.predict_proba(X)
+    proba_matrix = model.predict_proba(feature_df)
     win_proba = proba_matrix[:, 0]
     win_proba = win_proba / win_proba.sum()
 

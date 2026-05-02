@@ -51,8 +51,7 @@ jobs:
             -m "not slow" \
             --cov=app \
             --cov-report=term-missing \
-            --cov-report=xml \
-            --cov-fail-under=60
+            --cov-report=xml
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4

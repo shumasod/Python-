@@ -125,7 +125,7 @@ class ABTestRouter:
             if normalized < cumulative:
                 return variant
 
-        return self._variants[-1]  # フォールバック
+        return self._variants[-1]  # pragma: no cover  フォールバック（浮動小数点誤差対策）
 
     def predict(
         self,

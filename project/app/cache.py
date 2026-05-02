@@ -41,7 +41,7 @@ async def get_redis():
 
     try:
         import redis.asyncio as aioredis
-    except ImportError:
+    except ImportError:  # pragma: no cover
         raise ImportError(
             "redis が未インストールです。pip install 'redis[asyncio]' を実行してください。"
         )

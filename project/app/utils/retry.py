@@ -94,7 +94,7 @@ def retry(
 
                     time.sleep(delay)
 
-            raise last_exc  # 到達しないが型チェック用
+            raise last_exc  # pragma: no cover  型チェック用センチネル
 
         return wrapper
     return decorator

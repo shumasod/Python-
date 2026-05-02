@@ -32,7 +32,7 @@ try:
         enabled=_ENABLED,
     )
     logger.info(f"レートリミット: {'有効' if _ENABLED else '無効'} ({_DEFAULT_LIMIT})")
-except ImportError:
+except ImportError:  # pragma: no cover
     logger.warning("slowapi が未インストールです。pip install slowapi を実行してください。")
 
 

@@ -35,7 +35,7 @@ try:
         REGISTRY,
     )
     _PROMETHEUS_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _PROMETHEUS_AVAILABLE = False
     logger.warning("prometheus-client が未インストールです。pip install prometheus-client を実行してください。")
 

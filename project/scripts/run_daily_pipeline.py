@@ -21,14 +21,12 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import PREDICTION_LOG_DIR
 from app.model.predict import predict_race
 from app.utils.logger import get_logger
 from app.utils.notification import build_prediction_summary, notify_sync
 
 logger = get_logger(__name__)
-
-# 予測ログ保存先
-PREDICTION_LOG_DIR = Path("data/prediction_logs")
 
 # 全競艇場コード（01=桐生 … 24=若松）
 ALL_JYO_CODES = [f"{i:02d}" for i in range(1, 25)]

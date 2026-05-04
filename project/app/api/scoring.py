@@ -16,13 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import verify_api_key
+from app.config import PREDICTION_LOG_DIR, RESULT_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-PREDICTION_LOG_DIR = Path("data/prediction_logs")
-RESULT_LOG_DIR     = Path("data/race_results")
 
 
 # ============================================================
@@ -83,11 +81,25 @@ def _load_json(path: Path) -> Optional[Dict]:
         return None
 
 
+def _rank_proba(proba: list, true_winner: int) -> Dict[str, Any]:
+    """確率ベクトルと正解艇番から予測順位情報を返す。"""
+    import numpy as np
+    arr   = np.array(proba)
+    order = np.argsort(arr)[::-1]
+    predicted_winner = int(order[0]) + 1
+    is_correct       = (predicted_winner == true_winner)
+    winner_idx       = true_winner - 1
+    pred_rank: Optional[int] = None
+    if 0 <= winner_idx < len(arr):
+        pred_rank = int(np.where(order == winner_idx)[0][0]) + 1
+    return {"predicted_winner": predicted_winner, "is_correct": is_correct, "prediction_rank": pred_rank}
+
+
 def _score_pair(pred: Dict, result: Dict) -> RaceScore:
     """予測ログと結果ログを突き合わせて RaceScore を返す。"""
     race_id = pred.get("race_id") or result.get("race_id", "unknown")
 
-    proba = pred.get("win_probabilities") or pred.get("proba") or []
+    proba       = pred.get("win_probabilities") or pred.get("proba") or []
     true_winner = result.get("true_winner")
 
     predicted_winner: Optional[int] = None
@@ -95,14 +107,10 @@ def _score_pair(pred: Dict, result: Dict) -> RaceScore:
     pred_rank:        Optional[int]  = None
 
     if proba and true_winner is not None:
-        import numpy as np
-        arr   = np.array(proba)
-        order = np.argsort(arr)[::-1]          # 確率降順インデックス
-        predicted_winner = int(order[0]) + 1
-        is_correct       = (predicted_winner == true_winner)
-        winner_idx       = true_winner - 1
-        if 0 <= winner_idx < len(arr):
-            pred_rank = int(np.where(order == winner_idx)[0][0]) + 1
+        ranked = _rank_proba(proba, true_winner)
+        predicted_winner = ranked["predicted_winner"]
+        is_correct       = ranked["is_correct"]
+        pred_rank        = ranked["prediction_rank"]
 
     return RaceScore(
         race_id          = race_id,

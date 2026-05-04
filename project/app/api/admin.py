@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import verify_api_key
+from app.config import AB_LOG_DIR, DRIFT_REPORT_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -68,7 +69,7 @@ class PromoteRequest(BaseModel):
 # ============================================================
 
 def _read_shadow_stats(name: str = "shadow") -> Dict[str, Any]:
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         return {"n_sampled": 0, "log_path": str(log_path)}
 
@@ -95,7 +96,7 @@ def _read_shadow_stats(name: str = "shadow") -> Dict[str, Any]:
 
 
 def _read_ab_stats() -> List[Dict[str, Any]]:
-    ab_dir = Path("data/ab_test_logs")
+    ab_dir = AB_LOG_DIR
     if not ab_dir.exists():
         return []
 
@@ -127,7 +128,7 @@ def _read_ab_stats() -> List[Dict[str, Any]]:
 
 
 def _latest_drift_status() -> Optional[str]:
-    drift_dir = Path("data/drift_reports")
+    drift_dir = DRIFT_REPORT_DIR
     if not drift_dir.exists():
         return None
 
@@ -172,12 +173,12 @@ async def get_system_status(
 
     # シャドウ・AB テストのログ存在確認
     shadow_active = any(
-        Path("data/shadow_logs").glob("*.jsonl")
-    ) if Path("data/shadow_logs").exists() else False
+        SHADOW_LOG_DIR.glob("*.jsonl")
+    ) if SHADOW_LOG_DIR.exists() else False
 
     ab_active = any(
-        Path("data/ab_test_logs").glob("*.jsonl")
-    ) if Path("data/ab_test_logs").exists() else False
+        AB_LOG_DIR.glob("*.jsonl")
+    ) if AB_LOG_DIR.exists() else False
 
     return SystemStatusResponse(
         status="ok",
@@ -262,7 +263,7 @@ async def get_drift_report(
     _api_key: str = Depends(verify_admin_key),
 ) -> Dict[str, Any]:
     """最新のドリフト検知レポートを返す"""
-    drift_dir = Path("data/drift_reports")
+    drift_dir = DRIFT_REPORT_DIR
     if not drift_dir.exists():
         return {"message": "ドリフトレポートがありません。make drift を実行してください。"}
 
@@ -309,7 +310,7 @@ async def clear_shadow_log(
     _api_key: str = Depends(verify_admin_key),
 ) -> Dict[str, str]:
     """指定シャドウログファイルを削除する"""
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         raise HTTPException(status_code=404, detail=f"ログ {name} が見つかりません")
     log_path.unlink()

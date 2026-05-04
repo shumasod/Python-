@@ -24,6 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import PREDICTION_LOG_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
+
 try:
     import click
 except ImportError:  # pragma: no cover
@@ -348,39 +350,22 @@ def shadow():
 @click.option("--name", default="shadow", help="シャドウログ名（data/shadow_logs/<name>.jsonl）")
 def shadow_stats(name):
     """シャドウモードの累積統計を表示する"""
-    import json
-    from pathlib import Path
+    from app.api.admin import _read_shadow_stats
+    stats = _read_shadow_stats(name)
 
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
-    if not log_path.exists():
-        click.echo(f"シャドウログが見つかりません: {log_path}")
-        return
-
-    n_sampled = 0
-    n_match = 0
-    kl_sum = 0.0
-
-    with open(log_path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            n_sampled += 1
-            if entry.get("top1_match"):
-                n_match += 1
-            kl_sum += entry.get("kl_divergence", 0.0)
-
-    if n_sampled == 0:
+    if stats["n_sampled"] == 0:
         click.echo("記録なし")
         return
 
+    n  = stats["n_sampled"]
+    mr = stats["top1_match_rate"] or 0.0
+    kl = stats["avg_kl_divergence"] or 0.0
     click.echo(f"\n{'='*50}")
     click.echo(f" シャドウモード統計: {name}")
     click.echo(f"{'='*50}")
-    click.echo(f" サンプル数  : {n_sampled}")
-    click.echo(f" 1位一致率   : {n_match/n_sampled*100:.1f}%")
-    click.echo(f" 平均KL距離  : {kl_sum/n_sampled:.6f}")
+    click.echo(f" サンプル数  : {n}")
+    click.echo(f" 1位一致率   : {mr*100:.1f}%")
+    click.echo(f" 平均KL距離  : {kl:.6f}")
     click.echo("=" * 50)
 
 
@@ -389,9 +374,8 @@ def shadow_stats(name):
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 def shadow_clear(name, yes):
     """シャドウモードのログをクリアする"""
-    from pathlib import Path
 
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         click.echo(f"ログファイルが見つかりません: {log_path}")
         return
@@ -428,9 +412,8 @@ def result_record(race_id, winner, second, third, note):
       python -m app.cli result record race_20240415_01 3 --second 1 --third 5
     """
     import json
-    from pathlib import Path
 
-    result_dir = Path("data/race_results")
+    result_dir = RESULT_LOG_DIR
     result_dir.mkdir(parents=True, exist_ok=True)
     path = result_dir / f"{race_id}.json"
 
@@ -461,9 +444,8 @@ def result_record(race_id, winner, second, third, note):
 def result_summary(n):
     """的中率サマリーを表示する"""
     import json
-    from pathlib import Path
 
-    result_dir = Path("data/race_results")
+    result_dir = RESULT_LOG_DIR
     if not result_dir.exists():
         click.echo("記録なし")
         return
@@ -528,77 +510,41 @@ def scoring():
 @click.option("--venue", "-v", default=None, help="場コードでフィルター (01〜24)")
 def scoring_overview(date, venue):
     """予測と実結果を突き合わせた的中率概要を表示する"""
-    import json
-    from pathlib import Path
-    import numpy as np
+    from app.api.scoring import _agg, _collect_scores
 
-    pred_dir   = Path("data/prediction_logs")
-    result_dir = Path("data/race_results")
-
-    preds = {}
-    if pred_dir.exists():
-        for p in pred_dir.glob("*.json"):
-            try:
-                with open(p, encoding="utf-8") as f:
-                    preds[p.stem] = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                continue
-
-    results = {}
-    if result_dir.exists():
-        for r in result_dir.glob("*.json"):
-            try:
-                with open(r, encoding="utf-8") as f:
-                    results[r.stem] = json.load(f)
-            except (json.JSONDecodeError, OSError):
-                continue
-
-    matched = [(rid, preds[rid], results[rid]) for rid in set(preds) & set(results)]
+    all_scores = _collect_scores()
 
     if date:
-        matched = [(rid, p, r) for rid, p, r in matched if p.get("race_date") == date]
+        all_scores = [s for s in all_scores if s.race_date == date]
     if venue:
-        matched = [(rid, p, r) for rid, p, r in matched if p.get("jyo_code") == venue]
+        all_scores = [s for s in all_scores if s.jyo_code == venue]
 
-    if not matched:
+    scored = [s for s in all_scores if s.has_prediction and s.has_result]
+    if not scored:
         click.echo("集計対象データなし")
         return
 
-    n_correct = 0
-    rank_sum = 0.0
-    n_with_rank = 0
-    top3 = 0
+    agg         = _agg(scored)
+    n           = len(scored)
+    n_correct   = agg["n_correct"]
+    n_with_rank = sum(1 for s in scored if s.prediction_rank is not None)
+    top3        = sum(1 for s in scored if s.prediction_rank is not None and s.prediction_rank <= 3)
+    rank_sum    = sum(s.prediction_rank for s in scored if s.prediction_rank is not None)
 
-    for _, pred, result in matched:
-        proba = pred.get("win_probabilities") or pred.get("proba") or []
-        true_winner = result.get("true_winner")
-        if not proba or true_winner is None:
-            continue
-        arr   = np.array(proba)
-        order = np.argsort(arr)[::-1]
-        predicted = int(order[0]) + 1
-        if predicted == true_winner:
-            n_correct += 1
-        winner_idx = true_winner - 1
-        if 0 <= winner_idx < len(arr):
-            rank = int(np.where(order == winner_idx)[0][0]) + 1
-            rank_sum += rank
-            n_with_rank += 1
-            if rank <= 3:
-                top3 += 1
-
-    n = len(matched)
     filter_str = ""
     if date:
         filter_str += f"  日付: {date}"
     if venue:
         filter_str += f"  場: {venue}"
 
+    n_preds   = sum(1 for s in all_scores if s.has_prediction)
+    n_results = sum(1 for s in all_scores if s.has_result)
+
     click.echo(f"\n{'='*50}")
     click.echo(" 予測スコアリング概要" + (f" [{filter_str.strip()}]" if filter_str else ""))
     click.echo(f"{'='*50}")
-    click.echo(f" 予測ログ数  : {len(preds)}")
-    click.echo(f" 結果ログ数  : {len(results)}")
+    click.echo(f" 予測ログ数  : {n_preds}")
+    click.echo(f" 結果ログ数  : {n_results}")
     click.echo(f" 突き合わせ数: {n}")
     click.echo(f" 的中数      : {n_correct}")
     click.echo(f" 1着的中率   : {n_correct/n*100:.1f}%" if n else " 1着的中率   : N/A")
@@ -616,29 +562,14 @@ def scoring_race(race_id):
     例:
       python -m app.cli scoring race 20260420_01_R01
     """
-    import json
     import numpy as np
-    from pathlib import Path
+    from app.api.scoring import _load_json, _rank_proba
 
-    pred_path   = Path("data/prediction_logs") / f"{race_id}.json"
-    result_path = Path("data/race_results")    / f"{race_id}.json"
+    pred_path   = PREDICTION_LOG_DIR / f"{race_id}.json"
+    result_path = RESULT_LOG_DIR     / f"{race_id}.json"
 
-    pred   = None
-    result = None
-
-    if pred_path.exists():
-        try:
-            with open(pred_path, encoding="utf-8") as f:
-                pred = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-
-    if result_path.exists():
-        try:
-            with open(result_path, encoding="utf-8") as f:
-                result = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
+    pred   = _load_json(pred_path)   if pred_path.exists()   else None
+    result = _load_json(result_path) if result_path.exists() else None
 
     if pred is None and result is None:
         click.secho(f"レースID {race_id} の予測も結果も見つかりません", fg="red", err=True)
@@ -651,17 +582,15 @@ def scoring_race(race_id):
     click.echo(f" 結果ログ: {'あり' if result else 'なし'}")
 
     if pred and result:
-        proba = pred.get("win_probabilities") or pred.get("proba") or []
+        proba       = pred.get("win_probabilities") or pred.get("proba") or []
         true_winner = result.get("true_winner")
         if proba and true_winner is not None:
-            arr   = np.array(proba)
-            order = np.argsort(arr)[::-1]
-            predicted = int(order[0]) + 1
-            is_correct = predicted == true_winner
-            winner_idx = true_winner - 1
-            rank = int(np.where(order == winner_idx)[0][0]) + 1 if 0 <= winner_idx < len(arr) else None
-
-            click.echo(f" 予測1位   : {predicted}号艇  (確率: {arr[order[0]]*100:.1f}%)")
+            ranked     = _rank_proba(proba, true_winner)
+            predicted  = ranked["predicted_winner"]
+            is_correct = ranked["is_correct"]
+            rank       = ranked["prediction_rank"]
+            arr        = np.array(proba)
+            click.echo(f" 予測1位   : {predicted}号艇  (確率: {arr[predicted-1]*100:.1f}%)")
             click.echo(f" 実際の1着 : {true_winner}号艇")
             if rank:
                 click.echo(f" 正解艇の予測順位: {rank}位")
@@ -671,7 +600,7 @@ def scoring_race(race_id):
     elif pred:
         proba = pred.get("win_probabilities") or pred.get("proba") or []
         if proba:
-            arr   = __import__("numpy").array(proba)
+            arr   = np.array(proba)
             order = arr.argsort()[::-1]
             click.echo(f" 予測1位   : {int(order[0])+1}号艇  (確率: {arr[order[0]]*100:.1f}%)")
         click.echo(" 結果未記録")

@@ -33,12 +33,11 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from app.config import DRIFT_REPORT_DIR
 from app.model.features import FEATURE_COLUMNS
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-DRIFT_REPORT_DIR = Path("data/drift_reports")
 REFERENCE_FILE   = Path("models/drift_reference.json")
 
 # PSI 判定閾値

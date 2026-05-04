@@ -12,7 +12,7 @@
 """
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -49,16 +49,16 @@ class ModelVersionInfo(BaseModel):
     cv_logloss_mean: float
     cv_accuracy_mean: float
     n_samples: int
-    notes: Optional[str] = None
+    notes: str | None = None
     is_production: bool = False
 
 
 class SystemStatusResponse(BaseModel):
     status: str
-    production_model: Optional[str]
+    production_model: str | None
     n_registered_versions: int
-    prediction_store: Dict[str, Any]
-    drift_status: Optional[str]
+    prediction_store: dict[str, Any]
+    drift_status: str | None
     ab_test_active: bool
     shadow_active: bool
 
@@ -71,7 +71,7 @@ class PromoteRequest(BaseModel):
 # ヘルパー
 # ============================================================
 
-def _read_shadow_stats(name: str = "shadow") -> Dict[str, Any]:
+def _read_shadow_stats(name: str = "shadow") -> dict[str, Any]:
     log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         return {"n_sampled": 0, "log_path": str(log_path)}
@@ -98,7 +98,7 @@ def _read_shadow_stats(name: str = "shadow") -> Dict[str, Any]:
     }
 
 
-def _read_ab_stats() -> List[Dict[str, Any]]:
+def _read_ab_stats() -> list[dict[str, Any]]:
     ab_dir = AB_LOG_DIR
     if not ab_dir.exists():
         return []
@@ -106,7 +106,7 @@ def _read_ab_stats() -> List[Dict[str, Any]]:
     results = []
     for log_file in ab_dir.glob("*.jsonl"):
         n = 0
-        variants: Dict[str, Dict] = {}
+        variants: dict[str, dict] = {}
         with open(log_file, encoding="utf-8") as f:
             for line in f:
                 try:
@@ -130,7 +130,7 @@ def _read_ab_stats() -> List[Dict[str, Any]]:
     return results
 
 
-def _latest_drift_status() -> Optional[str]:
+def _latest_drift_status() -> str | None:
     drift_dir = DRIFT_REPORT_DIR
     if not drift_dir.exists():
         return None
@@ -167,7 +167,7 @@ async def get_system_status(
     prod_version = registry.get_production_version()
 
     # キャッシュ統計
-    cache_info: Dict[str, Any] = {}
+    cache_info: dict[str, Any] = {}
     try:
         from app.cache import get_cache_stats
         cache_info = await get_cache_stats()
@@ -196,12 +196,12 @@ async def get_system_status(
 
 @router.get(
     "/admin/models",
-    response_model=List[ModelVersionInfo],
+    response_model=list[ModelVersionInfo],
     summary="登録済みモデルバージョン一覧",
 )
 async def list_models(
     _api_key: str = Depends(verify_admin_key),
-) -> List[ModelVersionInfo]:
+) -> list[ModelVersionInfo]:
     """登録済みモデルバージョンの一覧と各バージョンのメトリクスを返す"""
     from app.model.versioning import ModelRegistry
 
@@ -231,7 +231,7 @@ async def list_models(
 async def promote_model(
     body: PromoteRequest,
     _api_key: str = Depends(verify_admin_key),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """モデルバージョンを本番に昇格する"""
     from app.model.versioning import ModelRegistry
 
@@ -255,7 +255,7 @@ async def promote_model(
         }
     except Exception as e:
         logger.error(f"モデル昇格エラー: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get(
@@ -264,7 +264,7 @@ async def promote_model(
 )
 async def get_drift_report(
     _api_key: str = Depends(verify_admin_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """最新のドリフト検知レポートを返す"""
     drift_dir = DRIFT_REPORT_DIR
     if not drift_dir.exists():
@@ -278,7 +278,7 @@ async def get_drift_report(
         with open(reports[-1], encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail=f"レポート読み込みエラー: {e}")
+        raise HTTPException(status_code=500, detail=f"レポート読み込みエラー: {e}") from e
 
 
 @router.get(
@@ -287,7 +287,7 @@ async def get_drift_report(
 )
 async def get_ab_test_stats(
     _api_key: str = Depends(verify_admin_key),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """全 A/B テストログの統計サマリーを返す"""
     return _read_ab_stats()
 
@@ -299,7 +299,7 @@ async def get_ab_test_stats(
 async def get_shadow_stats(
     name: str = "shadow",
     _api_key: str = Depends(verify_admin_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """シャドウモードの累積統計を返す"""
     return _read_shadow_stats(name)
 
@@ -311,7 +311,7 @@ async def get_shadow_stats(
 async def clear_shadow_log(
     name: str,
     _api_key: str = Depends(verify_admin_key),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """指定シャドウログファイルを削除する"""
     log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():

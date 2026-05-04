@@ -10,7 +10,7 @@ POST /predict エンドポイントを定義する
   - Prometheusメトリクス記録
 """
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -50,7 +50,7 @@ router = APIRouter()
 class BoatInfo(BaseModel):
     """1艇分の選手・機材情報"""
     boat_number: int = Field(..., ge=1, le=6, description="艇番（1〜6）")
-    racer_name: Optional[str] = Field(None, description="選手名")
+    racer_name: str | None = Field(None, description="選手名")
     racer_rank: str = Field("B1", description="選手ランク (A1/A2/B1/B2)")
     win_rate: float = Field(0.0, ge=0.0, le=100.0, description="全体勝率 (%)")
     motor_score: float = Field(50.0, description="モーター性能スコア")
@@ -70,12 +70,12 @@ class WeatherInfo(BaseModel):
 
 class RaceRequest(BaseModel):
     """POST /predict のリクエストボディ"""
-    race_id: Optional[str] = Field(None, description="レースID（任意）")
-    race: Dict[str, Any] = Field(..., description="レース情報")
+    race_id: str | None = Field(None, description="レースID（任意）")
+    race: dict[str, Any] = Field(..., description="レース情報")
 
     @field_validator("race")
     @classmethod
-    def validate_race(cls, v: Dict) -> Dict:
+    def validate_race(cls, v: dict) -> dict:
         boats = v.get("boats", [])
         if len(boats) != N_BOATS:
             raise ValueError(f"boats には{N_BOATS}艇分のデータが必要です（受け取り: {len(boats)}艇）")
@@ -83,13 +83,13 @@ class RaceRequest(BaseModel):
 
 
 class TrifectaItem(BaseModel):
-    combination: List[int] = Field(..., description="艇番の順序 [1着, 2着, 3着]")
+    combination: list[int] = Field(..., description="艇番の順序 [1着, 2着, 3着]")
     probability: float
     rank: int
 
 
 class RecommendationItem(BaseModel):
-    combination: List[int]
+    combination: list[int]
     probability: float
     odds: float
     expected_value: float
@@ -98,10 +98,10 @@ class RecommendationItem(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    race_id: Optional[str] = None
-    win_probabilities: List[float] = Field(..., description="各艇の1着確率（1〜6号艇）")
-    trifecta: List[TrifectaItem] = Field(..., description="三連単上位10点")
-    recommendations: List[RecommendationItem] = Field(..., description="推奨買い目")
+    race_id: str | None = None
+    win_probabilities: list[float] = Field(..., description="各艇の1着確率（1〜6号艇）")
+    trifecta: list[TrifectaItem] = Field(..., description="三連単上位10点")
+    recommendations: list[RecommendationItem] = Field(..., description="推奨買い目")
     cached: bool = Field(False, description="キャッシュから返した結果か")
 
 
@@ -178,25 +178,25 @@ async def predict_endpoint(
         raise HTTPException(
             status_code=503,
             detail=f"モデルが未学習です。先にトレーニングを実行してください。詳細: {e}",
-        )
+        ) from e
     except ValueError as e:
         logger.error(f"入力値エラー: {e}")
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         latency = time.monotonic() - start
         if _METRICS_AVAILABLE:
             record_predict_request("error", latency)
         logger.exception(f"予測処理中に予期しないエラー: {e}")
-        raise HTTPException(status_code=500, detail="内部サーバーエラー")
+        raise HTTPException(status_code=500, detail="内部サーバーエラー") from e
 
 
 @router.get("/stats", summary="予測統計情報")
 async def stats_endpoint(
     days: int = 7,
     _api_key: str = Depends(verify_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """過去N日間の予測API利用統計（DB接続が必要）"""
-    stats: Dict[str, Any] = {}
+    stats: dict[str, Any] = {}
 
     if _DB_AVAILABLE:
         from app.db import get_prediction_stats
@@ -215,7 +215,7 @@ async def stats_endpoint(
 async def invalidate_cache_endpoint(
     race_id: str,
     _api_key: str = Depends(verify_api_key),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """指定レースIDのキャッシュを削除する"""
     if not _CACHE_AVAILABLE:
         return {"message": "キャッシュが無効です"}
@@ -231,14 +231,14 @@ async def invalidate_cache_endpoint(
 
 class BatchRaceRequest(BaseModel):
     """POST /predict/batch のリクエストボディ"""
-    races: List[RaceRequest] = Field(..., min_length=1, max_length=20, description="レースリスト（最大20件）")
+    races: list[RaceRequest] = Field(..., min_length=1, max_length=20, description="レースリスト（最大20件）")
 
 
 class BatchPredictResponse(BaseModel):
     total: int
     succeeded: int
     failed: int
-    results: List[Dict[str, Any]]
+    results: list[dict[str, Any]]
 
 
 @router.post(

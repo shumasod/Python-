@@ -10,7 +10,7 @@
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -29,13 +29,13 @@ router = APIRouter()
 
 class RaceScore(BaseModel):
     race_id:           str
-    jyo_code:          Optional[str] = None
-    race_date:         Optional[str] = None
-    race_no:           Optional[int] = None
-    predicted_winner:  Optional[int] = None
-    true_winner:       Optional[int] = None
-    is_correct:        Optional[bool] = None
-    prediction_rank:   Optional[int] = None
+    jyo_code:          str | None = None
+    race_date:         str | None = None
+    race_no:           int | None = None
+    predicted_winner:  int | None = None
+    true_winner:       int | None = None
+    is_correct:        bool | None = None
+    prediction_rank:   int | None = None
     has_prediction:    bool = False
     has_result:        bool = False
 
@@ -65,15 +65,15 @@ class ScoringOverview(BaseModel):
     n_correct:      int
     hit_rate:       float
     avg_rank:       float
-    by_date:        List[DailyScore]
-    by_venue:       List[VenueScore]
+    by_date:        list[DailyScore]
+    by_venue:       list[VenueScore]
 
 
 # ============================================================
 # ヘルパー
 # ============================================================
 
-def _load_json(path: Path) -> Optional[Dict]:
+def _load_json(path: Path) -> dict | None:
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
@@ -81,7 +81,7 @@ def _load_json(path: Path) -> Optional[Dict]:
         return None
 
 
-def _rank_proba(proba: list, true_winner: int) -> Dict[str, Any]:
+def _rank_proba(proba: list, true_winner: int) -> dict[str, Any]:
     """確率ベクトルと正解艇番から予測順位情報を返す。"""
     import numpy as np
     arr   = np.array(proba)
@@ -89,22 +89,22 @@ def _rank_proba(proba: list, true_winner: int) -> Dict[str, Any]:
     predicted_winner = int(order[0]) + 1
     is_correct       = (predicted_winner == true_winner)
     winner_idx       = true_winner - 1
-    pred_rank: Optional[int] = None
+    pred_rank: int | None = None
     if 0 <= winner_idx < len(arr):
         pred_rank = int(np.where(order == winner_idx)[0][0]) + 1
     return {"predicted_winner": predicted_winner, "is_correct": is_correct, "prediction_rank": pred_rank}
 
 
-def _score_pair(pred: Dict, result: Dict) -> RaceScore:
+def _score_pair(pred: dict, result: dict) -> RaceScore:
     """予測ログと結果ログを突き合わせて RaceScore を返す。"""
     race_id = pred.get("race_id") or result.get("race_id", "unknown")
 
     proba       = pred.get("win_probabilities") or pred.get("proba") or []
     true_winner = result.get("true_winner")
 
-    predicted_winner: Optional[int] = None
-    is_correct:       Optional[bool] = None
-    pred_rank:        Optional[int]  = None
+    predicted_winner: int | None = None
+    is_correct:       bool | None = None
+    pred_rank:        int | None  = None
 
     if proba and true_winner is not None:
         ranked = _rank_proba(proba, true_winner)
@@ -126,14 +126,14 @@ def _score_pair(pred: Dict, result: Dict) -> RaceScore:
     )
 
 
-def _collect_scores() -> List[RaceScore]:
+def _collect_scores() -> list[RaceScore]:
     """全予測ログ × 全結果ログを突き合わせてスコアリストを返す。"""
     preds   = {p.stem: _load_json(p) for p in PREDICTION_LOG_DIR.glob("*.json")} \
               if PREDICTION_LOG_DIR.exists() else {}
     results = {r.stem: _load_json(r) for r in RESULT_LOG_DIR.glob("*.json")} \
               if RESULT_LOG_DIR.exists() else {}
 
-    scores: List[RaceScore] = []
+    scores: list[RaceScore] = []
     all_ids = set(preds) | set(results)
 
     for race_id in sorted(all_ids):
@@ -160,7 +160,7 @@ def _collect_scores() -> List[RaceScore]:
     return scores
 
 
-def _agg(scores: List[RaceScore]) -> Dict[str, Any]:
+def _agg(scores: list[RaceScore]) -> dict[str, Any]:
     scored   = [s for s in scores if s.has_prediction and s.has_result and s.is_correct is not None]
     n_correct = sum(1 for s in scored if s.is_correct)
     ranks     = [s.prediction_rank for s in scored if s.prediction_rank is not None]
@@ -190,7 +190,7 @@ async def scoring_overview(
     agg    = _agg(scores)
 
     # 日別集計
-    by_date_map: Dict[str, List[RaceScore]] = defaultdict(list)
+    by_date_map: dict[str, list[RaceScore]] = defaultdict(list)
     for s in scores:
         key = (s.race_date or "unknown")
         by_date_map[key].append(s)
@@ -206,7 +206,7 @@ async def scoring_overview(
         ))
 
     # 場別集計
-    by_venue_map: Dict[str, List[RaceScore]] = defaultdict(list)
+    by_venue_map: dict[str, list[RaceScore]] = defaultdict(list)
     for s in scores:
         key = (s.jyo_code or "unknown")
         by_venue_map[key].append(s)

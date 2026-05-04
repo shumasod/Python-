@@ -5,7 +5,6 @@ LightGBMを使った競艇1着予測モデルの学習・保存を担当する
 import json
 import pickle
 from pathlib import Path
-from typing import Optional, Tuple
 
 import lightgbm as lgb
 import numpy as np
@@ -48,7 +47,7 @@ def train_model(
     model_name: str = "boat_race_model",
     n_splits: int = 5,
     early_stopping_rounds: int = 50,
-) -> Tuple[lgb.LGBMClassifier, dict]:
+) -> tuple[lgb.LGBMClassifier, dict]:
     """
     LightGBMモデルを学習する
 
@@ -127,7 +126,7 @@ def train_model(
 def save_model(
     model: lgb.LGBMClassifier,
     model_name: str,
-    metrics: Optional[dict] = None,
+    metrics: dict | None = None,
 ) -> None:
     """
     モデルと評価メトリクスをファイルに保存する

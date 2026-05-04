@@ -262,7 +262,7 @@ def main() -> None:
 
     # 品質チェック
     validation = validate_training_data(df)
-    print(f"\n【データ品質チェック】")
+    print("\n【データ品質チェック】")
     print(f"  行数    : {validation['n_rows']:,}")
     print(f"  レース数: {validation['n_races']:,}")
     print(f"  ラベル分布: {validation['label_distribution']}")

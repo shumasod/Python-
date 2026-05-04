@@ -2,7 +2,7 @@
 特徴量エンジニアリングモジュール
 競艇予想に使用する特徴量の生成・前処理を担当する
 """
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ FEATURE_COLUMNS = [
 ]
 
 
-def build_features(race_data: Dict[str, Any]) -> pd.DataFrame:
+def build_features(race_data: dict[str, Any]) -> pd.DataFrame:
     """
     レースデータから特徴量DataFrameを構築する
 
@@ -43,7 +43,7 @@ def build_features(race_data: Dict[str, Any]) -> pd.DataFrame:
     """
     logger.info("特徴量の構築を開始します")
 
-    boats: List[Dict] = race_data.get("boats", [])
+    boats: list[dict] = race_data.get("boats", [])
     if len(boats) != N_BOATS:
         raise ValueError(f"boats は{N_BOATS}艇必要です。受け取った艇数: {len(boats)}")
 
@@ -163,7 +163,6 @@ def generate_sample_training_data(n_races: int = 1000) -> pd.DataFrame:
     # 各レースで1着を確率的に決定（コースアドバンテージを反映）
     for race_id in df["race_id"].unique():
         mask = df["race_id"] == race_id
-        race_df = df[mask]
         weights = np.array(range(N_BOATS, 0, -1), dtype=float)
         weights /= weights.sum()
         winner = np.random.choice(range(N_BOATS), p=weights)

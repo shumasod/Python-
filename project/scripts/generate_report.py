@@ -10,9 +10,9 @@
 import argparse
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -24,15 +24,15 @@ logger = get_logger(__name__)
 # データ収集
 # ============================================================
 
-def collect_prediction_accuracy(result_dir: Path, days: int) -> Dict[str, Any]:
+def collect_prediction_accuracy(result_dir: Path, days: int) -> dict[str, Any]:
     """直近 N 日間のレース結果から的中率を集計する"""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     total = 0
     correct = 0
     rank_sum = 0.0
     n_with_rank = 0
     top3 = 0
-    daily: Dict[str, Dict] = {}
+    daily: dict[str, dict] = {}
 
     for p in result_dir.glob("*.json"):
         try:
@@ -81,7 +81,7 @@ def collect_prediction_accuracy(result_dir: Path, days: int) -> Dict[str, Any]:
     }
 
 
-def collect_model_versions() -> List[Dict[str, Any]]:
+def collect_model_versions() -> list[dict[str, Any]]:
     """登録済みモデルバージョンの一覧を取得する"""
     try:
         from app.model.versioning import ModelRegistry
@@ -96,7 +96,7 @@ def collect_model_versions() -> List[Dict[str, Any]]:
         return []
 
 
-def collect_drift_reports(drift_dir: Path, n: int = 7) -> List[Dict[str, Any]]:
+def collect_drift_reports(drift_dir: Path, n: int = 7) -> list[dict[str, Any]]:
     """最新 N 件のドリフトレポートを取得する"""
     reports = sorted(drift_dir.glob("*.json"))[-n:]
     result = []
@@ -109,12 +109,12 @@ def collect_drift_reports(drift_dir: Path, n: int = 7) -> List[Dict[str, Any]]:
     return result
 
 
-def collect_ab_test_summary(ab_dir: Path) -> List[Dict[str, Any]]:
+def collect_ab_test_summary(ab_dir: Path) -> list[dict[str, Any]]:
     """A/B テストログのサマリーを収集する"""
     summaries = []
     for log_file in ab_dir.glob("*.jsonl"):
         n = 0
-        variants: Dict[str, Dict] = {}
+        variants: dict[str, dict] = {}
         with open(log_file, encoding="utf-8") as f:
             for line in f:
                 try:
@@ -134,7 +134,7 @@ def collect_ab_test_summary(ab_dir: Path) -> List[Dict[str, Any]]:
     return summaries
 
 
-def collect_shadow_stats(shadow_dir: Path) -> List[Dict[str, Any]]:
+def collect_shadow_stats(shadow_dir: Path) -> list[dict[str, Any]]:
     """シャドウモードの統計を収集する"""
     results = []
     for log_file in shadow_dir.glob("*.jsonl"):
@@ -165,11 +165,11 @@ def collect_shadow_stats(shadow_dir: Path) -> List[Dict[str, Any]]:
 # ============================================================
 
 def generate_html_report(
-    accuracy: Dict[str, Any],
-    model_versions: List[Dict],
-    drift_reports: List[Dict],
-    ab_summaries: List[Dict],
-    shadow_stats: List[Dict],
+    accuracy: dict[str, Any],
+    model_versions: list[dict],
+    drift_reports: list[dict],
+    ab_summaries: list[dict],
+    shadow_stats: list[dict],
     days: int,
 ) -> str:
     """HTML レポートを生成する"""
@@ -333,7 +333,7 @@ def generate_html_report(
 """
 
 
-def generate_text_summary(accuracy: Dict[str, Any], model_versions: List[Dict], days: int) -> str:
+def generate_text_summary(accuracy: dict[str, Any], model_versions: list[dict], days: int) -> str:
     """テキスト形式のサマリーを生成する（Slack 通知用）"""
     lines = [
         f"📊 *競艇予想AI 週次レポート*（直近 {days} 日）",
@@ -403,7 +403,7 @@ def main() -> None:
         text = generate_text_summary(accuracy, model_versions, args.days)
         text_path = out_dir / f"report_{timestamp}.txt"
         text_path.write_text(text, encoding="utf-8")
-        print(f"\n" + text)
+        print("\n" + text)
         print(f"\nテキストサマリー: {text_path}")
 
     logger.info("レポート生成完了")

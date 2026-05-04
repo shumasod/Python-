@@ -17,7 +17,6 @@
   proba = ens.predict_proba(X)   # shape: (n_samples, 6)
 """
 from dataclasses import dataclass
-from typing import List, Optional
 
 import lightgbm as lgb
 import numpy as np
@@ -33,7 +32,7 @@ class ModelEntry:
     name: str
     model: lgb.LGBMClassifier
     weight: float = 1.0
-    cv_logloss: Optional[float] = None
+    cv_logloss: float | None = None
 
 
 class EnsemblePredictor:
@@ -53,14 +52,14 @@ class EnsemblePredictor:
         if method not in ("average", "weighted"):
             raise ValueError(f"method は 'average' または 'weighted' を指定してください: {method}")
         self.method = method
-        self._models: List[ModelEntry] = []
+        self._models: list[ModelEntry] = []
 
     def add_model(
         self,
         name: str,
         model: lgb.LGBMClassifier,
         weight: float = 1.0,
-        cv_logloss: Optional[float] = None,
+        cv_logloss: float | None = None,
     ) -> None:
         """
         アンサンブルにモデルを追加する
@@ -134,7 +133,7 @@ class EnsemblePredictor:
     @classmethod
     def from_registry(
         cls,
-        version_names: Optional[List[str]] = None,
+        version_names: list[str] | None = None,
         method: str = "weighted",
         top_n: int = 3,
     ) -> "EnsemblePredictor":

@@ -27,7 +27,6 @@ A/B テストモジュール
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -53,8 +52,8 @@ class VariantRecord:
 @dataclass
 class ABTestReport:
     """A/B テスト統計レポート"""
-    variants: List[Dict]
-    winner: Optional[str]
+    variants: list[dict]
+    winner: str | None
     is_significant: bool     # 統計的有意差があるか
     p_value: float
     message: str
@@ -76,9 +75,9 @@ class ABTestRouter:
             name: このA/Bテストの識別名
         """
         self.name = name
-        self._variants: List[VariantRecord] = []
+        self._variants: list[VariantRecord] = []
         # race_id → (variant_name, true_winner) の記録
-        self._race_log: Dict[str, Dict] = {}
+        self._race_log: dict[str, dict] = {}
 
     def add_variant(
         self,
@@ -129,7 +128,7 @@ class ABTestRouter:
         self,
         X: np.ndarray,
         race_id: str,
-    ) -> Tuple[str, np.ndarray]:
+    ) -> tuple[str, np.ndarray]:
         """
         race_id に基づいてバリアントを選択し、予測確率を返す
 
@@ -289,7 +288,7 @@ class ABTestRouter:
             print(f" 勝者: {report.winner} ★")
         print("=" * 60)
 
-    def _save_log_entry(self, race_id: str, log: Dict) -> None:
+    def _save_log_entry(self, race_id: str, log: dict) -> None:
         """ログエントリをJSONLファイルに追記保存する"""
         AB_LOG_DIR.mkdir(parents=True, exist_ok=True)
         path = AB_LOG_DIR / f"{self.name}.jsonl"

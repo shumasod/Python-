@@ -9,9 +9,9 @@ A/B テスト・シャドウモードの精度追跡に使用する
   GET  /api/v1/result/summary    : 直近の的中率サマリー
 """
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -34,24 +34,24 @@ RESULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 class RaceResultRequest(BaseModel):
     """POST /result/{race_id} のリクエストボディ"""
     true_winner: int = Field(..., ge=1, le=6, description="実際の1着艇番（1〜6）")
-    second_place: Optional[int] = Field(None, ge=1, le=6, description="2着艇番")
-    third_place: Optional[int] = Field(None, ge=1, le=6, description="3着艇番")
-    official_odds: Optional[Dict[str, float]] = Field(
+    second_place: int | None = Field(None, ge=1, le=6, description="2着艇番")
+    third_place: int | None = Field(None, ge=1, le=6, description="3着艇番")
+    official_odds: dict[str, float] | None = Field(
         None, description="公式オッズ {'trifecta': 25.0, 'win': 3.5}"
     )
-    note: Optional[str] = Field(None, description="備考")
+    note: str | None = Field(None, description="備考")
 
 
 class RaceResultResponse(BaseModel):
     race_id: str
     true_winner: int
-    second_place: Optional[int] = None
-    third_place: Optional[int] = None
+    second_place: int | None = None
+    third_place: int | None = None
     recorded_at: str
     # 予測との比較（predict が記録済みの場合のみ）
-    predicted_winner: Optional[int] = None
-    is_correct: Optional[bool] = None
-    prediction_rank: Optional[int] = None  # 正解艇の予測順位（1〜6）
+    predicted_winner: int | None = None
+    is_correct: bool | None = None
+    prediction_rank: int | None = None  # 正解艇の予測順位（1〜6）
 
 
 class ResultSummary(BaseModel):
@@ -69,7 +69,7 @@ def _result_path(race_id: str) -> Path:
     return RESULT_LOG_DIR / f"{race_id}.json"
 
 
-def _load_prediction_log(race_id: str) -> Optional[Dict]:
+def _load_prediction_log(race_id: str) -> dict | None:
     """
     予測ログを読み込む。
 
@@ -105,9 +105,9 @@ def _load_prediction_log(race_id: str) -> Optional[Dict]:
 def _compare_prediction(
     result: RaceResultRequest,
     race_id: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """予測記録と実結果を比較する"""
-    comparison: Dict[str, Any] = {
+    comparison: dict[str, Any] = {
         "predicted_winner": None,
         "is_correct": None,
         "prediction_rank": None,
@@ -148,7 +148,7 @@ async def record_result(
             detail=f"レースID {race_id} の結果は既に記録されています",
         )
 
-    recorded_at = datetime.now(timezone.utc).isoformat()
+    recorded_at = datetime.now(UTC).isoformat()
     comparison = _compare_prediction(body, race_id)
 
     record = {

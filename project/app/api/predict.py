@@ -12,11 +12,12 @@ POST /predict エンドポイントを定義する
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from app.model.predict import predict_race
 from app.api.auth import verify_api_key
+from app.model.features import N_BOATS
+from app.model.predict import predict_race
 from app.utils.logger import get_logger
 
 # オプション依存モジュール
@@ -76,8 +77,8 @@ class RaceRequest(BaseModel):
     @classmethod
     def validate_race(cls, v: Dict) -> Dict:
         boats = v.get("boats", [])
-        if len(boats) != 6:
-            raise ValueError(f"boats には6艇分のデータが必要です（受け取り: {len(boats)}艇）")
+        if len(boats) != N_BOATS:
+            raise ValueError(f"boats には{N_BOATS}艇分のデータが必要です（受け取り: {len(boats)}艇）")
         return v
 
 

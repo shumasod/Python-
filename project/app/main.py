@@ -8,12 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.predict import router as predict_router
-from app.api.health import router as health_router
-from app.api.metrics import router as metrics_router, metrics_middleware
-from app.api.feedback import router as feedback_router
 from app.api.admin import router as admin_router
 from app.api.explain import router as explain_router
+from app.api.feedback import router as feedback_router
+from app.api.health import router as health_router
+from app.api.metrics import metrics_middleware
+from app.api.metrics import router as metrics_router
+from app.api.predict import router as predict_router
 from app.api.scoring import router as scoring_router
 from app.utils.logger import get_logger
 

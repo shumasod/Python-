@@ -22,7 +22,7 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import requests
 
@@ -183,8 +183,8 @@ def fetch_trifecta_odds(
     if dry_run:
         logger.info(f"[DRY RUN] 三連単オッズ取得: 場={jyo_code}, 日={race_date}, R{race_no}")
         # ダミー三連単オッズを生成
-        from itertools import permutations
         import random
+        from itertools import permutations
         rng = random.Random(42)
         return {
             f"{a}-{b}-{c}": round(rng.uniform(5.0, 500.0), 1)

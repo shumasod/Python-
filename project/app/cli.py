@@ -268,8 +268,8 @@ def data_convert(input_dir, output, dry_run):
 @click.option("--path", default="data/training.csv", help="検証するCSVパス")
 def data_validate(path):
     """学習データの品質チェックを実行する"""
-    from scripts.convert_data import validate_training_data
     import pandas as pd
+    from scripts.convert_data import validate_training_data
 
     p = Path(path)
     if not p.exists():
@@ -563,6 +563,7 @@ def scoring_race(race_id):
       python -m app.cli scoring race 20260420_01_R01
     """
     import numpy as np
+
     from app.api.scoring import _load_json, _rank_proba
 
     pred_path   = PREDICTION_LOG_DIR / f"{race_id}.json"

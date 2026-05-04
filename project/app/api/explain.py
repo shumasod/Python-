@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.auth import verify_api_key
 from app.api.predict import RaceRequest
-from app.model.features import FEATURE_COLUMNS, build_features
+from app.model.features import FEATURE_COLUMNS, N_BOATS, build_features
 from app.model.predict import get_model
 from app.utils.logger import get_logger
 
@@ -145,7 +145,7 @@ def explain_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
 
     # ---- 4. 艇ごとの説明 ----
     boat_explanations = []
-    for boat_idx in range(6):
+    for boat_idx in range(N_BOATS):
         boat_contribs = [
             {
                 "feature": feat,

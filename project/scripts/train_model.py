@@ -79,8 +79,7 @@ def main() -> None:
         logger.info(f"サンプルデータを生成します（レース数: {args.n_races}）")
         # generate_sample_training_data は load_training_data 内で呼ばれる
         # n_races を渡すには features.py を直接呼ぶ
-        from app.model.features import generate_sample_training_data
-        from app.model.features import preprocess_dataframe
+        from app.model.features import generate_sample_training_data, preprocess_dataframe
         df = preprocess_dataframe(generate_sample_training_data(n_races=args.n_races))
     else:
         df = load_training_data(file_path=args.data_path)

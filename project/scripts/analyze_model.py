@@ -7,12 +7,11 @@
   python scripts/analyze_model.py --save-dir output/analysis
 """
 import argparse
-import json
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 

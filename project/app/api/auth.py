@@ -20,7 +20,7 @@ import os
 import secrets
 from typing import Optional
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.utils.logger import get_logger

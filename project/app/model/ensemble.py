@@ -16,13 +16,12 @@
 
   proba = ens.predict_proba(X)   # shape: (n_samples, 6)
 """
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import List, Optional
 
-import numpy as np
 import lightgbm as lgb
+import numpy as np
 
-from app.model.features import FEATURE_COLUMNS
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

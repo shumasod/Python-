@@ -12,6 +12,7 @@ import os
 from typing import Callable
 
 from fastapi import Request, Response
+
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +25,6 @@ _limiter = None
 try:
     from slowapi import Limiter
     from slowapi.util import get_remote_address
-    from slowapi.errors import RateLimitExceeded
 
     _limiter = Limiter(
         key_func=get_remote_address,
@@ -56,7 +56,6 @@ def rate_limit(limit_string: str = "60/minute"):
     def decorator(func: Callable) -> Callable:
         if _limiter is None or not _ENABLED:
             return func
-        from slowapi import Limiter
         return _limiter.limit(limit_string)(func)
     return decorator
 

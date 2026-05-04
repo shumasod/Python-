@@ -21,16 +21,14 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
 
+from app.config import SHADOW_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-SHADOW_LOG_DIR = Path("data/shadow_logs")
 
 
 @dataclass

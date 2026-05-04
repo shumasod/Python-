@@ -124,26 +124,7 @@ class TestAdminDrift:
             json.dumps(report), encoding="utf-8"
         )
 
-        # モンキーパッチで Path を差し替え
-        original_path = admin_module.Path
-
-        class MockPath:
-            def __init__(self, p):
-                if str(p) == "data/drift_reports":
-                    self._path = report_dir
-                else:
-                    self._path = original_path(p)
-
-            def __truediv__(self, other):
-                return self._path / other
-
-            def exists(self):
-                return self._path.exists()
-
-            def glob(self, pattern):
-                return self._path.glob(pattern)
-
-        monkeypatch.setattr(admin_module, "Path", MockPath)
+        monkeypatch.setattr(admin_module, "DRIFT_REPORT_DIR", report_dir)
         resp = client.get("/api/v1/admin/drift")
         assert resp.status_code == 200
 
@@ -169,21 +150,7 @@ class TestAdminShadow:
         """シャドウログなしでも 200 が返ること"""
         import app.api.admin as admin_module
 
-        class _MockPath:
-            def __init__(self, p):
-                if "shadow_logs" in str(p):
-                    self._path = tmp_path / "shadow_logs"
-                else:
-                    from pathlib import Path as P
-                    self._path = P(p)
-
-            def __truediv__(self, other):
-                return self._path / other
-
-            def exists(self):
-                return self._path.exists()
-
-        monkeypatch.setattr(admin_module, "Path", _MockPath)
+        monkeypatch.setattr(admin_module, "SHADOW_LOG_DIR", tmp_path / "shadow_logs")
         resp = client.get("/api/v1/admin/shadow")
         assert resp.status_code == 200
         assert resp.json()["n_sampled"] == 0
@@ -208,25 +175,7 @@ class TestAdminShadowDelete:
         log_file = shadow_dir / "mytest.jsonl"
         log_file.write_text('{"top1_match": true}\n', encoding="utf-8")
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                if "shadow_logs" in str(p):
-                    self._p = shadow_dir
-                else:
-                    self._p = orig_path(p)
-
-            def __truediv__(self, other):
-                return self._p / other
-
-            def exists(self):
-                return self._p.exists()
-
-            def glob(self, pat):
-                return self._p.glob(pat)
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "SHADOW_LOG_DIR", shadow_dir)
         resp = client.delete("/api/v1/admin/shadow/mytest")
         assert resp.status_code == 200
         assert not log_file.exists()
@@ -252,22 +201,7 @@ class TestAdminHelpers:
             "\n".join(json.dumps(e) for e in entries), encoding="utf-8"
         )
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                if "shadow_logs" in str(p):
-                    self._p = shadow_dir
-                else:
-                    self._p = orig_path(p)
-
-            def __truediv__(self, other):
-                return self._p / other
-
-            def exists(self):
-                return self._p.exists()
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "SHADOW_LOG_DIR", shadow_dir)
         stats = admin_mod._read_shadow_stats("shadow")
         assert stats["n_sampled"] == 3
         assert abs(stats["top1_match_rate"] - 2/3) < 0.01
@@ -288,22 +222,7 @@ class TestAdminHelpers:
             "\n".join(json.dumps(e) for e in entries), encoding="utf-8"
         )
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                self._p = ab_dir if "ab_test_logs" in str(p) else orig_path(p)
-
-            def __truediv__(self, other):
-                return self._p / other
-
-            def exists(self):
-                return self._p.exists()
-
-            def glob(self, pat):
-                return self._p.glob(pat)
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "AB_LOG_DIR", ab_dir)
         stats = admin_mod._read_ab_stats()
         assert len(stats) == 1
         assert stats[0]["test_name"] == "exp1"
@@ -320,19 +239,7 @@ class TestAdminHelpers:
         report = {"needs_retraining": False, "feature_results": []}
         (drift_dir / "r1.json").write_text(json.dumps(report), encoding="utf-8")
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                self._p = drift_dir if "drift_reports" in str(p) else orig_path(p)
-
-            def exists(self):
-                return self._p.exists()
-
-            def glob(self, pat):
-                return self._p.glob(pat)
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "DRIFT_REPORT_DIR", drift_dir)
         status = admin_mod._latest_drift_status()
         assert status == "stable"
 
@@ -345,19 +252,7 @@ class TestAdminHelpers:
         report = {"needs_retraining": True, "feature_results": []}
         (drift_dir / "r1.json").write_text(json.dumps(report), encoding="utf-8")
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                self._p = drift_dir if "drift_reports" in str(p) else orig_path(p)
-
-            def exists(self):
-                return self._p.exists()
-
-            def glob(self, pat):
-                return self._p.glob(pat)
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "DRIFT_REPORT_DIR", drift_dir)
         status = admin_mod._latest_drift_status()
         assert status == "needs_retraining"
 
@@ -412,17 +307,7 @@ class TestAdminHelpers:
         content = 'CORRUPT_JSON\n{"top1_match": true, "kl_divergence": 0.1}\n'
         (shadow_dir / "shadow.jsonl").write_text(content, encoding="utf-8")
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                self._p = shadow_dir if "shadow_logs" in str(p) else orig_path(p)
-            def __truediv__(self, other):
-                return self._p / other
-            def exists(self):
-                return self._p.exists()
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "SHADOW_LOG_DIR", shadow_dir)
         stats = admin_mod._read_shadow_stats("shadow")
         assert stats["n_sampled"] == 1  # only valid line counted
 
@@ -439,19 +324,7 @@ class TestAdminHelpers:
         ]
         (ab_dir / "exp.jsonl").write_text("\n".join(entries), encoding="utf-8")
 
-        orig_path = admin_mod.Path
-
-        class _P:
-            def __init__(self, p):
-                self._p = ab_dir if "ab_test_logs" in str(p) else orig_path(p)
-            def __truediv__(self, other):
-                return self._p / other
-            def exists(self):
-                return self._p.exists()
-            def glob(self, pat):
-                return self._p.glob(pat)
-
-        monkeypatch.setattr(admin_mod, "Path", _P)
+        monkeypatch.setattr(admin_mod, "AB_LOG_DIR", ab_dir)
         stats = admin_mod._read_ab_stats()
         assert len(stats) == 1
         assert stats[0]["n_total_records"] == 2  # corrupt skipped

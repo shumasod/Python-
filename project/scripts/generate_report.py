@@ -380,10 +380,11 @@ def main() -> None:
     # データ収集
     logger.info(f"レポートを生成しています（直近 {args.days} 日）...")
 
-    result_dir  = Path("data/race_results")
-    drift_dir   = Path("data/drift_reports")
-    ab_dir      = Path("data/ab_test_logs")
-    shadow_dir  = Path("data/shadow_logs")
+    from app.config import AB_LOG_DIR, DRIFT_REPORT_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
+    result_dir  = RESULT_LOG_DIR
+    drift_dir   = DRIFT_REPORT_DIR
+    ab_dir      = AB_LOG_DIR
+    shadow_dir  = SHADOW_LOG_DIR
 
     accuracy      = collect_prediction_accuracy(result_dir if result_dir.exists() else Path(".nonexistent"), args.days)
     model_versions = collect_model_versions()

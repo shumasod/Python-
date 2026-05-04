@@ -23,13 +23,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import DEFAULT_TRAINING_CSV, SCRAPED_DIR
 from app.model.features import FEATURE_COLUMNS
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-SCRAPED_DIR = Path("data/scraped")
-OUTPUT_PATH = Path("data/training.csv")
+OUTPUT_PATH = DEFAULT_TRAINING_CSV
 
 
 # ============================================================

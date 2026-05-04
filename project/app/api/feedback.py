@@ -17,14 +17,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.auth import verify_api_key
+from app.config import AB_LOG_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-# ログ保存先（テストで monkeypatch 可能なモジュール変数）
-RESULT_LOG_DIR     = Path("data/race_results")
-PREDICTION_LOG_DIR = Path("data/prediction_logs")
 RESULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -88,8 +86,7 @@ def _load_prediction_log(race_id: str) -> Optional[Dict]:
             pass
 
     # 2. A/B テストログ（フォールバック）
-    ab_log_dir = Path("data/ab_test_logs")
-    for log_file in ab_log_dir.glob("*.jsonl"):
+    for log_file in AB_LOG_DIR.glob("*.jsonl"):
         try:
             with open(log_file, encoding="utf-8") as f:
                 for line in f:

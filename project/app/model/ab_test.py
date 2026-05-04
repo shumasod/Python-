@@ -27,16 +27,14 @@ A/B テストモジュール
 import hashlib
 import json
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from app.config import AB_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-AB_LOG_DIR = Path("data/ab_test_logs")
 
 
 @dataclass

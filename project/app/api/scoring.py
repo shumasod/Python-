@@ -16,13 +16,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import verify_api_key
+from app.config import PREDICTION_LOG_DIR, RESULT_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-PREDICTION_LOG_DIR = Path("data/prediction_logs")
-RESULT_LOG_DIR     = Path("data/race_results")
 
 
 # ============================================================

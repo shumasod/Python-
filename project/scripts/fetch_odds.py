@@ -28,6 +28,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import ODDS_DIR
 from app.utils.logger import get_logger
 from app.utils.retry import CircuitBreaker, CircuitOpenError, retry
 
@@ -36,7 +37,7 @@ logger = get_logger(__name__)
 BASE_URL     = "https://www.boatrace.jp"
 ODDS_URL     = f"{BASE_URL}/owpc/pc/race/oddstf"   # 3連単オッズページ
 WIN_ODDS_URL = f"{BASE_URL}/owpc/pc/race/odds1tk"  # 単勝オッズページ
-OUTPUT_DIR   = Path("data/odds")
+OUTPUT_DIR   = ODDS_DIR
 
 _session = requests.Session()
 _session.headers.update({

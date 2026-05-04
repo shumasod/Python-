@@ -24,6 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.config import PREDICTION_LOG_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
+
 try:
     import click
 except ImportError:  # pragma: no cover
@@ -349,9 +351,8 @@ def shadow():
 def shadow_stats(name):
     """シャドウモードの累積統計を表示する"""
     import json
-    from pathlib import Path
 
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         click.echo(f"シャドウログが見つかりません: {log_path}")
         return
@@ -389,9 +390,8 @@ def shadow_stats(name):
 @click.option("--yes", "-y", is_flag=True, help="確認プロンプトをスキップ")
 def shadow_clear(name, yes):
     """シャドウモードのログをクリアする"""
-    from pathlib import Path
 
-    log_path = Path("data/shadow_logs") / f"{name}.jsonl"
+    log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         click.echo(f"ログファイルが見つかりません: {log_path}")
         return
@@ -428,9 +428,8 @@ def result_record(race_id, winner, second, third, note):
       python -m app.cli result record race_20240415_01 3 --second 1 --third 5
     """
     import json
-    from pathlib import Path
 
-    result_dir = Path("data/race_results")
+    result_dir = RESULT_LOG_DIR
     result_dir.mkdir(parents=True, exist_ok=True)
     path = result_dir / f"{race_id}.json"
 
@@ -461,9 +460,8 @@ def result_record(race_id, winner, second, third, note):
 def result_summary(n):
     """的中率サマリーを表示する"""
     import json
-    from pathlib import Path
 
-    result_dir = Path("data/race_results")
+    result_dir = RESULT_LOG_DIR
     if not result_dir.exists():
         click.echo("記録なし")
         return
@@ -529,11 +527,10 @@ def scoring():
 def scoring_overview(date, venue):
     """予測と実結果を突き合わせた的中率概要を表示する"""
     import json
-    from pathlib import Path
     import numpy as np
 
-    pred_dir   = Path("data/prediction_logs")
-    result_dir = Path("data/race_results")
+    pred_dir   = PREDICTION_LOG_DIR
+    result_dir = RESULT_LOG_DIR
 
     preds = {}
     if pred_dir.exists():
@@ -618,10 +615,9 @@ def scoring_race(race_id):
     """
     import json
     import numpy as np
-    from pathlib import Path
 
-    pred_path   = Path("data/prediction_logs") / f"{race_id}.json"
-    result_path = Path("data/race_results")    / f"{race_id}.json"
+    pred_path   = PREDICTION_LOG_DIR / f"{race_id}.json"
+    result_path = RESULT_LOG_DIR    / f"{race_id}.json"
 
     pred   = None
     result = None

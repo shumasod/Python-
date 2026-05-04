@@ -276,12 +276,12 @@ class TestResultSummary:
 
 class TestShadowStats:
     def test_no_log_shows_message(self, runner, tmp_path, monkeypatch):
-        """ログなしで「見つかりません」を表示すること"""
+        """ログなしで「記録なし」を表示すること"""
         monkeypatch.chdir(tmp_path)
         from app.cli import cli
         result = runner.invoke(cli, ["shadow", "stats", "--name", "nonexistent"])
         assert result.exit_code == 0
-        assert "見つかりません" in result.output
+        assert "記録なし" in result.output
 
     def test_computes_match_rate(self, runner, tmp_path, monkeypatch):
         """ログから一致率が計算されること"""

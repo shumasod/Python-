@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.auth import verify_api_key
+from app.api.scoring import _rank_proba
 from app.config import AB_LOG_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR
 from app.utils.logger import get_logger
 
@@ -121,22 +122,7 @@ def _compare_prediction(
     if not proba:
         return comparison
 
-    import numpy as np
-    proba_arr = np.array(proba)
-    ranks = np.argsort(proba_arr)[::-1]  # 確率降順のインデックス
-
-    # 予測1位（0始まり → 1始まり）
-    predicted_winner = int(ranks[0]) + 1
-    comparison["predicted_winner"] = predicted_winner
-    comparison["is_correct"] = (predicted_winner == result.true_winner)
-
-    # 正解艇の予測順位
-    winner_idx = result.true_winner - 1
-    if 0 <= winner_idx < len(proba_arr):
-        rank_pos = int(np.where(ranks == winner_idx)[0][0]) + 1
-        comparison["prediction_rank"] = rank_pos
-
-    return comparison
+    return _rank_proba(proba, result.true_winner)
 
 
 # ============================================================

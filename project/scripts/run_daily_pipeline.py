@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.config import PREDICTION_LOG_DIR
 from app.model.predict import predict_race
 from app.utils.logger import get_logger
-from app.utils.notification import build_prediction_summary, notify_sync
+from app.utils.notification import notify_sync
 
 logger = get_logger(__name__)
 
@@ -45,7 +45,6 @@ def build_sample_race_data(
     実データがない場合のサンプルレース情報を組み立てる。
     win_odds があればそのオッズを埋め込む。
     """
-    import numpy as np
     rng = numpy_rng(jyo_code, race_no)
 
     boats = []

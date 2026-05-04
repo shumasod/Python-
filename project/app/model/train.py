@@ -10,10 +10,10 @@ from typing import Optional, Tuple
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, log_loss
+from sklearn.model_selection import StratifiedKFold
 
-from app.model.features import FEATURE_COLUMNS, N_BOATS, preprocess_dataframe
+from app.model.features import FEATURE_COLUMNS, N_BOATS
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

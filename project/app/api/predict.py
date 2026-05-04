@@ -12,7 +12,7 @@ POST /predict エンドポイントを定義する
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import verify_api_key

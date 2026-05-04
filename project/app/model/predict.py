@@ -3,10 +3,9 @@
 学習済みLightGBMモデルを使った競艇1着確率の予測・三連単生成を担当する
 """
 from itertools import permutations
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
-import pandas as pd
 
 from app.model.features import N_BOATS, build_features
 from app.model.train import load_model

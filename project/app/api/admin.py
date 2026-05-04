@@ -12,14 +12,17 @@
 """
 import json
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import verify_api_key
-from app.config import AB_LOG_DIR, DRIFT_REPORT_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
+from app.config import (
+    AB_LOG_DIR,
+    DRIFT_REPORT_DIR,
+    SHADOW_LOG_DIR,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)

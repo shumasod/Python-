@@ -2,9 +2,10 @@
 特徴量エンジニアリングモジュール
 競艇予想に使用する特徴量の生成・前処理を担当する
 """
+from typing import Any, Dict, List
+
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any
 
 from app.utils.logger import get_logger
 

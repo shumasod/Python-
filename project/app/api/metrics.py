@@ -25,14 +25,13 @@ router = APIRouter()
 # prometheus_client を条件付きインポート
 try:
     from prometheus_client import (
+        CONTENT_TYPE_LATEST,
+        REGISTRY,
         Counter,
         Gauge,
         Histogram,
         Info,
         generate_latest,
-        CONTENT_TYPE_LATEST,
-        CollectorRegistry,
-        REGISTRY,
     )
     _PROMETHEUS_AVAILABLE = True
 except ImportError:  # pragma: no cover

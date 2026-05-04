@@ -10,7 +10,6 @@ PostgreSQL への非同期接続と予測結果の永続化を担当する
 """
 import json
 import os
-import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, Optional
 

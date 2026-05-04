@@ -13,7 +13,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, log_loss
 
-from app.model.features import FEATURE_COLUMNS, preprocess_dataframe
+from app.model.features import FEATURE_COLUMNS, N_BOATS, preprocess_dataframe
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -24,7 +24,7 @@ MODEL_DIR = Path("models")
 # LightGBM ハイパーパラメータ
 LGBM_PARAMS = {
     "objective": "multiclass",      # 多クラス分類
-    "num_class": 6,                  # 6艇
+    "num_class": N_BOATS,
     "metric": "multi_logloss",
     "boosting_type": "gbdt",
     "num_leaves": 63,

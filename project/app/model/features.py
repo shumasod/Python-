@@ -10,6 +10,8 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+N_BOATS = 6  # 競艇は常に6艇出走
+
 # 使用する特徴量カラム名（モデル学習・推論で共通使用）
 FEATURE_COLUMNS = [
     "win_rate",           # 全体勝率
@@ -41,8 +43,8 @@ def build_features(race_data: Dict[str, Any]) -> pd.DataFrame:
     logger.info("特徴量の構築を開始します")
 
     boats: List[Dict] = race_data.get("boats", [])
-    if len(boats) != 6:
-        raise ValueError(f"boats は6艇必要です。受け取った艇数: {len(boats)}")
+    if len(boats) != N_BOATS:
+        raise ValueError(f"boats は{N_BOATS}艇必要です。受け取った艇数: {len(boats)}")
 
     weather = race_data.get("weather", {})
     weather_code = _encode_weather(weather.get("condition", "晴"))
@@ -129,8 +131,7 @@ def generate_sample_training_data(n_races: int = 1000) -> pd.DataFrame:
     rows = []
 
     for race_id in range(n_races):
-        # 6艇分データを生成
-        for boat_num in range(1, 7):
+        for boat_num in range(1, N_BOATS + 1):
             # 内側コース（小さい艇番）ほど勝率が高い傾向を模倣
             course_advantage = (6 - boat_num) * 0.03
 
@@ -162,10 +163,9 @@ def generate_sample_training_data(n_races: int = 1000) -> pd.DataFrame:
     for race_id in df["race_id"].unique():
         mask = df["race_id"] == race_id
         race_df = df[mask]
-        # 内側コースを有利にする確率重み
-        weights = np.array([6, 5, 4, 3, 2, 1], dtype=float)
+        weights = np.array(range(N_BOATS, 0, -1), dtype=float)
         weights /= weights.sum()
-        winner = np.random.choice(range(6), p=weights)
+        winner = np.random.choice(range(N_BOATS), p=weights)
         df.loc[mask, "label"] = winner
 
     logger.info(f"サンプルデータ生成完了: {len(df)} 行")

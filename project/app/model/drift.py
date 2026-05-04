@@ -220,9 +220,9 @@ class DriftDetector:
 
         needs_retraining = len(alert_features) > 0
         if alert_features:
-            summary = f"ドリフト検知: {', '.join(alert_features)} で大きな変化（PSI>=0.2）"
+            summary = f"ドリフト検知: {', '.join(alert_features)} で大きな変化（PSI>={PSI_ALERT}）"
         elif warn_features:
-            summary = f"軽微なドリフト: {', '.join(warn_features)} で変化（PSI>=0.1）"
+            summary = f"軽微なドリフト: {', '.join(warn_features)} で変化（PSI>={PSI_WARN}）"
         else:
             summary = "ドリフトなし: 全特徴量が安定しています"
 

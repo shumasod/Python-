@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from app.model.features import build_features
+from app.model.features import N_BOATS, build_features
 from app.model.train import load_model
 from app.utils.logger import get_logger
 
@@ -95,8 +95,7 @@ def _calc_trifecta(
     """
     results = []
 
-    # 6艇から3艇を選ぶ順列（6P3 = 120通り）
-    for perm in permutations(range(6), 3):
+    for perm in permutations(range(N_BOATS), 3):
         first, second, third = perm
         # 独立性を仮定した簡易計算
         # P(1着=first) × P(2着=second | 1着=first) × P(3着=third | 1,2着確定)
@@ -109,7 +108,7 @@ def _calc_trifecta(
         # 2着が決まった後の残り4艇
         remaining_after_2 = np.delete(remaining_after_1, second_idx)
         remaining_after_2 = remaining_after_2 / remaining_after_2.sum()
-        third_idx_candidates = [i for i in range(6) if i != first and i != second]
+        third_idx_candidates = [i for i in range(N_BOATS) if i != first and i != second]
         third_pos = third_idx_candidates.index(third)
         p3 = remaining_after_2[third_pos]
 

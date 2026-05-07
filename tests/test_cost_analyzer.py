@@ -208,3 +208,148 @@ class TestCostAnomaly:
             previous_cost=0.0,
         )
         assert anomaly.change_ratio_pct == 100.0
+
+    def test_cost_drop_detected(self, cost_analyzer):
+        """前月比 30% 減少を cost_drop として検知"""
+        anomaly = cost_analyzer.detect_cost_anomaly(
+            "test-001",
+            current_cost=700.0,
+            previous_cost=1000.0,
+            threshold_pct=20.0,
+        )
+        assert anomaly.is_anomaly is True
+        assert anomaly.anomaly_type == "cost_drop"
+
+
+class TestDataTransferCost:
+    """データ転送コスト計算テスト"""
+
+    def test_zero_transfer_no_cost(self, cost_analyzer, base_instance):
+        """転送量 0 の場合コストなし"""
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(base_instance, data_transfer_gb=0.0)
+        assert breakdown.transfer_cost_usd == 0.0
+
+    def test_small_transfer_cost_positive(self, cost_analyzer, base_instance):
+        """少量の転送データでコスト発生"""
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(base_instance, data_transfer_gb=100.0)
+        assert breakdown.transfer_cost_usd > 0.0
+
+    def test_large_transfer_tiered(self, cost_analyzer, base_instance):
+        """10TB 超で段階課金が適用される"""
+        bd_small, _ = cost_analyzer.calculate_monthly_cost(base_instance, data_transfer_gb=1024.0)
+        bd_large, _ = cost_analyzer.calculate_monthly_cost(base_instance, data_transfer_gb=20_000.0)
+        # 大量転送は単価が安くなるため比例以下
+        assert bd_large.transfer_cost_usd > bd_small.transfer_cost_usd
+
+
+class TestUnknownInstanceClass:
+    """未定義インスタンスクラスの処理テスト"""
+
+    def test_unknown_class_uses_default_rate(self, cost_analyzer):
+        """未定義インスタンスクラスはデフォルト料金で計算"""
+        instance = RDSInstance(
+            instance_id="unknown-class-001",
+            engine=EngineType.MYSQL,
+            engine_version="8.0",
+            instance_class="db.x99.enormous",  # 存在しないクラス
+            region="ap-northeast-1",
+            multi_az=False,
+            storage_type=StorageType.GP2,
+            allocated_storage_gb=100,
+        )
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        assert breakdown.compute_cost_usd > 0.0
+
+
+class TestIOPSEfficiencyScore:
+    """IOPS効率スコアのテスト"""
+
+    def test_high_iops_utilization_high_score(self, cost_analyzer):
+        """IOPS 使用率 80% は高スコア"""
+        instance = RDSInstance(
+            instance_id="io1-001",
+            engine=EngineType.MYSQL,
+            engine_version="8.0",
+            instance_class="db.m5.large",
+            region="ap-northeast-1",
+            multi_az=False,
+            storage_type=StorageType.IO1,
+            allocated_storage_gb=100,
+            provisioned_iops=3000,
+        )
+        score = CostAnalyzer._iops_efficiency_score(instance, avg_iops_used=2400.0)
+        assert score >= 80
+
+    def test_low_iops_utilization_low_score(self, cost_analyzer):
+        """IOPS 使用率 10% は低スコア"""
+        instance = RDSInstance(
+            instance_id="io1-002",
+            engine=EngineType.MYSQL,
+            engine_version="8.0",
+            instance_class="db.m5.large",
+            region="ap-northeast-1",
+            multi_az=False,
+            storage_type=StorageType.IO1,
+            allocated_storage_gb=100,
+            provisioned_iops=3000,
+        )
+        score = CostAnalyzer._iops_efficiency_score(instance, avg_iops_used=100.0)
+        assert score < 60
+
+    def test_gp2_fixed_mid_score(self, cost_analyzer):
+        """gp2 は固定の中間スコアを返す"""
+        instance = RDSInstance(
+            instance_id="gp2-001",
+            engine=EngineType.MYSQL,
+            engine_version="8.0",
+            instance_class="db.m5.large",
+            region="ap-northeast-1",
+            multi_az=False,
+            storage_type=StorageType.GP2,
+            allocated_storage_gb=100,
+        )
+        score = CostAnalyzer._iops_efficiency_score(instance, avg_iops_used=100.0)
+        assert score == 80
+
+
+class TestCostModelProperties:
+    """CostBreakdown / MonthlyCostReport のプロパティテスト"""
+
+    def test_compute_ratio_zero_total(self):
+        """合計コスト 0 でゼロ除算しない"""
+        from rds_analyzer.models.costs import CostBreakdown
+        bd = CostBreakdown(compute_cost_usd=0.0, storage_cost_usd=0.0)
+        assert bd.compute_ratio_pct == 0.0
+        assert bd.storage_ratio_pct == 0.0
+
+    def test_compute_ratio_sum(self, base_instance, cost_analyzer):
+        """コンピュート比率 + ストレージ比率 ≦ 100"""
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(base_instance)
+        assert breakdown.compute_ratio_pct + breakdown.storage_ratio_pct <= 100.1
+
+    def test_monthly_report_savings(self):
+        """MonthlyCostReport の節約額プロパティ"""
+        from datetime import date
+        from rds_analyzer.models.costs import CostBreakdown, MonthlyCostReport
+        bd = CostBreakdown(compute_cost_usd=300.0, storage_cost_usd=50.0)
+        report = MonthlyCostReport(
+            instance_id="test",
+            month=date.today(),
+            breakdown=bd,
+            optimized_cost_usd=280.0,
+        )
+        assert report.potential_savings_usd == pytest.approx(70.0, abs=0.01)
+        assert report.savings_ratio_pct > 0
+
+    def test_monthly_report_no_optimization(self):
+        """最適化コストなしのとき節約額ゼロ"""
+        from datetime import date
+        from rds_analyzer.models.costs import CostBreakdown, MonthlyCostReport
+        bd = CostBreakdown(compute_cost_usd=300.0, storage_cost_usd=50.0)
+        report = MonthlyCostReport(
+            instance_id="test",
+            month=date.today(),
+            breakdown=bd,
+            optimized_cost_usd=None,
+        )
+        assert report.potential_savings_usd == 0.0

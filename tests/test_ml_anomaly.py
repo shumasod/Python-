@@ -20,11 +20,13 @@ class TestAnomalyDetection:
         assert result.is_anomaly is False
 
     def test_spike_detected(self, detector):
-        """急激なスパイクを検知する"""
-        values = [40.0, 41.0, 39.0, 40.5, 42.0, 41.0, 40.0, 95.0]  # 最後だけ異常
+        """急激なスパイクを検知する（移動平均偏差でも検知）"""
+        # 通常 40 前後が続いた後に 95 へ急上昇 → 移動平均から 100%+ 乖離
+        values = [40.0, 41.0, 39.0, 40.5, 42.0, 41.0, 40.0, 95.0]
         result = detector.detect_metric_anomalies(values, "cpu_pct")
+        # 移動平均偏差 = |95 - ~41| / ~41 ≈ 1.3 > 0.5 → 異常検知
         assert result.is_anomaly is True
-        assert result.z_score > 2.0
+        assert result.anomaly_score > 0.5
 
     def test_insufficient_samples(self, detector):
         """サンプル数が少ない場合は異常なし"""

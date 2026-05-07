@@ -107,8 +107,10 @@ class MLAnomalyDetector:
         recent_z = float(np.abs(z_scores[-1]))
 
         # 移動平均からの乖離（外れ値の一時的スパイクに強い）
-        if len(arr) >= window_size:
-            moving_avg = np.convolve(arr, np.ones(window_size) / window_size, mode="valid")
+        # サンプル数が window_size 未満の場合は利用可能なサイズに適応
+        effective_window = min(window_size, max(2, len(arr) - 1))
+        moving_avg = np.convolve(arr, np.ones(effective_window) / effective_window, mode="valid")
+        if len(moving_avg) > 0:
             deviation = float(np.abs(arr[-1] - moving_avg[-1]) / (np.mean(np.abs(moving_avg)) + 1e-9))
         else:
             deviation = 0.0

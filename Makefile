@@ -4,7 +4,8 @@ help:
 	@echo "RDS Analyzer - 開発コマンド一覧"
 	@echo ""
 	@echo "  make build    コンテナイメージをビルド"
-	@echo "  make up       全サービスを起動 (API + Frontend)"
+	@echo "  make up       全サービスを起動 (API + Frontend:80)"
+	@echo "  make dev      開発モード起動 (API + Vite HMR:5173)"
 	@echo "  make down     全サービスを停止"
 	@echo "  make logs     ログを表示 (Ctrl+C で終了)"
 	@echo "  make api      API のみ起動"
@@ -17,10 +18,15 @@ build:
 	docker compose build
 
 up:
-	docker compose up -d
+	docker compose up -d --build
 	@echo "API:      http://localhost:8000/api/v1/health"
 	@echo "Docs:     http://localhost:8000/docs"
-	@echo "Frontend: http://localhost:5173"
+	@echo "Frontend: http://localhost:80"
+
+dev:
+	docker compose --profile dev up -d api dev
+	@echo "API:      http://localhost:8000/api/v1/health"
+	@echo "Frontend: http://localhost:5173 (HMR 有効)"
 
 down:
 	docker compose down

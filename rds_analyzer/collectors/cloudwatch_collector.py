@@ -94,9 +94,9 @@ class CloudWatchCollector:
         start_time = end_time - timedelta(hours=period_hours)
 
         logger.info(
-            "CloudWatch メトリクス取得開始",
-            instance_id=instance_id,
-            period_hours=period_hours,
+            "CloudWatch メトリクス取得開始: instance_id=%s period_hours=%d",
+            instance_id,
+            period_hours,
         )
 
         # GetMetricData API で複数メトリクスを一括取得（APIコール数を削減）
@@ -108,9 +108,9 @@ class CloudWatchCollector:
             )
         except (ClientError, BotoCoreError) as e:
             logger.error(
-                "CloudWatch API エラー",
-                instance_id=instance_id,
-                error=str(e),
+                "CloudWatch API エラー: instance_id=%s error=%s",
+                instance_id,
+                str(e),
             )
             raise
 

@@ -18,7 +18,6 @@ API Key 認証モジュール
 import hashlib
 import os
 import secrets
-from typing import Optional
 
 from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
@@ -70,7 +69,7 @@ _load_api_keys()
 
 
 def verify_api_key(
-    api_key: Optional[str] = Security(_API_KEY_HEADER),
+    api_key: str | None = Security(_API_KEY_HEADER),
 ) -> str:
     """
     API Key を検証する FastAPI Dependency

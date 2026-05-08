@@ -3,7 +3,7 @@
 学習済みLightGBMモデルを使った競艇1着確率の予測・三連単生成を担当する
 """
 from itertools import permutations
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 
@@ -25,7 +25,7 @@ def get_model():
     return _cached_model
 
 
-def predict_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
+def predict_race(race_data: dict[str, Any]) -> dict[str, Any]:
     """
     レースデータから各艇の勝利確率・三連単推奨を返す
 
@@ -80,7 +80,7 @@ def predict_race(race_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _calc_trifecta(
     win_proba: np.ndarray, top_n: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     三連単（1〜3着の順序付き組み合わせ）の確率を計算する
 
@@ -126,10 +126,10 @@ def _calc_trifecta(
 
 
 def _build_recommendations(
-    trifecta: List[Dict],
-    race_data: Dict[str, Any],
+    trifecta: list[dict],
+    race_data: dict[str, Any],
     ev_threshold: float = 1.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     期待値を考慮した買い目推奨を生成する
 
@@ -141,7 +141,7 @@ def _build_recommendations(
     Returns:
         推奨買い目リスト
     """
-    odds_map: Dict[str, float] = race_data.get("odds", {})
+    odds_map: dict[str, float] = race_data.get("odds", {})
     recommendations = []
 
     for item in trifecta[:5]:  # 上位5点を対象に評価

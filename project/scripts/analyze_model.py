@@ -20,9 +20,13 @@ matplotlib.rcParams["axes.unicode_minus"] = False
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.model.features import FEATURE_COLUMNS, generate_sample_training_data, preprocess_dataframe
-from app.model.train import load_model
-from app.utils.logger import get_logger
+from app.model.features import (  # noqa: E402
+    FEATURE_COLUMNS,
+    generate_sample_training_data,
+    preprocess_dataframe,
+)
+from app.model.train import load_model  # noqa: E402
+from app.utils.logger import get_logger  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -50,7 +54,7 @@ def plot_feature_importance(model, save_dir: Path) -> None:
     ax.grid(True, alpha=0.3, axis="x")
 
     # スコア値をバーの右に表示
-    for bar, val in zip(bars, normalized[::-1]):
+    for bar, val in zip(bars, normalized[::-1], strict=False):
         ax.text(
             bar.get_width() + 0.5,
             bar.get_y() + bar.get_height() / 2,
@@ -103,7 +107,7 @@ def plot_calibration(model, X_test: np.ndarray, y_test: np.ndarray, save_dir: Pa
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     actual_rates = []
 
-    for low, high in zip(bin_edges[:-1], bin_edges[1:]):
+    for low, high in zip(bin_edges[:-1], bin_edges[1:], strict=False):
         mask = (all_proba >= low) & (all_proba < high)
         if mask.sum() > 0:
             actual_rates.append(all_actual[mask].mean())
@@ -170,8 +174,8 @@ def main() -> None:
         model = load_model(args.model_name)
     except FileNotFoundError:
         print(
-            f"モデルが見つかりません。先に学習を実行してください:\n"
-            f"  python scripts/train_model.py --use-sample"
+            "モデルが見つかりません。先に学習を実行してください:\n"
+            "  python scripts/train_model.py --use-sample"
         )
         sys.exit(1)
 

@@ -10,8 +10,9 @@ PostgreSQL への非同期接続と予測結果の永続化を担当する
 """
 import json
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any
 
 from app.utils.logger import get_logger
 
@@ -48,11 +49,11 @@ async def get_pool():
 
     try:
         import asyncpg
-    except ImportError:
+    except ImportError as exc:
         raise ImportError(
             "asyncpg がインストールされていません。"
             "pip install asyncpg を実行してください。"
-        )
+        ) from exc
 
     logger.info(f"DB接続プールを初期化します: {DB_CONFIG['host']}:{DB_CONFIG['port']}")
     _pool = await asyncpg.create_pool(
@@ -89,9 +90,9 @@ async def get_connection() -> AsyncGenerator:
 
 
 async def log_prediction(
-    race_id: Optional[str],
-    request_body: Dict[str, Any],
-    response_body: Dict[str, Any],
+    race_id: str | None,
+    request_body: dict[str, Any],
+    response_body: dict[str, Any],
     latency_ms: int,
 ) -> None:
     """
@@ -123,7 +124,7 @@ async def log_prediction(
         logger.warning(f"予測ログの保存に失敗しました: {e}")
 
 
-async def get_prediction_stats(days: int = 7) -> Dict[str, Any]:
+async def get_prediction_stats(days: int = 7) -> dict[str, Any]:
     """
     過去N日間の予測統計を取得する
 

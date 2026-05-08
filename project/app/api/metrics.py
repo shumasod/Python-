@@ -12,7 +12,7 @@ GET /metrics で Prometheus 形式のメトリクスを返す
   - active_model_loaded          : モデルキャッシュのロード状態
 """
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import PlainTextResponse
@@ -151,7 +151,7 @@ async def metrics_middleware(request: Request, call_next: Callable) -> Response:
             record_predict_request(status, latency)
 
         return response
-    except Exception as e:
+    except Exception:
         latency = time.monotonic() - start
         if "/predict" in request.url.path:
             record_predict_request("error", latency)

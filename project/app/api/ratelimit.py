@@ -9,7 +9,7 @@ SlowAPI を使ったリクエスト頻度制限
 依存: pip install slowapi
 """
 import os
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response
 
@@ -73,7 +73,7 @@ async def rate_limit_exceeded_handler(request: Request, exc) -> Response:
     return JSONResponse(
         status_code=429,
         content={
-            "detail": f"リクエスト頻度が上限を超えました。しばらく待ってから再試行してください。",
+            "detail": "リクエスト頻度が上限を超えました。しばらく待ってから再試行してください。",
             "limit": str(exc.detail) if hasattr(exc, "detail") else _DEFAULT_LIMIT,
         },
     )

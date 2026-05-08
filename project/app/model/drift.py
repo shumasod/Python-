@@ -28,7 +28,6 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -63,11 +62,11 @@ class DriftReport:
     checked_at: str
     n_reference: int
     n_current: int
-    feature_results: List[FeatureDriftResult] = field(default_factory=list)
+    feature_results: list[FeatureDriftResult] = field(default_factory=list)
     needs_retraining: bool = False
     summary: str = ""
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "checked_at": self.checked_at,
             "n_reference": self.n_reference,
@@ -103,7 +102,7 @@ class DriftDetector:
             n_bins: PSI計算に使うヒストグラムのビン数
         """
         self.n_bins = n_bins
-        self._reference_stats: Dict[str, Dict] = {}
+        self._reference_stats: dict[str, dict] = {}
 
     # ---- 参照分布の登録 ----
 
@@ -173,20 +172,19 @@ class DriftDetector:
         """
         from datetime import datetime
 
-        if not self._reference_stats:
-            if not self.load_reference():
-                logger.error("参照分布がありません。先に set_reference() を呼んでください。")
-                return DriftReport(
-                    checked_at=datetime.now().isoformat(),
-                    n_reference=0,
-                    n_current=len(df),
-                    needs_retraining=False,
-                    summary="参照分布未設定のためチェック不可",
-                )
+        if not self._reference_stats and not self.load_reference():
+            logger.error("参照分布がありません。先に set_reference() を呼んでください。")
+            return DriftReport(
+                checked_at=datetime.now().isoformat(),
+                n_reference=0,
+                n_current=len(df),
+                needs_retraining=False,
+                summary="参照分布未設定のためチェック不可",
+            )
 
-        results: List[FeatureDriftResult] = []
-        alert_features: List[str] = []
-        warn_features:  List[str] = []
+        results: list[FeatureDriftResult] = []
+        alert_features: list[str] = []
+        warn_features:  list[str] = []
 
         for col, ref_stats in self._reference_stats.items():
             if col not in df.columns:
@@ -244,8 +242,8 @@ class DriftDetector:
     def _calc_psi_kl(
         self,
         current_values: np.ndarray,
-        ref_stats: Dict,
-    ) -> Tuple[float, float]:
+        ref_stats: dict,
+    ) -> tuple[float, float]:
         """
         PSI と KL ダイバージェンスを計算する
 

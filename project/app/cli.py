@@ -24,6 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from datetime import UTC
+
 from app.config import PREDICTION_LOG_DIR, RESULT_LOG_DIR, SHADOW_LOG_DIR
 
 try:
@@ -421,14 +423,14 @@ def result_record(race_id, winner, second, third, note):
         click.echo(f"エラー: {race_id} の結果は既に記録されています", err=True)
         sys.exit(1)
 
-    from datetime import datetime, timezone
+    from datetime import datetime
     record = {
         "race_id": race_id,
         "true_winner": winner,
         "second_place": second,
         "third_place": third,
         "note": note,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": datetime.now(UTC).isoformat(),
         "predicted_winner": None,
         "is_correct": None,
         "prediction_rank": None,

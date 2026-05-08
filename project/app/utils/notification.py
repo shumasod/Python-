@@ -19,7 +19,6 @@ Slack / LINE Notify へのメッセージ送信を担当する
 """
 import asyncio
 import os
-from typing import Optional
 
 import requests
 
@@ -107,7 +106,7 @@ def send_line(message: str, token: str = "") -> bool:
 
 async def notify(
     message: str,
-    channels: Optional[list[str]] = None,
+    channels: list[str] | None = None,
 ) -> dict[str, bool]:
     """
     設定済みチャンネルに通知を送信する非同期関数
@@ -142,7 +141,7 @@ async def notify(
     return results
 
 
-def notify_sync(message: str, channels: Optional[list[str]] = None) -> dict[str, bool]:
+def notify_sync(message: str, channels: list[str] | None = None) -> dict[str, bool]:
     """
     同期版通知関数（スクリプト・Airflow DAGから使用）
 

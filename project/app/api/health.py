@@ -9,7 +9,7 @@ import platform
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -22,7 +22,7 @@ _START_TIME = time.time()  # サーバー起動時刻
 
 
 @router.get("/health/detail", summary="詳細ヘルスチェック")
-async def health_detail() -> Dict[str, Any]:
+async def health_detail() -> dict[str, Any]:
     """
     各コンポーネントの状態を返す
 
@@ -34,7 +34,7 @@ async def health_detail() -> Dict[str, Any]:
     - **disk**: モデル・データディレクトリのディスク使用量
     - **system**: OS・Pythonバージョン情報
     """
-    checks: Dict[str, Any] = {}
+    checks: dict[str, Any] = {}
     overall = "ok"
 
     # ---- モデル状態チェック ----
@@ -68,7 +68,7 @@ async def health_detail() -> Dict[str, Any]:
     }
 
 
-def _check_model() -> Dict[str, Any]:
+def _check_model() -> dict[str, Any]:
     """モデルファイルの存在・ロード状態を確認する"""
     model_dir = Path("models")
     model_path = model_dir / "boat_race_model.pkl"
@@ -96,7 +96,7 @@ def _check_model() -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-async def _check_db() -> Dict[str, Any]:
+async def _check_db() -> dict[str, Any]:
     """DB接続を検証する（SELECT 1 を実行）"""
     try:
         from app.db import get_connection
@@ -110,9 +110,9 @@ async def _check_db() -> Dict[str, Any]:
         return {"status": "error", "message": str(e)}
 
 
-def _check_disk() -> Dict[str, Any]:
+def _check_disk() -> dict[str, Any]:
     """モデル・データディレクトリのディスク使用量を確認する"""
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for name, path in [("models", "models"), ("data", "data"), ("logs", "logs")]:
         p = Path(path)
         if p.exists():

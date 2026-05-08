@@ -27,7 +27,6 @@ A/B テストモジュール
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -35,6 +34,11 @@ from app.config import AB_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# 統計的検定の閾値
+_MIN_SAMPLES  = 30    # z 検定に必要な最低サンプル数
+_P_SIGNIFICANT = 0.05  # 有意差あり判定
+_P_WARN        = 0.10  # 有意差なし・やや優勢の警告閾値
 
 
 @dataclass
@@ -53,8 +57,8 @@ class VariantRecord:
 @dataclass
 class ABTestReport:
     """A/B テスト統計レポート"""
-    variants: List[Dict]
-    winner: Optional[str]
+    variants: list[dict]
+    winner: str | None
     is_significant: bool     # 統計的有意差があるか
     p_value: float
     message: str
@@ -76,9 +80,9 @@ class ABTestRouter:
             name: このA/Bテストの識別名
         """
         self.name = name
-        self._variants: List[VariantRecord] = []
+        self._variants: list[VariantRecord] = []
         # race_id → (variant_name, true_winner) の記録
-        self._race_log: Dict[str, Dict] = {}
+        self._race_log: dict[str, dict] = {}
 
     def add_variant(
         self,
@@ -129,7 +133,7 @@ class ABTestRouter:
         self,
         X: np.ndarray,
         race_id: str,
-    ) -> Tuple[str, np.ndarray]:
+    ) -> tuple[str, np.ndarray]:
         """
         race_id に基づいてバリアントを選択し、予測確率を返す
 
@@ -237,7 +241,7 @@ class ABTestRouter:
         winner = None
         is_significant = False
 
-        if v0.n_requests >= 30 and v1.n_requests >= 30:
+        if v0.n_requests >= _MIN_SAMPLES and v1.n_requests >= _MIN_SAMPLES:
             # 比率の検定（二項分布近似 z 検定）
             p0 = v0.n_correct / v0.n_requests
             p1 = v1.n_correct / v1.n_requests
@@ -247,14 +251,14 @@ class ABTestRouter:
             if se > 0:
                 z = (p0 - p1) / se
                 p_value = float(2 * (1 - stats.norm.cdf(abs(z))))
-                is_significant = p_value < 0.05
+                is_significant = p_value < _P_SIGNIFICANT
 
                 if is_significant:
                     winner = v0.name if p0 > p1 else v1.name
 
         if is_significant and winner:
             message = f"統計的有意差あり (p={p_value:.4f}): {winner} が勝者"
-        elif p_value < 0.1:
+        elif p_value < _P_WARN:
             better = v0.name if v0.n_correct / max(v0.n_requests, 1) > v1.n_correct / max(v1.n_requests, 1) else v1.name
             message = f"有意差なし (p={p_value:.4f}) - データ蓄積中。{better} がやや優勢"
         else:
@@ -289,7 +293,7 @@ class ABTestRouter:
             print(f" 勝者: {report.winner} ★")
         print("=" * 60)
 
-    def _save_log_entry(self, race_id: str, log: Dict) -> None:
+    def _save_log_entry(self, race_id: str, log: dict) -> None:
         """ログエントリをJSONLファイルに追記保存する"""
         AB_LOG_DIR.mkdir(parents=True, exist_ok=True)
         path = AB_LOG_DIR / f"{self.name}.jsonl"

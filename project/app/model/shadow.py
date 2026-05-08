@@ -21,7 +21,7 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 
@@ -86,7 +86,7 @@ class ShadowRunner:
         X: np.ndarray,
         race_id: str,
         production_proba: np.ndarray,
-    ) -> Optional[ShadowRecord]:
+    ) -> ShadowRecord | None:
         """
         シャドウモデルを実行して差分を記録する
 
@@ -143,7 +143,7 @@ class ShadowRunner:
             logger.error(f"[Shadow] 実行エラー race={race_id}: {e}")
             return None
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """累積統計を返す"""
         if self._n_sampled == 0:
             return {"n_sampled": 0, "top1_match_rate": None, "avg_kl": None}

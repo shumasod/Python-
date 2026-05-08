@@ -23,9 +23,10 @@
 import functools
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional, Tuple, Type
+from typing import Any
 
 from app.utils.logger import get_logger
 
@@ -42,8 +43,8 @@ def retry(
     max_delay: float = 60.0,
     backoff_factor: float = 2.0,
     jitter: bool = True,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-    on_retry: Optional[Callable] = None,
+    exceptions: tuple[type[Exception], ...] = (Exception,),
+    on_retry: Callable | None = None,
 ):
     """
     指数バックオフ + ジッターによるリトライデコレータ
@@ -65,7 +66,7 @@ def retry(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
-            last_exc: Optional[Exception] = None
+            last_exc: Exception | None = None
 
             for attempt in range(1, max_attempts + 1):
                 try:

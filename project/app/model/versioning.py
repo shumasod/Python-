@@ -30,7 +30,7 @@ import pickle
 import shutil
 from datetime import date
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import lightgbm as lgb
 
@@ -66,7 +66,7 @@ class ModelRegistry:
 
     # ---- レジストリ読み書き ----
 
-    def _load_registry(self) -> Dict[str, Any]:
+    def _load_registry(self) -> dict[str, Any]:
         if REGISTRY_FILE.exists():
             with open(REGISTRY_FILE, encoding="utf-8") as f:
                 return json.load(f)
@@ -81,7 +81,7 @@ class ModelRegistry:
     def register(
         self,
         model: lgb.LGBMClassifier,
-        metrics: Dict[str, Any],
+        metrics: dict[str, Any],
         notes: str = "",
     ) -> str:
         """
@@ -206,11 +206,11 @@ class ModelRegistry:
 
     # ---- 一覧・情報表示 ----
 
-    def list_versions(self) -> List[Dict[str, Any]]:
+    def list_versions(self) -> list[dict[str, Any]]:
         """登録済みバージョン一覧を返す"""
         return self._registry.get("versions", [])
 
-    def get_production_version(self) -> Optional[str]:
+    def get_production_version(self) -> str | None:
         """現在の本番バージョン文字列を返す"""
         return self._registry.get("production")
 
@@ -244,9 +244,7 @@ class ModelRegistry:
             削除したファイル数
         """
         versions = self.list_versions()
-        production = self.get_production_version()
 
-        # 本番以外を古い順に並べる
         non_prod = [v for v in versions if not v.get("is_production")]
         to_delete = non_prod[:-keep] if len(non_prod) > keep else []
 

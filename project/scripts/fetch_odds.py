@@ -22,7 +22,6 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
-from typing import Dict, Optional
 
 import requests
 
@@ -66,7 +65,7 @@ _odds_cb = CircuitBreaker(
     jitter=True,
     exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
 )
-def _get_with_retry(url: str, params: Dict) -> requests.Response:
+def _get_with_retry(url: str, params: dict) -> requests.Response:
     """
     タイムアウト・接続エラー時にリトライする内部 GET ヘルパー。
     HTTPError (例: 404) はリトライしない。
@@ -76,7 +75,7 @@ def _get_with_retry(url: str, params: Dict) -> requests.Response:
     return resp
 
 
-def _fetch_html(url: str, params: Dict) -> Optional[str]:
+def _fetch_html(url: str, params: dict) -> str | None:
     """
     サーキットブレーカー経由で HTML を取得する共通ヘルパー。
 
@@ -108,7 +107,7 @@ def fetch_win_odds(
     race_date: str,
     race_no: int,
     dry_run: bool = False,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     単勝オッズ（各艇の1着配当倍率）を取得する
 
@@ -136,7 +135,7 @@ def fetch_win_odds(
     return _parse_win_odds(html)
 
 
-def _parse_win_odds(html: str) -> Dict[str, float]:
+def _parse_win_odds(html: str) -> dict[str, float]:
     """
     単勝オッズページをパースする
 
@@ -145,7 +144,7 @@ def _parse_win_odds(html: str) -> Dict[str, float]:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "lxml")
-    odds: Dict[str, float] = {}
+    odds: dict[str, float] = {}
 
     # 仮のセレクタ（実際のHTML構造に合わせて修正が必要）
     rows = soup.select("table.is-w238 tbody tr")
@@ -168,7 +167,7 @@ def fetch_trifecta_odds(
     race_date: str,
     race_no: int,
     dry_run: bool = False,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     三連単オッズを取得する（120通り）
 
@@ -198,7 +197,7 @@ def fetch_trifecta_odds(
     return _parse_trifecta_odds(html)
 
 
-def _parse_trifecta_odds(html: str) -> Dict[str, float]:
+def _parse_trifecta_odds(html: str) -> dict[str, float]:
     """
     三連単オッズページをパースする
 
@@ -207,13 +206,13 @@ def _parse_trifecta_odds(html: str) -> Dict[str, float]:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(html, "lxml")
-    odds: Dict[str, float] = {}
+    odds: dict[str, float] = {}
 
     # 仮のセレクタ
     cells = soup.select("td.oddsPoint")
     combos = soup.select("td.combi")
 
-    for combo_cell, odds_cell in zip(combos, cells):
+    for combo_cell, odds_cell in zip(combos, cells, strict=False):
         try:
             combo = combo_cell.get_text(strip=True).replace("=", "-")
             val_str = odds_cell.get_text(strip=True)
@@ -230,7 +229,7 @@ def _parse_trifecta_odds(html: str) -> Dict[str, float]:
 # ============================================================
 
 def save_odds(
-    odds_data: Dict,
+    odds_data: dict,
     jyo_code: str,
     race_date: str,
     race_no: int,
@@ -258,7 +257,7 @@ def save_odds(
     return path
 
 
-def load_odds(jyo_code: str, race_date: str, race_no: int) -> Optional[Dict]:
+def load_odds(jyo_code: str, race_date: str, race_no: int) -> dict | None:
     """
     保存済みオッズを読み込む
 
@@ -283,11 +282,11 @@ def load_odds(jyo_code: str, race_date: str, race_no: int) -> Optional[Dict]:
 # ============================================================
 
 def predict_with_odds(
-    race_data: Dict,
-    win_odds: Dict[str, float],
+    race_data: dict,
+    win_odds: dict[str, float],
     api_url: str = "http://localhost:8000/api/v1/predict",
     api_key: str = "",
-) -> Optional[Dict]:
+) -> dict | None:
     """
     オッズ情報を付加してAPIに予測を依頼する
 

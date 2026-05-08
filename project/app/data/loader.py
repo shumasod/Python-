@@ -3,7 +3,6 @@
 CSV・JSON形式の学習データ読み込みと基本的な検証を担当する
 """
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 
@@ -17,7 +16,7 @@ DATA_DIR = Path("data")
 
 
 def load_training_data(
-    file_path: Optional[str] = None,
+    file_path: str | None = None,
     use_sample: bool = False,
 ) -> pd.DataFrame:
     """
@@ -61,7 +60,7 @@ def load_training_data(
     return preprocess_dataframe(df)
 
 
-def save_training_data(df: pd.DataFrame, file_path: Optional[str] = None) -> None:
+def save_training_data(df: pd.DataFrame, file_path: str | None = None) -> None:
     """
     DataFrameをCSVに保存する
 

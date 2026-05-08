@@ -15,9 +15,9 @@
 import argparse
 import json
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -39,8 +39,8 @@ ALL_JYO_CODES = [f"{i:02d}" for i in range(1, 25)]
 def build_sample_race_data(
     jyo_code: str,
     race_no: int,
-    win_odds: Optional[Dict[str, float]] = None,
-) -> Dict[str, Any]:
+    win_odds: dict[str, float] | None = None,
+) -> dict[str, Any]:
     """
     実データがない場合のサンプルレース情報を組み立てる。
     win_odds があればそのオッズを埋め込む。
@@ -61,7 +61,7 @@ def build_sample_race_data(
             "recent_3_avg":    float(rng.uniform(1.5, 5.5)),
         })
 
-    race: Dict[str, Any] = {
+    race: dict[str, Any] = {
         "boats":   boats,
         "weather": {
             "condition":  "晴",
@@ -90,7 +90,7 @@ def run_race_prediction(
     race_date: str,
     race_no: int,
     dry_run: bool = False,
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     1レースの予測を実行し、結果dictを返す。
     失敗した場合は None を返す（パイプライン全体は止めない）。
@@ -98,7 +98,7 @@ def run_race_prediction(
     race_id = f"{race_date}_{jyo_code}_R{race_no:02d}"
 
     # オッズ取得
-    win_odds: Optional[Dict[str, float]] = None
+    win_odds: dict[str, float] | None = None
     if not dry_run:
         try:
             from scripts.fetch_odds import fetch_win_odds
@@ -125,7 +125,7 @@ def run_race_prediction(
         "jyo_code":         jyo_code,
         "race_date":        race_date,
         "race_no":          race_no,
-        "predicted_at":     datetime.now(timezone.utc).isoformat(),
+        "predicted_at":     datetime.now(UTC).isoformat(),
         "win_probabilities": result["win_probabilities"],
         "top1_boat":        int(result["win_probabilities"].index(
                                 max(result["win_probabilities"]))) + 1,
@@ -140,7 +140,7 @@ def run_race_prediction(
 # 予測ログ保存
 # ============================================================
 
-def save_prediction_log(log: Dict[str, Any]) -> Path:
+def save_prediction_log(log: dict[str, Any]) -> Path:
     """予測ログを JSON ファイルに保存する。ファイルパスを返す。"""
     PREDICTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
     path = PREDICTION_LOG_DIR / f"{log['race_id']}.json"
@@ -154,8 +154,8 @@ def save_prediction_log(log: Dict[str, Any]) -> Path:
 # ============================================================
 
 def build_daily_summary(
-    results: List[Dict[str, Any]],
-    jyo_codes: List[str],
+    results: list[dict[str, Any]],
+    jyo_codes: list[str],
     race_date: str,
 ) -> str:
     """当日の全予測をまとめた通知メッセージを組み立てる。"""
@@ -223,7 +223,7 @@ def main() -> None:
     args = parse_args()
     logger.info(f"=== 日次予測パイプライン開始: {args.date} 場={args.jyo} ===")
 
-    all_results: List[Optional[Dict[str, Any]]] = []
+    all_results: list[dict[str, Any] | None] = []
 
     for jyo_code in args.jyo:
         for race_no in args.races:

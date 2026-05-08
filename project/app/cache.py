@@ -18,7 +18,7 @@ Redis 予測キャッシュモジュール
 import hashlib
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 from app.utils.logger import get_logger
 
@@ -41,10 +41,10 @@ async def get_redis():
 
     try:
         import redis.asyncio as aioredis
-    except ImportError:  # pragma: no cover
+    except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "redis が未インストールです。pip install 'redis[asyncio]' を実行してください。"
-        )
+        ) from exc
 
     _redis_client = aioredis.from_url(
         _REDIS_URL,
@@ -66,7 +66,7 @@ async def close_redis() -> None:
         logger.info("Redis 接続をクローズしました")
 
 
-def _make_cache_key(race_data: Dict[str, Any], race_id: Optional[str] = None) -> str:
+def _make_cache_key(race_data: dict[str, Any], race_id: str | None = None) -> str:
     """
     キャッシュキーを生成する
 
@@ -77,21 +77,16 @@ def _make_cache_key(race_data: Dict[str, Any], race_id: Optional[str] = None) ->
     Returns:
         Redis キー文字列
     """
-    if race_id:
-        # race_id をそのままキーに使う（人間が読めて管理しやすい）
-        raw = race_id
-    else:
-        # リクエストボディ全体をハッシュ化（boats/weather の内容が同じなら同じキー）
-        raw = json.dumps(race_data, sort_keys=True, ensure_ascii=False)
+    raw = race_id or json.dumps(race_data, sort_keys=True, ensure_ascii=False)
 
     key_hash = hashlib.md5(raw.encode()).hexdigest()
     return f"{_KEY_PREFIX}{key_hash}"
 
 
 async def get_cached_prediction(
-    race_data: Dict[str, Any],
-    race_id: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    race_data: dict[str, Any],
+    race_id: str | None = None,
+) -> dict[str, Any] | None:
     """
     キャッシュから予測結果を取得する
 
@@ -124,10 +119,10 @@ async def get_cached_prediction(
 
 
 async def set_cached_prediction(
-    race_data: Dict[str, Any],
-    result: Dict[str, Any],
-    race_id: Optional[str] = None,
-    ttl: Optional[int] = None,
+    race_data: dict[str, Any],
+    result: dict[str, Any],
+    race_id: str | None = None,
+    ttl: int | None = None,
 ) -> bool:
     """
     予測結果をキャッシュに保存する
@@ -182,7 +177,7 @@ async def invalidate_cache(race_id: str) -> bool:
         return False
 
 
-async def get_cache_stats() -> Dict[str, Any]:
+async def get_cache_stats() -> dict[str, Any]:
     """
     キャッシュ統計情報を取得する
 

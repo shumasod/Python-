@@ -137,7 +137,7 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
         storage_type = StorageType(request.storage_type)
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(e),
         )
 
@@ -620,13 +620,16 @@ async def notify_slack(
 
     環境変数 SLACK_WEBHOOK_URL が設定されている必要があります
     """
-    if not notifier.is_configured:
-        raise HTTPException(
-            status_code=400,
-            detail="SLACK_WEBHOOK_URL が設定されていません",
-        )
-
     instance = get_instance_or_404(instance_id)
+
+    if not notifier.is_configured:
+        return {
+            "instance_id": instance_id,
+            "skipped": True,
+            "reason": "SLACK_WEBHOOK_URL が設定されていません",
+            "notifications_sent": [],
+            "total": 0,
+        }
     metrics = get_metrics_or_404(instance_id)
 
     breakdown, _ = cost_analyzer.calculate_monthly_cost(instance, data_transfer_gb=data_transfer_gb)

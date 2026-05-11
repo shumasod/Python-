@@ -1,0 +1,42 @@
+# ============================================================
+# MySQL バックアップ Cron 設定例
+#
+# 設置方法:
+#   sudo crontab -e -u mysql      # mysql ユーザーとして実行する場合
+#   または
+#   crontab -e                    # 現在のユーザーとして実行
+#
+# 以下の行をコピーして crontab に貼り付けてください。
+# /path/to は実際のスクリプトパスに変更してください。
+# ============================================================
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""   # エラーをメール送信する場合はアドレスを設定
+
+# ─── フルバックアップ ────────────────────────────────────────────
+# 毎日 02:00 にフルバックアップ + binlog 差分を取得
+0 2 * * * /path/to/mysql_backup/backup.sh >> /var/log/mysql_backup/cron.log 2>&1
+
+# 週1回 (日曜 01:00) に全DB フルバックアップのみ
+# 0 1 * * 0 /path/to/mysql_backup/backup.sh --no-binlog >> /var/log/mysql_backup/cron.log 2>&1
+
+# ─── binlog 差分バックアップ ─────────────────────────────────────
+# 15分ごとに binlog 差分を取得 (フルバックアップの間を埋める)
+*/15 * * * * /path/to/mysql_backup/binlog_backup.sh >> /var/log/mysql_backup/binlog_cron.log 2>&1
+
+# 5分ごとの場合 (RPO=5分を達成したい場合)
+# */5 * * * * /path/to/mysql_backup/binlog_backup.sh >> /var/log/mysql_backup/binlog_cron.log 2>&1
+
+# ─── ログローテーション ──────────────────────────────────────────
+# /etc/logrotate.d/mysql_backup に以下を配置することを推奨:
+#
+# /var/log/mysql_backup/*.log {
+#     daily
+#     rotate 30
+#     compress
+#     delaycompress
+#     missingok
+#     notifempty
+#     copytruncate
+# }

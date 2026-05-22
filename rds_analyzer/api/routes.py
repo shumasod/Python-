@@ -27,16 +27,22 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from .schemas import (
     AnalysisResponse,
     CostSummaryResponse,
+    CoveringIndexRecommendationResponse,
+    ExistingIndexRequest,
     HealthCheckResponse,
+    IndexAnalysisApiRequest,
+    IndexAnalysisResponse,
     InstanceSummaryItem,
     MetricsInputRequest,
     PerformanceSummaryResponse,
+    QueryPatternRequest,
     RDSInstanceRequest,
     RDSSummaryResponse,
     RecommendationItem,
     RecommendationResponse,
 )
 from ..analyzers.cost_analyzer import CostAnalyzer
+from ..analyzers.index_analyzer import CoveringIndexAnalyzer
 from ..analyzers.performance_analyzer import PerformanceAnalyzer
 from ..analyzers.recommendation_engine import RecommendationEngine
 from ..analyzers.ml_anomaly_detector import MLAnomalyDetector, CostForecast
@@ -45,6 +51,11 @@ from ..models.metrics import (
     MetricsHistory,
     MetricsStatistics,
     PerformanceAnalysisResult,
+)
+from ..models.index import (
+    ExistingIndex,
+    IndexAnalysisRequest,
+    QueryPattern,
 )
 from ..models.rds import EngineType, RDSInstance, StorageType
 from ..notifications.slack_notifier import SlackNotifier
@@ -599,6 +610,78 @@ async def generate_report(
         "generated_at": datetime.utcnow().isoformat(),
         "markdown": markdown,
     }
+
+
+@router.post(
+    "/rds/{instance_id}/index-analysis",
+    response_model=IndexAnalysisResponse,
+    tags=["analysis"],
+    summary="カバリングインデックス分析",
+)
+async def analyze_covering_indexes(
+    instance_id: str,
+    body: IndexAnalysisApiRequest,
+) -> IndexAnalysisResponse:
+    """
+    クエリパターンと既存インデックスを分析してカバリングインデックスを推奨する
+
+    **入力:**
+    - `queries`: 分析対象クエリパターン（WHERE/ORDER BY/SELECT カラム、実行統計）
+    - `existing_indexes`: 既存インデックス一覧（省略可）
+    - `engine`: DBエンジン（省略時はインスタンスのエンジンを使用）
+
+    **出力:**
+    - 既存インデックスでカバーされていないクエリへのカバリングインデックス推奨
+    - MySQL/MariaDB 用と PostgreSQL 用の両方の CREATE INDEX 文を生成
+    - `rows_examined / rows_returned` 比率に基づいた優先度付け
+
+    **カバリングインデックスの効果:**
+    - テーブルへのランダムアクセス（Key Lookup / Heap Fetch）を排除
+    - 大幅なレイテンシ改善（比率 1000:1 の場合、最大 99% 改善）
+    """
+    instance = get_instance_or_404(instance_id)
+    engine_str = body.engine or instance.engine.value
+
+    request = IndexAnalysisRequest(
+        instance_id=instance_id,
+        engine=engine_str,
+        queries=[
+            QueryPattern(**q.model_dump()) for q in body.queries
+        ],
+        existing_indexes=[
+            ExistingIndex(**i.model_dump()) for i in body.existing_indexes
+        ],
+    )
+
+    analyzer = CoveringIndexAnalyzer()
+    result = analyzer.analyze(request)
+
+    return IndexAnalysisResponse(
+        instance_id=result.instance_id,
+        analyzed_at=result.analyzed_at,
+        engine=result.engine,
+        total_queries_analyzed=result.total_queries_analyzed,
+        queries_already_covered=result.queries_already_covered,
+        queries_needing_index=result.queries_needing_index,
+        estimated_total_improvement_pct=result.estimated_total_improvement_pct,
+        recommendations=[
+            CoveringIndexRecommendationResponse(
+                recommendation_id=r.recommendation_id,
+                table_name=r.table_name,
+                priority=r.priority,
+                reason=r.reason,
+                key_columns=r.key_columns,
+                include_columns=r.include_columns,
+                estimated_scan_ratio=r.estimated_scan_ratio,
+                estimated_latency_improvement_pct=r.estimated_latency_improvement_pct,
+                estimated_daily_rows_saved=r.estimated_daily_rows_saved,
+                affected_query_count=len(r.affected_query_ids),
+                create_statement_mysql=r.create_statement_mysql,
+                create_statement_postgresql=r.create_statement_postgresql,
+            )
+            for r in result.recommendations
+        ],
+    )
 
 
 @router.post(

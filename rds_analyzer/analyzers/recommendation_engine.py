@@ -51,6 +51,7 @@ class RecommendationType(str, Enum):
     OPTIMIZE_BACKUP = "optimize_backup"            # バックアップ設定最適化
     UPGRADE_GRAVITON = "upgrade_graviton"          # Graviton インスタンスへ移行
     REDUCE_CONNECTIONS = "reduce_connections"      # コネクション削減（PgBouncer等）
+    ADD_COVERING_INDEX = "add_covering_index"      # カバリングインデックス追加
 
 
 @dataclass

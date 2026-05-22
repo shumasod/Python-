@@ -174,3 +174,87 @@ class HealthCheckResponse(BaseModel):
     status: str = "ok"
     version: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# ============================================================
+# カバリングインデックス分析
+# ============================================================
+
+class QueryPatternRequest(BaseModel):
+    """クエリパターン入力 (カバリングインデックス分析用)"""
+    query_id: str = Field(default="", description="クエリ識別子（任意）")
+    table_name: str = Field(description="対象テーブル名")
+    schema_name: str = Field(default="public", description="スキーマ名 (PostgreSQL)")
+
+    filter_columns: list[str] = Field(
+        default_factory=list,
+        description="WHERE/JOIN 条件カラム (インデックスキー候補)",
+    )
+    sort_columns: list[str] = Field(
+        default_factory=list, description="ORDER BY カラム"
+    )
+    group_columns: list[str] = Field(
+        default_factory=list, description="GROUP BY カラム"
+    )
+    select_columns: list[str] = Field(
+        default_factory=list,
+        description="SELECT カラム (空 = SELECT *、カバリング判定不能)",
+    )
+
+    execution_count_per_day: float = Field(default=0, ge=0, description="1日あたり実行回数")
+    avg_rows_examined: float = Field(default=0, ge=0, description="平均スキャン行数")
+    avg_rows_returned: float = Field(default=1, ge=1, description="平均返却行数")
+    avg_latency_ms: float = Field(default=0, ge=0, description="平均実行時間 (ms)")
+    query_text: Optional[str] = Field(default=None, description="クエリ文字列（参考）")
+
+
+class ExistingIndexRequest(BaseModel):
+    """既存インデックス入力"""
+    index_name: str
+    table_name: str
+    key_columns: list[str] = Field(description="キーカラム (順序通り)")
+    include_columns: list[str] = Field(
+        default_factory=list, description="INCLUDE カラム (PostgreSQL 11+)"
+    )
+    is_unique: bool = False
+    index_type: str = Field(default="BTREE")
+
+
+class IndexAnalysisApiRequest(BaseModel):
+    """POST /rds/{id}/index-analysis リクエスト"""
+    engine: Optional[str] = Field(
+        default=None,
+        description="エンジン種別 (mysql/mariadb/postgresql)。省略時はインスタンスのエンジンを使用",
+    )
+    queries: list[QueryPatternRequest] = Field(description="分析対象クエリパターン一覧")
+    existing_indexes: list[ExistingIndexRequest] = Field(
+        default_factory=list, description="既存インデックス一覧"
+    )
+
+
+class CoveringIndexRecommendationResponse(BaseModel):
+    """カバリングインデックス推奨アイテム"""
+    recommendation_id: str
+    table_name: str
+    priority: str = Field(description="critical / high / medium / low")
+    reason: str
+    key_columns: list[str]
+    include_columns: list[str] = Field(description="PostgreSQL INCLUDE カラム")
+    estimated_scan_ratio: float = Field(description="rows_examined / rows_returned 比率")
+    estimated_latency_improvement_pct: float
+    estimated_daily_rows_saved: float
+    affected_query_count: int
+    create_statement_mysql: str
+    create_statement_postgresql: str
+
+
+class IndexAnalysisResponse(BaseModel):
+    """POST /rds/{id}/index-analysis レスポンス"""
+    instance_id: str
+    analyzed_at: datetime
+    engine: str
+    total_queries_analyzed: int
+    queries_already_covered: int
+    queries_needing_index: int
+    estimated_total_improvement_pct: float
+    recommendations: list[CoveringIndexRecommendationResponse]

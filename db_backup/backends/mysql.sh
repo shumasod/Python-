@@ -222,6 +222,107 @@ db_restore_incremental() {
     log_info "binlog 適用完了"
 }
 
+# ─── インデックスヘルスチェック ──────────────────────────────
+
+db_check_slow_queries() {
+    echo "=== フルスキャン / 非効率クエリ TOP ${TOP_N:-20} ==="
+    echo "(スキャン比率 rows_examined / rows_sent >= ${SCAN_RATIO_THRESHOLD:-10})"
+    echo ""
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        echo "[DRY-RUN] performance_schema.events_statements_summary_by_digest を参照"
+        return 0
+    fi
+
+    # performance_schema が有効かチェック
+    # shellcheck disable=SC2046
+    local ps_enabled
+    ps_enabled=$(mysql $(mysql_opts) -N -e \
+        "SELECT @@performance_schema" 2>/dev/null || echo "0")
+    if [[ "${ps_enabled}" != "1" ]]; then
+        echo "  ⚠ performance_schema が無効です。my.cnf で performance_schema=ON を設定してください。"
+        return 0
+    fi
+
+    # shellcheck disable=SC2046
+    mysql $(mysql_opts) --table -e "
+SELECT
+    SUBSTR(DIGEST_TEXT, 1, 80)                         AS query_pattern,
+    COUNT_STAR                                         AS exec_count,
+    ROUND(ROWS_EXAMINED_AVG / NULLIF(ROWS_SENT_AVG, 0), 0) AS scan_ratio,
+    ROUND(ROWS_EXAMINED_AVG, 0)                        AS avg_rows_examined,
+    ROUND(ROWS_SENT_AVG, 0)                            AS avg_rows_returned,
+    ROUND(AVG_TIMER_WAIT / 1e9, 2)                     AS avg_latency_ms,
+    SCHEMA_NAME                                        AS db_name
+FROM performance_schema.events_statements_summary_by_digest
+WHERE ROWS_EXAMINED_AVG / NULLIF(ROWS_SENT_AVG, 0) >= ${SCAN_RATIO_THRESHOLD:-10}
+  AND COUNT_STAR >= 5
+  AND SCHEMA_NAME IS NOT NULL
+  AND SCHEMA_NAME NOT IN ('performance_schema', 'information_schema', 'mysql', 'sys')
+ORDER BY scan_ratio DESC, COUNT_STAR DESC
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ クエリ取得失敗 (権限不足の可能性)"
+}
+
+db_check_unused_indexes() {
+    echo "=== 未使用インデックス ==="
+    echo "(サーバー起動後に一度も使われていないインデックス)"
+    echo ""
+
+    [[ "${DRY_RUN:-false}" == "true" ]] && {
+        echo "[DRY-RUN] performance_schema.table_io_waits_summary_by_index_usage を参照"
+        return 0
+    }
+
+    # shellcheck disable=SC2046
+    mysql $(mysql_opts) --table -e "
+SELECT
+    OBJECT_SCHEMA  AS db_name,
+    OBJECT_NAME    AS table_name,
+    INDEX_NAME     AS index_name,
+    COUNT_FETCH    AS fetch_count
+FROM performance_schema.table_io_waits_summary_by_index_usage
+WHERE INDEX_NAME IS NOT NULL
+  AND INDEX_NAME != 'PRIMARY'
+  AND COUNT_FETCH = 0
+  AND OBJECT_SCHEMA NOT IN ('performance_schema', 'information_schema', 'mysql', 'sys')
+ORDER BY OBJECT_SCHEMA, OBJECT_NAME, INDEX_NAME
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ 未使用インデックス取得失敗"
+}
+
+db_check_duplicate_indexes() {
+    echo "=== 重複インデックス候補 ==="
+    echo "(同じテーブルに同一先頭カラムを持つインデックスが存在する場合)"
+    echo ""
+
+    [[ "${DRY_RUN:-false}" == "true" ]] && {
+        echo "[DRY-RUN] information_schema.STATISTICS を参照"
+        return 0
+    }
+
+    # shellcheck disable=SC2046
+    mysql $(mysql_opts) --table -e "
+SELECT
+    s1.TABLE_SCHEMA  AS db_name,
+    s1.TABLE_NAME    AS table_name,
+    s1.INDEX_NAME    AS index_1,
+    s2.INDEX_NAME    AS index_2,
+    s1.COLUMN_NAME   AS first_column
+FROM information_schema.STATISTICS s1
+JOIN information_schema.STATISTICS s2
+  ON  s1.TABLE_SCHEMA = s2.TABLE_SCHEMA
+  AND s1.TABLE_NAME   = s2.TABLE_NAME
+  AND s1.COLUMN_NAME  = s2.COLUMN_NAME
+  AND s1.SEQ_IN_INDEX = 1
+  AND s2.SEQ_IN_INDEX = 1
+  AND s1.INDEX_NAME  <  s2.INDEX_NAME
+WHERE s1.TABLE_SCHEMA NOT IN ('performance_schema', 'information_schema', 'mysql', 'sys')
+ORDER BY s1.TABLE_SCHEMA, s1.TABLE_NAME
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ 重複インデックス取得失敗"
+}
+
 # ─── セットアップ案内 ─────────────────────────────────────────
 db_setup_instructions() {
     cat <<'SQL'

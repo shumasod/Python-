@@ -96,6 +96,84 @@ class TestReportGeneration:
         assert "自動生成" in md
 
 
+class TestIndexSection:
+    """ReportGenerator のカバリングインデックスセクションテスト"""
+
+    @pytest.fixture
+    def index_recs(self):
+        from rds_analyzer.models.index import CoveringIndexRecommendation
+        return [
+            CoveringIndexRecommendation(
+                recommendation_id="idx_001",
+                table_name="orders",
+                key_columns=["status", "created_at"],
+                include_columns=["id", "amount"],
+                priority="high",
+                reason="`orders` で平均 1000:1 のスキャンが発生",
+                affected_query_ids=["q1", "q2"],
+                estimated_scan_ratio=1000.0,
+                estimated_latency_improvement_pct=90.0,
+                estimated_daily_rows_saved=500000.0,
+                create_statement_mysql="CREATE INDEX `idx_orders_covering_001` ON `orders` (`status`, `created_at`, `id`, `amount`);",
+                create_statement_postgresql='CREATE INDEX "idx_orders_covering_001" ON "orders" ("status", "created_at") INCLUDE ("id", "amount");',
+            )
+        ]
+
+    def test_index_section_included_when_provided(
+        self, generator, instance, analysis_data, index_recs
+    ):
+        breakdown, cost_score, perf_result, recs = analysis_data
+        md = generator.generate(
+            instance, breakdown, cost_score, perf_result, recs,
+            index_recommendations=index_recs,
+        )
+        assert "カバリングインデックス推奨" in md
+        assert "orders" in md
+
+    def test_index_section_not_included_when_empty(
+        self, generator, instance, analysis_data
+    ):
+        breakdown, cost_score, perf_result, recs = analysis_data
+        md = generator.generate(
+            instance, breakdown, cost_score, perf_result, recs,
+            index_recommendations=[],
+        )
+        assert "カバリングインデックス推奨" not in md
+
+    def test_index_section_shows_create_statements(
+        self, generator, instance, analysis_data, index_recs
+    ):
+        breakdown, cost_score, perf_result, recs = analysis_data
+        md = generator.generate(
+            instance, breakdown, cost_score, perf_result, recs,
+            index_recommendations=index_recs,
+        )
+        assert "CREATE INDEX" in md
+        assert "INCLUDE" in md  # PostgreSQL INCLUDE 句
+
+    def test_index_section_shows_improvement_pct(
+        self, generator, instance, analysis_data, index_recs
+    ):
+        breakdown, cost_score, perf_result, recs = analysis_data
+        md = generator.generate(
+            instance, breakdown, cost_score, perf_result, recs,
+            index_recommendations=index_recs,
+        )
+        assert "90%" in md or "90" in md
+
+    def test_score_emoji_low_score(self, generator):
+        """スコア < 60 の場合に 🔴 を返す"""
+        assert generator._score_emoji(30) == "🔴"
+        assert generator._score_emoji(59) == "🔴"
+
+    def test_score_emoji_medium_score(self, generator):
+        assert generator._score_emoji(60) == "⚠️"
+        assert generator._score_emoji(79) == "⚠️"
+
+    def test_score_emoji_high_score(self, generator):
+        assert generator._score_emoji(80) == "✅"
+
+
 class TestReportSave:
 
     def test_save_creates_file(self, generator, tmp_path, instance, analysis_data):

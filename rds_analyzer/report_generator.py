@@ -19,12 +19,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .analyzers.recommendation_engine import Recommendation, RecommendationPriority
 from .models.costs import CostBreakdown, CostEfficiencyScore
 from .models.metrics import PerformanceAnalysisResult, PerformanceStatus
 from .models.rds import RDSInstance
+
+if TYPE_CHECKING:
+    from .models.index import CoveringIndexRecommendation
 
 # ステータス絵文字マップ
 STATUS_EMOJI = {
@@ -58,6 +61,7 @@ class ReportGenerator:
         perf_result: PerformanceAnalysisResult,
         recommendations: list[Recommendation],
         report_period: str = "過去 24 時間",
+        index_recommendations: Optional[list[CoveringIndexRecommendation]] = None,
     ) -> str:
         """
         Markdown レポートを生成する
@@ -69,6 +73,7 @@ class ReportGenerator:
             perf_result: パフォーマンス分析結果
             recommendations: 改善提案リスト
             report_period: 分析対象期間の説明文
+            index_recommendations: カバリングインデックス推奨リスト（省略可）
 
         Returns:
             Markdown 形式のレポート文字列
@@ -79,8 +84,10 @@ class ReportGenerator:
             self._cost_section(instance, cost_breakdown, cost_score),
             self._performance_section(perf_result),
             self._recommendations_section(recommendations),
-            self._footer(),
         ]
+        if index_recommendations:
+            sections.append(self._index_section(index_recommendations))
+        sections.append(self._footer())
         return "\n\n".join(sections)
 
     def save(self, content: str, path: str | Path) -> None:
@@ -251,6 +258,48 @@ class ReportGenerator:
 
 > 推定節約合計: **${total_savings:.1f}/月**（推定値）
 {recs_md}"""
+
+    def _index_section(self, recs: list[CoveringIndexRecommendation]) -> str:
+        """カバリングインデックス推奨セクションを生成する"""
+        _PRIORITY_ICON = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "⚪"}
+
+        total_daily_saved = sum(r.estimated_daily_rows_saved for r in recs)
+        avg_improvement = (
+            sum(r.estimated_latency_improvement_pct for r in recs) / len(recs)
+            if recs else 0.0
+        )
+
+        content = f"""## カバリングインデックス推奨 ({len(recs)} 件)
+
+> 推定平均改善率: **{avg_improvement:.0f}%** / 削減予定スキャン行数: **{total_daily_saved:,.0f} 行/日**
+"""
+
+        for i, rec in enumerate(recs, 1):
+            icon = _PRIORITY_ICON.get(rec.priority, "⚪")
+            affected = len(rec.affected_query_ids)
+            content += f"""
+### {i}. {icon} `{rec.table_name}` テーブル
+
+- **優先度**: {rec.priority.upper()} | **影響クエリ数**: {affected} 件
+- **スキャン比率**: {rec.estimated_scan_ratio:.0f}:1 → 推定改善: {rec.estimated_latency_improvement_pct:.0f}%
+- **削減スキャン行数**: {rec.estimated_daily_rows_saved:,.0f} 行/日
+- **理由**: {rec.reason}
+
+**インデックスキー**: `({", ".join(rec.key_columns)})`"""
+            if rec.include_columns:
+                content += f""" / **INCLUDE**: `({", ".join(rec.include_columns)})`"""
+            content += f"""
+
+```sql
+-- MySQL / MariaDB
+{rec.create_statement_mysql}
+
+-- PostgreSQL
+{rec.create_statement_postgresql}
+```
+"""
+
+        return content.rstrip()
 
     def _footer(self) -> str:
         return """---

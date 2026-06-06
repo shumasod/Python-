@@ -268,6 +268,244 @@ class TestReport:
         assert resp.status_code == 404
 
 
+class TestIndexAnalysis:
+    """POST /rds/{id}/index-analysis エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_basic_recommendation_returned(self, client):
+        """フルスキャンクエリに対してカバリングインデックスが推奨される"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "query_id": "q1",
+                        "table_name": "orders",
+                        "filter_columns": ["status"],
+                        "select_columns": ["id", "amount"],
+                        "avg_rows_examined": 10000,
+                        "avg_rows_returned": 10,
+                        "execution_count_per_day": 100,
+                        "avg_latency_ms": 80.0,
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_queries_analyzed"] == 1
+        assert data["queries_needing_index"] == 1
+        assert len(data["recommendations"]) == 1
+
+        rec = data["recommendations"][0]
+        assert rec["table_name"] == "orders"
+        assert "status" in rec["key_columns"]
+        assert rec["priority"] in ("critical", "high", "medium", "low")
+        assert rec["estimated_scan_ratio"] == 1000.0
+        assert rec["estimated_latency_improvement_pct"] > 0
+
+    def test_mysql_create_statement_has_all_columns(self, client):
+        """MySQL用 CREATE INDEX 文にキー列と SELECT 列が含まれる"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "table_name": "orders",
+                        "filter_columns": ["user_id"],
+                        "sort_columns": ["created_at"],
+                        "select_columns": ["total", "status"],
+                        "avg_rows_examined": 5000,
+                        "avg_rows_returned": 5,
+                    }
+                ]
+            },
+        )
+        stmt = resp.json()["recommendations"][0]["create_statement_mysql"]
+        assert "CREATE INDEX" in stmt
+        assert "`orders`" in stmt
+        assert "`user_id`" in stmt
+
+    def test_postgresql_include_clause_generated(self, client):
+        """PostgreSQL用 CREATE INDEX 文に INCLUDE 句が含まれる"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "engine": "postgresql",
+                "queries": [
+                    {
+                        "table_name": "users",
+                        "filter_columns": ["email"],
+                        "select_columns": ["name", "created_at"],
+                        "avg_rows_examined": 10000,
+                        "avg_rows_returned": 1,
+                        "execution_count_per_day": 500,
+                    }
+                ],
+            },
+        )
+        stmt = resp.json()["recommendations"][0]["create_statement_postgresql"]
+        assert "CREATE INDEX" in stmt
+        assert "INCLUDE" in stmt
+        assert '"name"' in stmt or '"created_at"' in stmt
+
+    def test_already_covered_query_not_recommended(self, client):
+        """既存インデックスでカバー済みのクエリは推奨しない"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "table_name": "products",
+                        "filter_columns": ["category_id"],
+                        "select_columns": ["name", "price"],
+                        "avg_rows_examined": 500,
+                        "avg_rows_returned": 5,
+                    }
+                ],
+                "existing_indexes": [
+                    {
+                        "index_name": "idx_products_covering",
+                        "table_name": "products",
+                        "key_columns": ["category_id", "name", "price"],
+                    }
+                ],
+            },
+        )
+        data = resp.json()
+        assert data["queries_already_covered"] == 1
+        assert data["queries_needing_index"] == 0
+        assert data["recommendations"] == []
+
+    def test_no_where_clause_no_recommendation(self, client):
+        """WHERE 句なしクエリは推奨しない"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "table_name": "logs",
+                        "filter_columns": [],
+                        "select_columns": ["id", "message"],
+                        "avg_rows_examined": 1000000,
+                        "avg_rows_returned": 1000000,
+                    }
+                ]
+            },
+        )
+        assert resp.json()["recommendations"] == []
+
+    def test_engine_defaults_to_instance_engine(self, client):
+        """engine 省略時はインスタンスのエンジン (mysql) を使用"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "table_name": "t",
+                        "filter_columns": ["a"],
+                        "select_columns": ["b"],
+                        "avg_rows_examined": 10000,
+                        "avg_rows_returned": 10,
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["engine"] == "mysql"
+
+    def test_multiple_queries_multiple_tables(self, client):
+        """複数テーブルのクエリは別々に推奨される"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "query_id": "q1",
+                        "table_name": "orders",
+                        "filter_columns": ["status"],
+                        "avg_rows_examined": 1000,
+                        "avg_rows_returned": 5,
+                    },
+                    {
+                        "query_id": "q2",
+                        "table_name": "products",
+                        "filter_columns": ["category"],
+                        "avg_rows_examined": 2000,
+                        "avg_rows_returned": 10,
+                    },
+                ]
+            },
+        )
+        data = resp.json()
+        assert data["total_queries_analyzed"] == 2
+        tables = {r["table_name"] for r in data["recommendations"]}
+        assert "orders" in tables
+        assert "products" in tables
+
+    def test_affected_query_count_in_response(self, client):
+        """affected_query_count が正しく返る"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "query_id": "q1",
+                        "table_name": "orders",
+                        "filter_columns": ["user_id", "status"],
+                        "select_columns": ["id"],
+                        "avg_rows_examined": 1000,
+                        "avg_rows_returned": 5,
+                    }
+                ]
+            },
+        )
+        rec = resp.json()["recommendations"][0]
+        assert rec["affected_query_count"] >= 1
+
+    def test_not_found_returns_404(self, client):
+        """存在しないインスタンスは 404"""
+        resp = client.post(
+            "/api/v1/rds/no-such-instance/index-analysis",
+            json={"queries": []},
+        )
+        assert resp.status_code == 404
+
+    def test_empty_queries_returns_zero_recommendations(self, client):
+        """クエリなしの場合は空の推奨リスト"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={"queries": []},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_queries_analyzed"] == 0
+        assert data["recommendations"] == []
+
+    def test_response_contains_improvement_pct(self, client):
+        """estimated_total_improvement_pct がレスポンスに含まれる"""
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/index-analysis",
+            json={
+                "queries": [
+                    {
+                        "table_name": "events",
+                        "filter_columns": ["type"],
+                        "select_columns": ["payload"],
+                        "avg_rows_examined": 50000,
+                        "avg_rows_returned": 50,
+                    }
+                ]
+            },
+        )
+        data = resp.json()
+        assert "estimated_total_improvement_pct" in data
+        assert data["estimated_total_improvement_pct"] > 0
+
+
 class TestNotify:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):

@@ -2,6 +2,10 @@
 # ============================================================
 # MariaDB バックアップバックエンド
 # MySQL バックエンドを継承し、MariaDB 固有の差分を上書き
+#
+# 継承する関数 (mysql.sh から):
+#   db_incremental_backup, db_restore_full, db_restore_incremental
+#   db_check_slow_queries, db_check_unused_indexes, db_check_duplicate_indexes
 # ============================================================
 
 # MySQL バックエンドを継承

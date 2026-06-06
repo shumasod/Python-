@@ -257,6 +257,108 @@ EOF
     log_info "PostgreSQL を起動するとリカバリが開始されます"
 }
 
+# ─── インデックスヘルスチェック ──────────────────────────────
+
+db_check_slow_queries() {
+    echo "=== フルスキャン / 非効率クエリ TOP ${TOP_N:-20} ==="
+    echo "(pg_stat_statements による実行統計)"
+    echo ""
+
+    pg_env
+
+    [[ "${DRY_RUN:-false}" == "true" ]] && {
+        echo "[DRY-RUN] pg_stat_statements を参照"
+        return 0
+    }
+
+    # pg_stat_statements が有効かチェック
+    local ext_count
+    ext_count=$(psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" -Atc \
+        "SELECT count(*) FROM pg_extension WHERE extname = 'pg_stat_statements';" \
+        2>/dev/null || echo "0")
+    if [[ "${ext_count}" == "0" ]]; then
+        echo "  ⚠ pg_stat_statements が無効です。以下で有効化してください:"
+        echo "    CREATE EXTENSION pg_stat_statements;"
+        echo "    # postgresql.conf: shared_preload_libraries = 'pg_stat_statements'"
+        return 0
+    fi
+
+    psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" \
+        --pset="border=2" -c "
+SELECT
+    LEFT(query, 80)                                      AS query_pattern,
+    calls                                                AS exec_count,
+    ROUND((total_exec_time / calls)::numeric, 2)         AS avg_latency_ms,
+    ROUND((rows / NULLIF(calls, 0))::numeric, 0)         AS avg_rows_returned,
+    ROUND((shared_blks_read / NULLIF(calls, 0))::numeric, 0) AS avg_blks_read,
+    dbid::text                                           AS db
+FROM pg_stat_statements
+WHERE calls >= 5
+  AND query NOT LIKE '%pg_%'
+  AND query NOT LIKE '%information_schema%'
+ORDER BY avg_latency_ms DESC
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ クエリ取得失敗 (権限不足の可能性)"
+}
+
+db_check_unused_indexes() {
+    echo "=== 未使用インデックス ==="
+    echo "(pg_stat_user_indexes による参照ゼロのインデックス)"
+    echo ""
+
+    pg_env
+    [[ "${DRY_RUN:-false}" == "true" ]] && {
+        echo "[DRY-RUN] pg_stat_user_indexes を参照"
+        return 0
+    }
+
+    psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" \
+        --pset="border=2" -c "
+SELECT
+    schemaname                   AS schema_name,
+    relname                      AS table_name,
+    indexrelname                 AS index_name,
+    idx_scan                     AS scan_count,
+    pg_size_pretty(pg_relation_size(indexrelid)) AS index_size
+FROM pg_stat_user_indexes
+WHERE idx_scan = 0
+  AND schemaname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY pg_relation_size(indexrelid) DESC
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ 未使用インデックス取得失敗"
+}
+
+db_check_duplicate_indexes() {
+    echo "=== 重複インデックス候補 ==="
+    echo "(pg_indexes による同一テーブルの類似インデックス)"
+    echo ""
+
+    pg_env
+    [[ "${DRY_RUN:-false}" == "true" ]] && {
+        echo "[DRY-RUN] pg_indexes を参照"
+        return 0
+    }
+
+    psql -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" \
+        --pset="border=2" -c "
+SELECT
+    ix1.schemaname    AS schema_name,
+    ix1.tablename     AS table_name,
+    ix1.indexname     AS index_1,
+    ix2.indexname     AS index_2,
+    ix1.indexdef      AS index_1_def
+FROM pg_indexes ix1
+JOIN pg_indexes ix2
+  ON  ix1.tablename  = ix2.tablename
+  AND ix1.schemaname = ix2.schemaname
+  AND ix1.indexname  < ix2.indexname
+  AND ix1.indexdef   LIKE ix2.indexdef || '%'
+WHERE ix1.schemaname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY ix1.tablename
+LIMIT ${TOP_N:-20};
+" 2>/dev/null || echo "  ⚠ 重複インデックス取得失敗"
+}
+
 # ─── セットアップ案内 ─────────────────────────────────────────
 db_setup_instructions() {
     cat <<'SQL'

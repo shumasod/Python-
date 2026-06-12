@@ -1,0 +1,145 @@
+{
+  "comment": "サンプルデータ - 開発・テスト用。実際のAWSリソースではありません。",
+  "instances": [
+    {
+      "scenario": "高負荷MySQL - スケールアップ推奨ケース",
+      "instance": {
+        "instance_id": "prod-mysql-001",
+        "engine": "mysql",
+        "engine_version": "8.0.35",
+        "instance_class": "db.m5.large",
+        "region": "ap-northeast-1",
+        "multi_az": false,
+        "storage_type": "gp2",
+        "allocated_storage_gb": 200,
+        "provisioned_iops": null,
+        "read_replica_count": 0,
+        "backup_retention_days": 7,
+        "snapshot_storage_gb": 250.0,
+        "tags": {"Environment": "prod", "Team": "backend"}
+      },
+      "metrics": {
+        "cpu_avg_pct": 87.5,
+        "cpu_max_pct": 98.2,
+        "cpu_p95_pct": 95.1,
+        "freeable_memory_avg_gb": 0.8,
+        "freeable_memory_min_gb": 0.3,
+        "read_iops_avg": 450.0,
+        "write_iops_avg": 280.0,
+        "read_iops_max": 580.0,
+        "write_iops_max": 390.0,
+        "read_latency_avg_ms": 8.5,
+        "write_latency_avg_ms": 12.3,
+        "connections_avg": 180.0,
+        "connections_max": 210.0,
+        "free_storage_gb": 45.0,
+        "disk_queue_depth_avg": 0.8
+      }
+    },
+    {
+      "scenario": "低負荷PostgreSQL - スケールダウン推奨ケース",
+      "instance": {
+        "instance_id": "dev-postgres-001",
+        "engine": "postgresql",
+        "engine_version": "15.4",
+        "instance_class": "db.r5.2xlarge",
+        "region": "ap-northeast-1",
+        "multi_az": false,
+        "storage_type": "gp2",
+        "allocated_storage_gb": 500,
+        "provisioned_iops": null,
+        "read_replica_count": 0,
+        "backup_retention_days": 3,
+        "snapshot_storage_gb": 100.0,
+        "tags": {"Environment": "dev", "Team": "data"}
+      },
+      "metrics": {
+        "cpu_avg_pct": 8.3,
+        "cpu_max_pct": 22.1,
+        "cpu_p95_pct": 18.7,
+        "freeable_memory_avg_gb": 48.5,
+        "freeable_memory_min_gb": 42.0,
+        "read_iops_avg": 50.0,
+        "write_iops_avg": 30.0,
+        "read_iops_max": 120.0,
+        "write_iops_max": 80.0,
+        "read_latency_avg_ms": 3.2,
+        "write_latency_avg_ms": 4.1,
+        "connections_avg": 15.0,
+        "connections_max": 28.0,
+        "free_storage_gb": 420.0,
+        "disk_queue_depth_avg": 0.1
+      }
+    },
+    {
+      "scenario": "Aurora MySQL - I/Oボトルネックケース",
+      "instance": {
+        "instance_id": "prod-aurora-mysql-01",
+        "engine": "aurora-mysql",
+        "engine_version": "8.0.mysql_aurora.3.05.0",
+        "instance_class": "db.r6g.xlarge",
+        "region": "ap-northeast-1",
+        "multi_az": true,
+        "storage_type": "gp3",
+        "allocated_storage_gb": 300,
+        "provisioned_iops": 6000,
+        "read_replica_count": 1,
+        "backup_retention_days": 14,
+        "snapshot_storage_gb": 350.0,
+        "tags": {"Environment": "prod", "Team": "platform"}
+      },
+      "metrics": {
+        "cpu_avg_pct": 55.2,
+        "cpu_max_pct": 72.8,
+        "cpu_p95_pct": 68.5,
+        "freeable_memory_avg_gb": 15.3,
+        "freeable_memory_min_gb": 10.2,
+        "read_iops_avg": 5200.0,
+        "write_iops_avg": 1800.0,
+        "read_iops_max": 6100.0,
+        "write_iops_max": 2400.0,
+        "read_latency_avg_ms": 25.5,
+        "write_latency_avg_ms": 18.2,
+        "connections_avg": 320.0,
+        "connections_max": 420.0,
+        "free_storage_gb": 85.0,
+        "disk_queue_depth_avg": 3.2
+      }
+    },
+    {
+      "scenario": "コスト最適化済み - 良好なスコアのケース",
+      "instance": {
+        "instance_id": "staging-postgres-001",
+        "engine": "postgresql",
+        "engine_version": "16.1",
+        "instance_class": "db.r6g.large",
+        "region": "ap-northeast-1",
+        "multi_az": true,
+        "storage_type": "gp3",
+        "allocated_storage_gb": 100,
+        "provisioned_iops": null,
+        "read_replica_count": 0,
+        "backup_retention_days": 7,
+        "snapshot_storage_gb": 80.0,
+        "tags": {"Environment": "staging", "Team": "backend"}
+      },
+      "metrics": {
+        "cpu_avg_pct": 42.5,
+        "cpu_max_pct": 65.3,
+        "cpu_p95_pct": 58.9,
+        "freeable_memory_avg_gb": 6.8,
+        "freeable_memory_min_gb": 5.2,
+        "read_iops_avg": 800.0,
+        "write_iops_avg": 400.0,
+        "read_iops_max": 1500.0,
+        "write_iops_max": 800.0,
+        "read_latency_avg_ms": 5.2,
+        "write_latency_avg_ms": 6.8,
+        "connections_avg": 85.0,
+        "connections_max": 120.0,
+        "free_storage_gb": 55.0,
+        "disk_queue_depth_avg": 0.3
+      }
+    }
+  ]
+}

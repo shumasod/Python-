@@ -1,0 +1,22 @@
+#!/bin/bash
+
+echo "========================================"
+echo "JRA競馬予測システム - バックエンド起動"
+echo "========================================"
+echo ""
+
+# プロジェクトルートに移動
+cd "$(dirname "$0")"
+
+# 依存関係チェック
+echo "📦 依存関係を確認中..."
+if ! python3 -c "import flask" 2>/dev/null; then
+    echo "⚠️  依存関係をインストール中..."
+    pip3 install -r Keiba/requirements.txt
+fi
+
+# サーバー起動
+echo ""
+echo "🚀 Flaskサーバーを起動中..."
+echo ""
+python3 -m Keiba.app

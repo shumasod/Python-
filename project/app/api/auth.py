@@ -45,7 +45,7 @@ def _load_api_keys() -> None:
         # デフォルトで開発用キーを生成（起動時にログ出力）
         default_key = "dev-key-" + secrets.token_hex(8)
         logger.warning(
-            f"API_KEYS 環境変数が未設定です。開発用キーを生成しました: {default_key}\n"
+            f"API_KEYS 環境変数が未設定です。開発用キーを生成しました: {default_key[:12]}...\n"
             "本番では必ず API_KEYS を設定してください。"
         )
         _VALID_KEY_HASHES.add(_hash_key(default_key))

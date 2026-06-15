@@ -27,26 +27,39 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from .schemas import (
     AnalysisResponse,
     CostSummaryResponse,
+    CoveringIndexRecommendationResponse,
+    ExistingIndexRequest,
     HealthCheckResponse,
+    IndexAnalysisApiRequest,
+    IndexAnalysisResponse,
     InstanceSummaryItem,
     MetricsInputRequest,
     PerformanceSummaryResponse,
+    QueryPatternRequest,
     RDSInstanceRequest,
     RDSSummaryResponse,
     RecommendationItem,
     RecommendationResponse,
 )
 from ..analyzers.cost_analyzer import CostAnalyzer
+from ..analyzers.index_analyzer import CoveringIndexAnalyzer
 from ..analyzers.performance_analyzer import PerformanceAnalyzer
 from ..analyzers.recommendation_engine import RecommendationEngine
+from ..analyzers.ml_anomaly_detector import MLAnomalyDetector, CostForecast
 from ..models.costs import CostBreakdown
 from ..models.metrics import (
     MetricsHistory,
     MetricsStatistics,
     PerformanceAnalysisResult,
 )
+from ..models.index import (
+    ExistingIndex,
+    IndexAnalysisRequest,
+    QueryPattern,
+)
 from ..models.rds import EngineType, RDSInstance, StorageType
-from .. import __version__
+from ..notifications.slack_notifier import SlackNotifier
+from rds_analyzer import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +70,8 @@ router = APIRouter()
 # ============================================================
 _instance_store: dict[str, RDSInstance] = {}
 _metrics_store: dict[str, MetricsHistory] = {}
+# 月次コスト履歴 {instance_id: [(YYYY-MM, cost_usd), ...]}
+_cost_history_store: dict[str, list[tuple[str, float]]] = {}
 
 
 # ============================================================
@@ -73,6 +88,14 @@ def get_performance_analyzer() -> PerformanceAnalyzer:
 
 def get_recommendation_engine() -> RecommendationEngine:
     return RecommendationEngine()
+
+
+def get_ml_detector() -> MLAnomalyDetector:
+    return MLAnomalyDetector()
+
+
+def get_slack_notifier() -> SlackNotifier:
+    return SlackNotifier()
 
 
 def get_instance_or_404(instance_id: str) -> RDSInstance:
@@ -125,7 +148,7 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
         storage_type = StorageType(request.storage_type)
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(e),
         )
 
@@ -471,3 +494,242 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
         return "複数のパフォーマンス問題を検知しています"
     else:
         return "重大なパフォーマンス問題を検知しています。即時対応を推奨します"
+
+
+# ============================================================
+# 拡張エンドポイント（ML 異常検知 / コスト予測 / レポート / Slack）
+# ============================================================
+
+@router.post(
+    "/rds/{instance_id}/cost-history",
+    response_model=dict,
+    tags=["analysis"],
+    summary="月次コスト履歴を登録（予測用）",
+)
+async def add_cost_history(
+    instance_id: str,
+    history: list[dict],
+) -> dict:
+    """
+    月次コスト履歴を登録する（コスト予測 API で使用）
+
+    body: [{"month": "2024-01", "cost_usd": 450.0}, ...]
+    """
+    get_instance_or_404(instance_id)
+    entries = [(item["month"], float(item["cost_usd"])) for item in history]
+    _cost_history_store[instance_id] = sorted(entries, key=lambda x: x[0])
+    return {"message": f"{len(entries)} 件の履歴を登録しました"}
+
+
+@router.get(
+    "/rds/{instance_id}/forecast",
+    response_model=dict,
+    tags=["analysis"],
+    summary="コスト予測（ML）",
+)
+async def get_cost_forecast(
+    instance_id: str,
+    months: int = Query(default=3, ge=1, le=12),
+    ml_detector: MLAnomalyDetector = Depends(get_ml_detector),
+) -> dict:
+    """
+    過去の月次コスト履歴から将来コストを予測する（線形回帰ベース）
+
+    先に POST /rds/{id}/cost-history でデータを登録してください
+    """
+    get_instance_or_404(instance_id)
+    history = _cost_history_store.get(instance_id, [])
+
+    if len(history) < 3:
+        raise HTTPException(
+            status_code=400,
+            detail="予測には 3 ヶ月以上のコスト履歴が必要です",
+        )
+
+    forecasts = ml_detector.forecast_monthly_costs(history, forecast_months=months)
+    trend_info = ml_detector.calculate_cost_trend(history)
+
+    return {
+        "instance_id": instance_id,
+        "history_months": len(history),
+        "trend": trend_info,
+        "forecasts": [
+            {
+                "month": f.month,
+                "predicted_cost_usd": f.predicted_cost_usd,
+                "lower_bound_usd": f.lower_bound_usd,
+                "upper_bound_usd": f.upper_bound_usd,
+                "confidence_pct": f.confidence_pct,
+                "trend": f.trend,
+            }
+            for f in forecasts
+        ],
+    }
+
+
+@router.get(
+    "/rds/{instance_id}/report",
+    response_model=dict,
+    tags=["reports"],
+    summary="Markdown レポート生成",
+)
+async def generate_report(
+    instance_id: str,
+    data_transfer_gb: float = Query(default=0.0, ge=0),
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    """
+    インスタンスの分析結果を Markdown レポートとして返す
+    """
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance, data_transfer_gb=data_transfer_gb)
+    storage_used_gb = (
+        instance.allocated_storage_gb
+        - metrics.free_storage_bytes.avg / (1024 ** 3)
+    )
+    cost_score = cost_analyzer.calculate_efficiency_score(
+        instance=instance,
+        breakdown=breakdown,
+        avg_cpu_pct=metrics.cpu_utilization.avg,
+        avg_iops_used=metrics.avg_total_iops,
+        storage_used_gb=storage_used_gb,
+    )
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
+
+    from ..report_generator import ReportGenerator
+    gen = ReportGenerator()
+    markdown = gen.generate(instance, breakdown, cost_score, perf_result, recommendations)
+
+    return {
+        "instance_id": instance_id,
+        "generated_at": datetime.utcnow().isoformat(),
+        "markdown": markdown,
+    }
+
+
+@router.post(
+    "/rds/{instance_id}/index-analysis",
+    response_model=IndexAnalysisResponse,
+    tags=["analysis"],
+    summary="カバリングインデックス分析",
+)
+async def analyze_covering_indexes(
+    instance_id: str,
+    body: IndexAnalysisApiRequest,
+) -> IndexAnalysisResponse:
+    """
+    クエリパターンと既存インデックスを分析してカバリングインデックスを推奨する
+
+    **入力:**
+    - `queries`: 分析対象クエリパターン（WHERE/ORDER BY/SELECT カラム、実行統計）
+    - `existing_indexes`: 既存インデックス一覧（省略可）
+    - `engine`: DBエンジン（省略時はインスタンスのエンジンを使用）
+
+    **出力:**
+    - 既存インデックスでカバーされていないクエリへのカバリングインデックス推奨
+    - MySQL/MariaDB 用と PostgreSQL 用の両方の CREATE INDEX 文を生成
+    - `rows_examined / rows_returned` 比率に基づいた優先度付け
+
+    **カバリングインデックスの効果:**
+    - テーブルへのランダムアクセス（Key Lookup / Heap Fetch）を排除
+    - 大幅なレイテンシ改善（比率 1000:1 の場合、最大 99% 改善）
+    """
+    instance = get_instance_or_404(instance_id)
+    engine_str = body.engine or instance.engine.value
+
+    request = IndexAnalysisRequest(
+        instance_id=instance_id,
+        engine=engine_str,
+        queries=[
+            QueryPattern(**q.model_dump()) for q in body.queries
+        ],
+        existing_indexes=[
+            ExistingIndex(**i.model_dump()) for i in body.existing_indexes
+        ],
+    )
+
+    analyzer = CoveringIndexAnalyzer()
+    result = analyzer.analyze(request)
+
+    return IndexAnalysisResponse(
+        instance_id=result.instance_id,
+        analyzed_at=result.analyzed_at,
+        engine=result.engine,
+        total_queries_analyzed=result.total_queries_analyzed,
+        queries_already_covered=result.queries_already_covered,
+        queries_needing_index=result.queries_needing_index,
+        estimated_total_improvement_pct=result.estimated_total_improvement_pct,
+        recommendations=[
+            CoveringIndexRecommendationResponse(
+                recommendation_id=r.recommendation_id,
+                table_name=r.table_name,
+                priority=r.priority,
+                reason=r.reason,
+                key_columns=r.key_columns,
+                include_columns=r.include_columns,
+                estimated_scan_ratio=r.estimated_scan_ratio,
+                estimated_latency_improvement_pct=r.estimated_latency_improvement_pct,
+                estimated_daily_rows_saved=r.estimated_daily_rows_saved,
+                affected_query_count=len(r.affected_query_ids),
+                create_statement_mysql=r.create_statement_mysql,
+                create_statement_postgresql=r.create_statement_postgresql,
+            )
+            for r in result.recommendations
+        ],
+    )
+
+
+@router.post(
+    "/rds/{instance_id}/notify",
+    response_model=dict,
+    tags=["notifications"],
+    summary="Slack へ分析結果を通知",
+)
+async def notify_slack(
+    instance_id: str,
+    data_transfer_gb: float = Query(default=0.0, ge=0),
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+    notifier: SlackNotifier = Depends(get_slack_notifier),
+) -> dict:
+    """
+    インスタンスの分析結果を Slack に通知する
+
+    環境変数 SLACK_WEBHOOK_URL が設定されている必要があります
+    """
+    instance = get_instance_or_404(instance_id)
+
+    if not notifier.is_configured:
+        return {
+            "instance_id": instance_id,
+            "skipped": True,
+            "reason": "SLACK_WEBHOOK_URL が設定されていません",
+            "notifications_sent": [],
+            "total": 0,
+        }
+    metrics = get_metrics_or_404(instance_id)
+
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance, data_transfer_gb=data_transfer_gb)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
+    total_savings = sum(max(0, r.estimated_monthly_savings_usd) for r in recommendations)
+
+    sent = []
+    # パフォーマンスアラート
+    if notifier.notify_performance_alert(instance_id, perf_result, instance.region):
+        sent.append("performance_alert")
+    # 改善提案
+    if notifier.notify_recommendations(instance_id, recommendations, total_savings):
+        sent.append("recommendations")
+
+    return {
+        "instance_id": instance_id,
+        "notifications_sent": sent,
+        "total": len(sent),
+    }

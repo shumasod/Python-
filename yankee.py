@@ -7,7 +7,42 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+
+# ─── バトルログ ───────────────────────────────────────────
+@dataclass
+class BattleRecord:
+    timestamp: str
+    opponent: str
+    result: str          # "win" | "loss"
+    rounds: int
+    damage_dealt: int
+    damage_received: int
+
+    def __str__(self) -> str:
+        mark = "○" if self.result == "win" else "×"
+        return (f"[{self.timestamp}] {mark} vs {self.opponent} "
+                f"({self.rounds}R | 与:{self.damage_dealt} 受:{self.damage_received})")
+
+
+def get_battle_log_summary(records: list[BattleRecord]) -> str:
+    """バトル履歴のサマリーを返す"""
+    if not records:
+        return "  （戦歴なし）"
+    wins   = sum(1 for r in records if r.result == "win")
+    losses = len(records) - wins
+    total_dealt    = sum(r.damage_dealt    for r in records)
+    total_received = sum(r.damage_received for r in records)
+    lines = [
+        f"  戦歴: {len(records)}戦 {wins}勝 {losses}敗",
+        f"  総与ダメージ: {total_dealt}  総受ダメージ: {total_received}",
+        "  --- 直近5件 ---",
+    ]
+    for r in records[-5:]:
+        lines.append(f"    {r}")
+    return "\n".join(lines)
 
 
 # ─── アイテム定義 ─────────────────────────────────────────
@@ -130,6 +165,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
+        self.battle_log: list[BattleRecord] = []
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -318,6 +354,16 @@ class Yankee:
         loser.hp           = 1       # 死なせない（仁義）
         loser.win_streak   = 0
         print(f"  {winner.name} は {prize} 円を手に入れた！")
+
+        # バトルログ記録
+        now = datetime.now().strftime("%H:%M:%S")
+        self.battle_log.append(BattleRecord(
+            timestamp=now, opponent=opponent.name,
+            result="win" if winner is self else "loss",
+            rounds=round_num,
+            damage_dealt=opponent.effective_max_hp - opponent.hp,
+            damage_received=self.effective_max_hp - self.hp,
+        ))
 
         # ランクアップ通知
         rank, icon = get_rank(winner.respect)

@@ -23,6 +23,7 @@ source "${SCRIPT_DIR}/lib.sh"
 # ─── 引数処理 ─────────────────────────────────────────────────
 RUN_INCREMENTAL_AFTER=true
 DRY_RUN=false
+SKIP_VERIFY=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -32,6 +33,7 @@ while [[ $# -gt 0 ]]; do
             PG_DATABASE="$2"
             shift ;;
         --dry-run)  DRY_RUN=true ;;
+        --skip-verify) SKIP_VERIFY=true ;;
         -h|--help)  grep '^#' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) log_warn "不明なオプション: $1" ;;
     esac
@@ -61,6 +63,12 @@ main() {
     db_full_backup "${backup_dir}" "${ts}"
 
     purge_old_files "${BACKUP_BASE_DIR}" "${FULL_RETENTION_DAYS}" "*"
+
+    # バックアップファイルの整合性を検証
+    if [[ "${COMPRESS}" == "true" && "${SKIP_VERIFY}" == "false" ]]; then
+        verify_backup_files "${backup_dir}" "*.sql.gz" \
+            || { notify_slack failure "バックアップ整合性検証失敗 [${DB_TYPE}]"; exit 1; }
+    fi
 
     log_info "フルバックアップ完了: ${backup_dir}"
     log_info "=========================================="

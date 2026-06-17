@@ -222,7 +222,7 @@ async def explain_endpoint(
     except FileNotFoundError as e:
         raise HTTPException(
             status_code=503,
-            detail=f"モデルが未学習です。先にトレーニングを実行してください。詳細: {e}",
+            detail="モデルが未学習です。先にトレーニングを実行してください。",
         ) from e
     except Exception as e:
         logger.exception(f"説明生成中にエラー: {e}")

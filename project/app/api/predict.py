@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.api.auth import verify_api_key
 from app.model.features import N_BOATS
 from app.model.predict import predict_race
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 # オプション依存モジュール
 try:
@@ -136,7 +136,7 @@ async def predict_endpoint(
     race_id = request.race_id
 
     try:
-        logger.info(f"予測リクエスト受信: race_id={race_id}")
+        logger.info(f"予測リクエスト受信: race_id={sanitize_for_log(race_id)}")
 
         # ---- キャッシュ確認 ----
         if _CACHE_AVAILABLE:
@@ -297,7 +297,7 @@ async def predict_batch_endpoint(
             })
             failed += 1
         except Exception as e:
-            logger.error(f"バッチ予測エラー race_id={race_id}: {e}")
+            logger.error(f"バッチ予測エラー race_id={sanitize_for_log(race_id)}: {e}")
             results.append({
                 "race_id": race_id,
                 "status": "error",

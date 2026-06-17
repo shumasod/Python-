@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from app.api.auth import verify_api_key
 from app.api.scoring import _rank_proba
 from app.config import AB_LOG_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -175,7 +175,7 @@ async def record_result(
         pass
 
     logger.info(
-        f"結果記録: race_id={race_id} winner={body.true_winner} "
+        f"結果記録: race_id={sanitize_for_log(race_id)} winner={body.true_winner} "
         f"correct={comparison['is_correct']}"
     )
 

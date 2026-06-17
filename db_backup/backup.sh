@@ -52,6 +52,8 @@ main() {
     init_dirs
     log_info "========== フルバックアップ開始 [DB_TYPE=${DB_TYPE}] =========="
 
+    check_disk_space "${BACKUP_BASE_DIR}" 5 \
+        || { notify_slack failure "ディスク容量不足のためバックアップ中止"; exit 1; }
     check_db_connection || { notify_slack failure "DB 接続失敗 (${DB_TYPE})"; exit 1; }
 
     local ts; ts=$(date '+%Y%m%d_%H%M%S')

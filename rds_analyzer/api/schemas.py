@@ -258,3 +258,20 @@ class IndexAnalysisResponse(BaseModel):
     queries_needing_index: int
     estimated_total_improvement_pct: float
     recommendations: list[CoveringIndexRecommendationResponse]
+
+
+class BulkRegisterRequest(BaseModel):
+    """POST /rds/bulk リクエスト — 複数インスタンスの一括登録"""
+    instances: list[RDSInstanceRequest] = Field(
+        description="登録するインスタンスのリスト",
+        min_length=1,
+        max_length=50,
+    )
+
+
+class BulkRegisterResponse(BaseModel):
+    """POST /rds/bulk レスポンス"""
+    registered: int = Field(description="登録成功件数")
+    failed: int = Field(description="失敗件数")
+    instance_ids: list[str] = Field(description="登録成功したインスタンスID")
+    errors: list[str] = Field(default_factory=list, description="失敗理由")

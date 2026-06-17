@@ -144,13 +144,17 @@ class RecommendationResponse(BaseModel):
     """
     GET /rds/{id}/recommendations レスポンス
 
-    改善提案リスト
+    改善提案リスト（ページネーション対応）
     """
     instance_id: str
     generated_at: datetime
     total_recommendations: int
     total_potential_savings_usd: float
     recommendations: list[RecommendationItem]
+    # ページネーション情報
+    limit: int = Field(default=20, description="1ページあたりの件数")
+    offset: int = Field(default=0, description="スキップした件数")
+    has_more: bool = Field(default=False, description="次ページが存在するか")
 
 
 class RecommendationItem(BaseModel):

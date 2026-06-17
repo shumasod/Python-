@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -72,6 +72,8 @@ _instance_store: dict[str, RDSInstance] = {}
 _metrics_store: dict[str, MetricsHistory] = {}
 # 月次コスト履歴 {instance_id: [(YYYY-MM, cost_usd), ...]}
 _cost_history_store: dict[str, list[tuple[str, float]]] = {}
+# インデックス分析結果キャッシュ {instance_id: IndexAnalysisResult}
+_index_analysis_store: dict[str, Any] = {}
 
 
 # ============================================================
@@ -656,6 +658,56 @@ async def analyze_covering_indexes(
     analyzer = CoveringIndexAnalyzer()
     result = analyzer.analyze(request)
 
+    # 分析結果をキャッシュ
+    _index_analysis_store[instance_id] = result
+
+    return IndexAnalysisResponse(
+        instance_id=result.instance_id,
+        analyzed_at=result.analyzed_at,
+        engine=result.engine,
+        total_queries_analyzed=result.total_queries_analyzed,
+        queries_already_covered=result.queries_already_covered,
+        queries_needing_index=result.queries_needing_index,
+        estimated_total_improvement_pct=result.estimated_total_improvement_pct,
+        recommendations=[
+            CoveringIndexRecommendationResponse(
+                recommendation_id=r.recommendation_id,
+                table_name=r.table_name,
+                priority=r.priority,
+                reason=r.reason,
+                key_columns=r.key_columns,
+                include_columns=r.include_columns,
+                estimated_scan_ratio=r.estimated_scan_ratio,
+                estimated_latency_improvement_pct=r.estimated_latency_improvement_pct,
+                estimated_daily_rows_saved=r.estimated_daily_rows_saved,
+                affected_query_count=len(r.affected_query_ids),
+                create_statement_mysql=r.create_statement_mysql,
+                create_statement_postgresql=r.create_statement_postgresql,
+            )
+            for r in result.recommendations
+        ],
+    )
+
+
+@router.get(
+    "/rds/{instance_id}/index-analysis",
+    response_model=IndexAnalysisResponse,
+    tags=["analysis"],
+    summary="キャッシュされたカバリングインデックス分析結果を取得",
+)
+async def get_index_analysis(instance_id: str) -> IndexAnalysisResponse:
+    """
+    直近の POST /rds/{id}/index-analysis の結果を返す。
+
+    先に POST で分析を実行してください。
+    """
+    get_instance_or_404(instance_id)
+    result = _index_analysis_store.get(instance_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"インスタンス '{instance_id}' のインデックス分析結果が見つかりません。先に POST /rds/{instance_id}/index-analysis を実行してください。",
+        )
     return IndexAnalysisResponse(
         instance_id=result.instance_id,
         analyzed_at=result.analyzed_at,

@@ -8,6 +8,18 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+def sanitize_for_log(value: object, max_len: int = 200) -> str:
+    """ユーザー入力をログ出力前にサニタイズする（ログインジェクション対策）。
+    改行・キャリッジリターン・タブ・ヌルバイトを可視エスケープに置換し、
+    長さを max_len 文字に切り詰める。
+    """
+    text = str(value)
+    text = text.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t").replace("\x00", "\\x00")
+    if len(text) > max_len:
+        text = text[:max_len] + "…"
+    return text
+
+
 def get_logger(name: str, log_level: str = "INFO") -> logging.Logger:
     """
     名前付きロガーを取得する

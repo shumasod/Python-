@@ -56,6 +56,52 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── レベルシステム ───────────────────────────────────────
+# レベルアップに必要な累積XP (respect をXPとして流用)
+_LEVEL_XP = [0, 30, 80, 150, 250, 400, 600, 900, 1300, 2000]
+
+# レベルアップ時のボーナス (atk, max_hp)
+_LEVEL_BONUS: dict[int, tuple[int, int]] = {
+    2:  (2,  10),
+    3:  (3,  15),
+    4:  (5,  20),
+    5:  (5,  25),
+    6:  (8,  30),
+    7:  (8,  35),
+    8:  (10, 40),
+    9:  (10, 50),
+    10: (15, 60),
+}
+
+
+def calc_level(respect: int) -> int:
+    """仁義ポイントからレベルを計算する"""
+    level = 1
+    for i, xp_needed in enumerate(_LEVEL_XP[1:], start=2):
+        if respect >= xp_needed:
+            level = i
+        else:
+            break
+    return min(level, len(_LEVEL_XP))
+
+
+def apply_level_bonuses(yankee: "Yankee") -> list[str]:
+    """未適用のレベルボーナスを適用し、レベルアップメッセージを返す"""
+    messages: list[str] = []
+    new_level = calc_level(yankee.respect)
+    while yankee._applied_level < new_level:
+        yankee._applied_level += 1
+        lv = yankee._applied_level
+        if lv in _LEVEL_BONUS:
+            atk_bonus, hp_bonus = _LEVEL_BONUS[lv]
+            yankee.base_atk += atk_bonus
+            yankee.max_hp   += hp_bonus
+            messages.append(
+                f"  ★ Lv{lv} レベルアップ！  ATK+{atk_bonus}  HP+{hp_bonus}"
+            )
+    return messages
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""
@@ -130,6 +176,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
+        self._applied_level: int = 1          # 適用済みレベル（レベルボーナス追跡用）
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)

@@ -1,0 +1,51 @@
+# ============================================================
+# データベースバックアップ Cron 設定例
+# MySQL / MariaDB / PostgreSQL 共通
+#
+# 設置方法:
+#   crontab -e
+#
+# /path/to は実際のスクリプトパスに変更してください。
+# DB_TYPE 環境変数で使用するデータベースを指定します。
+# ============================================================
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""   # エラーをメール送信する場合はアドレスを設定
+
+# ─── MySQL フルバックアップ (毎日 02:00) ─────────────────────
+0 2 * * * DB_TYPE=mysql /path/to/db_backup/backup.sh >> /var/log/db_backup/cron.log 2>&1
+
+# ─── MySQL binlog 差分バックアップ (15分ごと) ────────────────
+*/15 * * * * DB_TYPE=mysql /path/to/db_backup/incremental_backup.sh >> /var/log/db_backup/incremental_cron.log 2>&1
+
+# ─── MariaDB フルバックアップ (毎日 02:00) ───────────────────
+# 0 2 * * * DB_TYPE=mariadb /path/to/db_backup/backup.sh >> /var/log/db_backup/cron.log 2>&1
+
+# ─── MariaDB binlog 差分バックアップ (15分ごと) ──────────────
+# */15 * * * * DB_TYPE=mariadb /path/to/db_backup/incremental_backup.sh >> /var/log/db_backup/incremental_cron.log 2>&1
+
+# ─── PostgreSQL フルバックアップ (毎日 02:00) ────────────────
+# 0 2 * * * DB_TYPE=postgresql /path/to/db_backup/backup.sh >> /var/log/db_backup/cron.log 2>&1
+
+# ─── PostgreSQL WAL アーカイブ (15分ごと) ────────────────────
+# */15 * * * * DB_TYPE=postgresql /path/to/db_backup/incremental_backup.sh >> /var/log/db_backup/incremental_cron.log 2>&1
+
+# ─── RPO=5分が必要な場合 (5分ごとに差分) ────────────────────
+# */5 * * * * DB_TYPE=mysql /path/to/db_backup/incremental_backup.sh >> /var/log/db_backup/incremental_cron.log 2>&1
+
+# ─── 週1回 日曜01:00 全DBフルバックアップのみ ────────────────
+# 0 1 * * 0 DB_TYPE=mysql /path/to/db_backup/backup.sh --no-incremental >> /var/log/db_backup/cron.log 2>&1
+
+# ─── ログローテーション ──────────────────────────────────────
+# /etc/logrotate.d/db_backup に以下を配置することを推奨:
+#
+# /var/log/db_backup/*.log {
+#     daily
+#     rotate 30
+#     compress
+#     delaycompress
+#     missingok
+#     notifempty
+#     copytruncate
+# }

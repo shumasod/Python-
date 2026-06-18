@@ -110,7 +110,7 @@ python_functions = "test_*"
 addopts = """
     --verbose
     --strict-markers
-    --cov=.
+    --cov=rds_analyzer
     --cov-report=html
     --cov-report=term-missing
     --cov-fail-under=50
@@ -122,7 +122,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["."]
+source = ["rds_analyzer"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",

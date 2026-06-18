@@ -1,9 +1,9 @@
 # Flask Web Framework
-Flask==3.0.0
-Werkzeug==3.0.1
+Flask==3.1.3
+Werkzeug==3.1.6
 
 # Machine Learning
-scikit-learn==1.3.2
+scikit-learn==1.5.0
 numpy==1.26.2
 pandas==2.1.4
 
@@ -14,14 +14,14 @@ pydantic==2.5.3
 joblib==1.3.2
 
 # Web Scraping (if needed)
-requests==2.31.0
+requests==2.33.0
 beautifulsoup4==4.12.2
 
 # CORS Support
-flask-cors==4.0.0
+flask-cors==6.0.0
 
 # Production Server
-gunicorn==21.2.0
+gunicorn==22.0.0
 
 # Development Tools
-python-dotenv==1.0.0
+python-dotenv==1.2.2

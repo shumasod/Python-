@@ -1,0 +1,102 @@
+# ============================================================
+# ローカル開発環境
+# 使用方法:
+#   docker compose up -d          # 全サービス起動
+#   docker compose up api         # APIのみ起動
+#   docker compose logs -f api    # ログ確認
+#   docker compose down -v        # 停止＋ボリューム削除
+# ============================================================
+version: "3.9"
+
+services:
+  # ---- Redis（予測キャッシュ）----
+  redis:
+    image: redis:7-alpine
+    container_name: boat-race-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ---- PostgreSQL ----
+  db:
+    image: postgres:15-alpine
+    container_name: boat-race-db
+    environment:
+      POSTGRES_DB: boatracedb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: localpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d boatracedb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- FastAPI アプリ ----
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: boat-race-api
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: boatracedb
+      DB_USER: admin
+      DB_PASSWORD: localpassword
+      USE_DB: "true"
+      REDIS_URL: redis://redis:6379/0
+      CACHE_ENABLED: "true"
+      CACHE_TTL_SEC: "300"
+      API_AUTH_ENABLED: "false"   # 開発環境では無効
+      AWS_DEFAULT_REGION: ap-northeast-1
+      LOG_LEVEL: INFO
+    volumes:
+      # 学習済みモデルをホストと共有（コンテナ再起動後も維持）
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # 開発時は --reload で自動リロード、本番は Dockerfile の CMD を使用
+
+  # ---- 開発用：学習ジョブ（手動実行） ----
+  trainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: boat-race-trainer
+    profiles:
+      - train  # docker compose --profile train up trainer でのみ起動
+    environment:
+      LOG_LEVEL: INFO
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: python scripts/train_model.py --use-sample --n-races 3000
+
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local

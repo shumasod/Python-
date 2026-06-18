@@ -1,0 +1,104 @@
+# ============================================================
+# Airflow ローカル開発環境
+# 起動方法:
+#   # 初回のみ: DB初期化とユーザー作成
+#   docker compose -f docker-compose.airflow.yml up airflow-init
+#
+#   # 通常起動
+#   docker compose -f docker-compose.airflow.yml up -d
+#
+#   # Web UI: http://localhost:8080 (admin/admin)
+#   # API サーバーと同時に起動する場合:
+#   docker compose -f docker-compose.yml -f docker-compose.airflow.yml up -d
+# ============================================================
+version: "3.9"
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1-python3.11
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
+    # 競艇AIプロジェクトのパスを PYTHONPATH に追加
+    PYTHONPATH: "/opt/airflow/project"
+    # スクレイパー・学習の設定
+    LOG_LEVEL: INFO
+  volumes:
+    - ./dags:/opt/airflow/dags          # DAGファイル
+    - ./logs:/opt/airflow/logs          # Airflowログ
+    - ./models:/opt/airflow/project/models
+    - ./data:/opt/airflow/project/data
+    - .:/opt/airflow/project            # プロジェクト全体をマウント
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+
+services:
+  # ---- Airflow メタデータ DB ----
+  airflow-db:
+    image: postgres:15-alpine
+    container_name: airflow-db
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---- Airflow 初期化（初回のみ実行）----
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        pip install -r /opt/airflow/project/requirements.txt --quiet
+        airflow db migrate
+        airflow users create \
+          --username admin --password admin \
+          --firstname Admin --lastname User \
+          --role Admin --email admin@example.com
+        echo "Airflow 初期化完了"
+    profiles:
+      - init  # docker compose --profile init up airflow-init でのみ起動
+
+  # ---- Airflow Web サーバー ----
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # ---- Airflow スケジューラー ----
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--hostname", "$${HOSTNAME}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  airflow_pg_data:
+    driver: local

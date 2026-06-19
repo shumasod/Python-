@@ -71,6 +71,36 @@ compress_file() {
     log_info "圧縮完了: ${f}.gz"
 }
 
+# ─── バックアップ整合性検証 ───────────────────────────────────
+verify_backup_files() {
+    local dir="$1"
+    local pattern="${2:-*.sql.gz}"
+    local failed=0
+    local checked=0
+
+    log_info "バックアップ整合性検証: ${dir}/${pattern}"
+
+    while IFS= read -r f; do
+        if gzip -t "${f}" 2>/dev/null; then
+            log_info "  OK: $(basename "${f}")"
+        else
+            log_error "  NG (破損): $(basename "${f}")"
+            (( failed++ ))
+        fi
+        (( checked++ ))
+    done < <(find "${dir}" -maxdepth 1 -name "${pattern}" -newer "${dir}/.last_verified" 2>/dev/null \
+              || find "${dir}" -maxdepth 1 -name "${pattern}" | sort | tail -5)
+
+    if [[ ${failed} -gt 0 ]]; then
+        log_error "整合性検証失敗: ${failed}/${checked} ファイルが破損しています"
+        return 1
+    fi
+
+    log_info "整合性検証完了: ${checked} ファイル全て正常"
+    touch "${dir}/.last_verified" 2>/dev/null || true
+    return 0
+}
+
 # ─── 世代管理 ─────────────────────────────────────────────────
 purge_old_files() {
     local dir="$1" days="$2" pattern="$3"

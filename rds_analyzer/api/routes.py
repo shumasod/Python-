@@ -433,6 +433,8 @@ async def get_instance_analysis(
 async def get_recommendations(
     instance_id: str,
     data_transfer_gb: float = Query(default=0.0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
+    offset: int = Query(default=0, ge=0, description="スキップする件数"),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -474,12 +476,16 @@ async def get_recommendations(
         for r in recommendations
     ]
 
+    paginated_items = rec_items[offset: offset + limit]
     return RecommendationResponse(
         instance_id=instance_id,
         generated_at=datetime.utcnow(),
         total_recommendations=len(recommendations),
         total_potential_savings_usd=round(total_savings, 2),
-        recommendations=rec_items,
+        recommendations=paginated_items,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + limit) < len(rec_items),
     )
 
 

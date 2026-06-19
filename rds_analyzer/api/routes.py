@@ -72,6 +72,9 @@ _instance_store: dict[str, RDSInstance] = {}
 _metrics_store: dict[str, MetricsHistory] = {}
 # 月次コスト履歴 {instance_id: [(YYYY-MM, cost_usd), ...]}
 _cost_history_store: dict[str, list[tuple[str, float]]] = {}
+# カバリングインデックス分析結果キャッシュ {instance_id: IndexAnalysisResult}
+from ..models.index import IndexAnalysisResult as _IndexAnalysisResult  # noqa: E402
+_index_analysis_store: dict[str, _IndexAnalysisResult] = {}
 
 
 # ============================================================
@@ -602,14 +605,30 @@ async def generate_report(
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
 
     from ..report_generator import ReportGenerator
-    gen = ReportGenerator()
-    markdown = gen.generate(instance, breakdown, cost_score, perf_result, recommendations)
+    from ..models.index import CoveringIndexRecommendation as IndexRec
 
-    return {
+    gen = ReportGenerator()
+
+    # キャッシュされたインデックス分析結果を取得
+    cached_index = _index_analysis_store.get(instance_id)
+    index_recs = cached_index.recommendations if cached_index else None
+
+    markdown = gen.generate(
+        instance, breakdown, cost_score, perf_result, recommendations,
+        index_recommendations=index_recs,
+    )
+
+    report_meta = {
         "instance_id": instance_id,
         "generated_at": datetime.utcnow().isoformat(),
         "markdown": markdown,
+        "index_analysis_included": index_recs is not None,
     }
+    if cached_index:
+        report_meta["index_recommendations_count"] = len(cached_index.recommendations)
+        report_meta["index_analysis_at"] = cached_index.analyzed_at.isoformat()
+
+    return report_meta
 
 
 @router.post(

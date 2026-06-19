@@ -91,6 +91,51 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── 称号・実績システム ───────────────────────────────────
+# (条件関数, 称号名, 説明)
+ACHIEVEMENTS: list[tuple] = [
+    (lambda y: y.win_streak >= 1,                    "初勝利",         "初めての勝利"),
+    (lambda y: y.win_streak >= 5,                    "五連覇",         "5連勝達成"),
+    (lambda y: y.win_streak >= 10,                   "無敗伝説",       "10連勝達成"),
+    (lambda y: y.respect >= 100,                     "番長の証",       "仁義100pt到達"),
+    (lambda y: y.respect >= 200,                     "伝説の男",       "仁義200pt到達"),
+    (lambda y: y.gold >= 500,                        "金持ちヤンキー", "所持金500円超え"),
+    (lambda y: len(y.items) >= 3,                    "武装完了",       "アイテム3個以上装備"),
+    (lambda y: len(y.territories_owned) >= 3,        "縄張り拡大",     "3つ以上の縄張りを支配"),
+    (lambda y: y.base_atk >= 20,                     "修行の成果",     "修行で攻撃力+20"),
+    (lambda y: y.max_hp >= 150,                      "鉄の肉体",       "最大HP150超え"),
+    (lambda y: len(y.rivals) >= 3,                   "多くの宿敵",     "ライバル3人以上"),
+    (lambda y: y.respect >= 60 and y.gold >= 200,    "幹部の風格",     "幹部ランクで金持ち"),
+]
+
+
+def check_achievements(yankee: "Yankee") -> list[str]:
+    """新たに解除された称号リストを返す"""
+    newly_unlocked: list[str] = []
+    for condition, title, desc in ACHIEVEMENTS:
+        if title not in yankee.unlocked_achievements:
+            try:
+                if condition(yankee):
+                    yankee.unlocked_achievements.add(title)
+                    newly_unlocked.append(f"  🏆 称号解除「{title}」— {desc}")
+            except Exception:
+                pass
+    return newly_unlocked
+
+
+def show_achievements(yankee: "Yankee") -> None:
+    """称号一覧を表示する"""
+    print(f"\n  ── {yankee.name} の称号 ──────────────────")
+    unlocked = 0
+    for _, title, desc in ACHIEVEMENTS:
+        if title in yankee.unlocked_achievements:
+            print(f"  [✓] {title:12s}  {desc}")
+            unlocked += 1
+        else:
+            print(f"  [ ] ????????    （未解除）")
+    print(f"  {unlocked}/{len(ACHIEVEMENTS)} 解除済み")
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""

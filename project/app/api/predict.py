@@ -12,7 +12,7 @@ POST /predict エンドポイントを定義する
 import time
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import verify_api_key
@@ -177,7 +177,7 @@ async def predict_endpoint(
         logger.error(f"モデルファイルエラー: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"モデルが未学習です。先にトレーニングを実行してください。詳細: {e}",
+            detail="モデルが未学習です。先にトレーニングを実行してください。",
         ) from e
     except ValueError as e:
         logger.error(f"入力値エラー: {e}")
@@ -192,7 +192,7 @@ async def predict_endpoint(
 
 @router.get("/stats", summary="予測統計情報")
 async def stats_endpoint(
-    days: int = 7,
+    days: int = Query(7, ge=1, le=365, description="集計対象日数（1〜365）"),
     _api_key: str = Depends(verify_api_key),
 ) -> dict[str, Any]:
     """過去N日間の予測API利用統計（DB接続が必要）"""
@@ -301,7 +301,7 @@ async def predict_batch_endpoint(
             results.append({
                 "race_id": race_id,
                 "status": "error",
-                "error": str(e),
+                "error": "内部エラーが発生しました",
             })
             failed += 1
 

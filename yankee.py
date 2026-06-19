@@ -7,7 +7,42 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+
+# ─── バトルログ ───────────────────────────────────────────
+@dataclass
+class BattleRecord:
+    timestamp: str
+    opponent: str
+    result: str          # "win" | "loss"
+    rounds: int
+    damage_dealt: int
+    damage_received: int
+
+    def __str__(self) -> str:
+        mark = "○" if self.result == "win" else "×"
+        return (f"[{self.timestamp}] {mark} vs {self.opponent} "
+                f"({self.rounds}R | 与:{self.damage_dealt} 受:{self.damage_received})")
+
+
+def get_battle_log_summary(records: list[BattleRecord]) -> str:
+    """バトル履歴のサマリーを返す"""
+    if not records:
+        return "  （戦歴なし）"
+    wins   = sum(1 for r in records if r.result == "win")
+    losses = len(records) - wins
+    total_dealt    = sum(r.damage_dealt    for r in records)
+    total_received = sum(r.damage_received for r in records)
+    lines = [
+        f"  戦歴: {len(records)}戦 {wins}勝 {losses}敗",
+        f"  総与ダメージ: {total_dealt}  総受ダメージ: {total_received}",
+        "  --- 直近5件 ---",
+    ]
+    for r in records[-5:]:
+        lines.append(f"    {r}")
+    return "\n".join(lines)
 
 
 # ─── アイテム定義 ─────────────────────────────────────────
@@ -56,50 +91,49 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── レベルシステム ───────────────────────────────────────
-# レベルアップに必要な累積XP (respect をXPとして流用)
-_LEVEL_XP = [0, 30, 80, 150, 250, 400, 600, 900, 1300, 2000]
+# ─── 称号・実績システム ───────────────────────────────────
+# (条件関数, 称号名, 説明)
+ACHIEVEMENTS: list[tuple] = [
+    (lambda y: y.win_streak >= 1,                    "初勝利",         "初めての勝利"),
+    (lambda y: y.win_streak >= 5,                    "五連覇",         "5連勝達成"),
+    (lambda y: y.win_streak >= 10,                   "無敗伝説",       "10連勝達成"),
+    (lambda y: y.respect >= 100,                     "番長の証",       "仁義100pt到達"),
+    (lambda y: y.respect >= 200,                     "伝説の男",       "仁義200pt到達"),
+    (lambda y: y.gold >= 500,                        "金持ちヤンキー", "所持金500円超え"),
+    (lambda y: len(y.items) >= 3,                    "武装完了",       "アイテム3個以上装備"),
+    (lambda y: len(y.territories_owned) >= 3,        "縄張り拡大",     "3つ以上の縄張りを支配"),
+    (lambda y: y.base_atk >= 20,                     "修行の成果",     "修行で攻撃力+20"),
+    (lambda y: y.max_hp >= 150,                      "鉄の肉体",       "最大HP150超え"),
+    (lambda y: len(y.rivals) >= 3,                   "多くの宿敵",     "ライバル3人以上"),
+    (lambda y: y.respect >= 60 and y.gold >= 200,    "幹部の風格",     "幹部ランクで金持ち"),
+]
 
-# レベルアップ時のボーナス (atk, max_hp)
-_LEVEL_BONUS: dict[int, tuple[int, int]] = {
-    2:  (2,  10),
-    3:  (3,  15),
-    4:  (5,  20),
-    5:  (5,  25),
-    6:  (8,  30),
-    7:  (8,  35),
-    8:  (10, 40),
-    9:  (10, 50),
-    10: (15, 60),
-}
+
+def check_achievements(yankee: "Yankee") -> list[str]:
+    """新たに解除された称号リストを返す"""
+    newly_unlocked: list[str] = []
+    for condition, title, desc in ACHIEVEMENTS:
+        if title not in yankee.unlocked_achievements:
+            try:
+                if condition(yankee):
+                    yankee.unlocked_achievements.add(title)
+                    newly_unlocked.append(f"  🏆 称号解除「{title}」— {desc}")
+            except Exception:
+                pass
+    return newly_unlocked
 
 
-def calc_level(respect: int) -> int:
-    """仁義ポイントからレベルを計算する"""
-    level = 1
-    for i, xp_needed in enumerate(_LEVEL_XP[1:], start=2):
-        if respect >= xp_needed:
-            level = i
+def show_achievements(yankee: "Yankee") -> None:
+    """称号一覧を表示する"""
+    print(f"\n  ── {yankee.name} の称号 ──────────────────")
+    unlocked = 0
+    for _, title, desc in ACHIEVEMENTS:
+        if title in yankee.unlocked_achievements:
+            print(f"  [✓] {title:12s}  {desc}")
+            unlocked += 1
         else:
-            break
-    return min(level, len(_LEVEL_XP))
-
-
-def apply_level_bonuses(yankee: "Yankee") -> list[str]:
-    """未適用のレベルボーナスを適用し、レベルアップメッセージを返す"""
-    messages: list[str] = []
-    new_level = calc_level(yankee.respect)
-    while yankee._applied_level < new_level:
-        yankee._applied_level += 1
-        lv = yankee._applied_level
-        if lv in _LEVEL_BONUS:
-            atk_bonus, hp_bonus = _LEVEL_BONUS[lv]
-            yankee.base_atk += atk_bonus
-            yankee.max_hp   += hp_bonus
-            messages.append(
-                f"  ★ Lv{lv} レベルアップ！  ATK+{atk_bonus}  HP+{hp_bonus}"
-            )
-    return messages
+            print(f"  [ ] ????????    （未解除）")
+    print(f"  {unlocked}/{len(ACHIEVEMENTS)} 解除済み")
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -176,7 +210,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
-        self._applied_level: int = 1          # 適用済みレベル（レベルボーナス追跡用）
+        self.battle_log: list[BattleRecord] = []
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -365,6 +399,16 @@ class Yankee:
         loser.hp           = 1       # 死なせない（仁義）
         loser.win_streak   = 0
         print(f"  {winner.name} は {prize} 円を手に入れた！")
+
+        # バトルログ記録
+        now = datetime.now().strftime("%H:%M:%S")
+        self.battle_log.append(BattleRecord(
+            timestamp=now, opponent=opponent.name,
+            result="win" if winner is self else "loss",
+            rounds=round_num,
+            damage_dealt=opponent.effective_max_hp - opponent.hp,
+            damage_received=self.effective_max_hp - self.hp,
+        ))
 
         # ランクアップ通知
         rank, icon = get_rank(winner.respect)

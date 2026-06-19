@@ -108,6 +108,31 @@ purge_old_files() {
     log_info "古いファイル削除: ${dir}/${pattern} (${days}日以前)"
 }
 
+# ─── ディスク空き容量チェック ──────────────────────────────────
+check_disk_space() {
+    local dir="$1"
+    local min_gb="${2:-5}"   # デフォルト最低 5GB
+    local available_kb
+    available_kb=$(df -k "${dir}" 2>/dev/null | awk 'NR==2 {print $4}')
+
+    if [[ -z "${available_kb}" ]]; then
+        log_warn "ディスク容量を取得できません: ${dir}"
+        return 0
+    fi
+
+    local available_gb
+    available_gb=$(echo "${available_kb} / 1048576" | bc 2>/dev/null || echo "0")
+
+    log_info "ディスク空き容量: ${available_gb}GB (最低必要: ${min_gb}GB) [${dir}]"
+
+    if (( available_kb < min_gb * 1048576 )); then
+        log_error "ディスク容量不足: ${available_gb}GB < ${min_gb}GB [${dir}]"
+        log_error "バックアップを中止します。不要なファイルを削除してください。"
+        return 1
+    fi
+    return 0
+}
+
 # ─── Slack 通知 ───────────────────────────────────────────────
 notify_slack() {
     local status="$1" message="$2"

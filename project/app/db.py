@@ -55,6 +55,12 @@ async def get_pool():
             "pip install asyncpg を実行してください。"
         ) from exc
 
+    if not DB_CONFIG.get("password"):
+        raise ValueError(
+            "DB_PASSWORD 環境変数が設定されていません。"
+            "本番DBへの接続には DB_PASSWORD が必須です。"
+        )
+
     logger.info(f"DB接続プールを初期化します: {DB_CONFIG['host']}:{DB_CONFIG['port']}")
     _pool = await asyncpg.create_pool(
         **DB_CONFIG,

@@ -22,6 +22,9 @@ def _install_fake_asyncpg(monkeypatch, pool_mock):
     """sys.modules に fake asyncpg を差し込み、create_pool が pool_mock を返すようにする"""
     fake = SimpleNamespace(create_pool=AsyncMock(return_value=pool_mock))
     monkeypatch.setitem(sys.modules, "asyncpg", fake)
+    # テスト用に空でないパスワードを設定（本番チェックを通過させる）
+    import app.db as db_mod
+    monkeypatch.setattr(db_mod, "DB_CONFIG", {**db_mod.DB_CONFIG, "password": "test_password"})
     return fake
 
 
@@ -61,6 +64,17 @@ class TestGetPool:
         monkeypatch.setitem(sys.modules, "asyncpg", None)
         import app.db as db_mod
         with pytest.raises(ImportError):
+            await db_mod.get_pool()
+
+    @pytest.mark.anyio
+    async def test_raises_when_password_empty(self, monkeypatch):
+        """DB_PASSWORD が空のとき ValueError を発生させること"""
+        pool = _make_pool_mock()
+        fake = SimpleNamespace(create_pool=AsyncMock(return_value=pool))
+        monkeypatch.setitem(sys.modules, "asyncpg", fake)
+        import app.db as db_mod
+        monkeypatch.setattr(db_mod, "DB_CONFIG", {**db_mod.DB_CONFIG, "password": ""})
+        with pytest.raises(ValueError, match="DB_PASSWORD"):
             await db_mod.get_pool()
 
     @pytest.mark.anyio

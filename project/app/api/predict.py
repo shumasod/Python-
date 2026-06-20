@@ -9,6 +9,7 @@ POST /predict エンドポイントを定義する
   - DBへの予測ログ保存（BackgroundTask）
   - Prometheusメトリクス記録
 """
+import re
 import time
 from typing import Any
 
@@ -41,6 +42,17 @@ except ImportError:  # pragma: no cover
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_race_id(race_id: str) -> None:
+    """race_id がパストラバーサルの危険がない形式か検証する"""
+    if not _RACE_ID_RE.match(race_id):
+        raise HTTPException(
+            status_code=422,
+            detail="race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
 
 
 # ============================================================
@@ -217,6 +229,7 @@ async def invalidate_cache_endpoint(
     _api_key: str = Depends(verify_api_key),
 ) -> dict[str, Any]:
     """指定レースIDのキャッシュを削除する"""
+    _validate_race_id(race_id)
     if not _CACHE_AVAILABLE:
         return {"message": "キャッシュが無効です"}
 

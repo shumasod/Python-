@@ -26,6 +26,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from .schemas import (
     AnalysisResponse,
+    BulkRegisterRequest,
+    BulkRegisterResponse,
     CostSummaryResponse,
     CoveringIndexRecommendationResponse,
     ExistingIndexRequest,
@@ -174,6 +176,53 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
     logger.info("インスタンス登録: %s (%s)", instance.instance_id, instance.engine)
 
     return {"message": "登録しました", "instance_id": instance.instance_id}
+
+
+@router.post(
+    "/rds/bulk",
+    response_model=BulkRegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["instances"],
+    summary="複数インスタンスを一括登録",
+)
+async def bulk_register_instances(body: BulkRegisterRequest) -> BulkRegisterResponse:
+    """
+    複数の RDS インスタンスを一度に登録する。
+
+    - 一部失敗しても他は登録される（部分成功）
+    - `registered` + `failed` == len(instances)
+    """
+    registered_ids: list[str] = []
+    errors: list[str] = []
+
+    for req in body.instances:
+        try:
+            instance = RDSInstance(
+                instance_id=req.instance_id,
+                engine=EngineType(req.engine),
+                engine_version=req.engine_version,
+                instance_class=req.instance_class,
+                region=req.region,
+                multi_az=req.multi_az,
+                storage_type=StorageType(req.storage_type),
+                allocated_storage_gb=req.allocated_storage_gb,
+                provisioned_iops=req.provisioned_iops,
+                read_replica_count=req.read_replica_count,
+                backup_retention_days=req.backup_retention_days,
+                snapshot_storage_gb=req.snapshot_storage_gb,
+                tags=req.tags,
+            )
+            _instance_store[instance.instance_id] = instance
+            registered_ids.append(instance.instance_id)
+        except Exception as e:
+            errors.append(f"{req.instance_id}: {e}")
+
+    return BulkRegisterResponse(
+        registered=len(registered_ids),
+        failed=len(errors),
+        instance_ids=registered_ids,
+        errors=errors,
+    )
 
 
 @router.post(
@@ -432,6 +481,8 @@ async def get_instance_analysis(
 async def get_recommendations(
     instance_id: str,
     data_transfer_gb: float = Query(default=0.0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
+    offset: int = Query(default=0, ge=0, description="スキップする件数"),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -473,12 +524,16 @@ async def get_recommendations(
         for r in recommendations
     ]
 
+    paginated_items = rec_items[offset: offset + limit]
     return RecommendationResponse(
         instance_id=instance_id,
         generated_at=datetime.utcnow(),
         total_recommendations=len(recommendations),
         total_potential_savings_usd=round(total_savings, 2),
-        recommendations=rec_items,
+        recommendations=paginated_items,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + limit) < len(rec_items),
     )
 
 
@@ -604,14 +659,30 @@ async def generate_report(
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
 
     from ..report_generator import ReportGenerator
-    gen = ReportGenerator()
-    markdown = gen.generate(instance, breakdown, cost_score, perf_result, recommendations)
+    from ..models.index import CoveringIndexRecommendation as IndexRec
 
-    return {
+    gen = ReportGenerator()
+
+    # キャッシュされたインデックス分析結果を取得
+    cached_index = _index_analysis_store.get(instance_id)
+    index_recs = cached_index.recommendations if cached_index else None
+
+    markdown = gen.generate(
+        instance, breakdown, cost_score, perf_result, recommendations,
+        index_recommendations=index_recs,
+    )
+
+    report_meta = {
         "instance_id": instance_id,
         "generated_at": datetime.utcnow().isoformat(),
         "markdown": markdown,
+        "index_analysis_included": index_recs is not None,
     }
+    if cached_index:
+        report_meta["index_recommendations_count"] = len(cached_index.recommendations)
+        report_meta["index_analysis_at"] = cached_index.analyzed_at.isoformat()
+
+    return report_meta
 
 
 @router.post(

@@ -26,6 +26,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from .schemas import (
     AnalysisResponse,
+    BulkRegisterRequest,
+    BulkRegisterResponse,
     CostSummaryResponse,
     CoveringIndexRecommendationResponse,
     ExistingIndexRequest,
@@ -175,6 +177,53 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
     logger.info("インスタンス登録: %s (%s)", instance.instance_id, instance.engine)
 
     return {"message": "登録しました", "instance_id": instance.instance_id}
+
+
+@router.post(
+    "/rds/bulk",
+    response_model=BulkRegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["instances"],
+    summary="複数インスタンスを一括登録",
+)
+async def bulk_register_instances(body: BulkRegisterRequest) -> BulkRegisterResponse:
+    """
+    複数の RDS インスタンスを一度に登録する。
+
+    - 一部失敗しても他は登録される（部分成功）
+    - `registered` + `failed` == len(instances)
+    """
+    registered_ids: list[str] = []
+    errors: list[str] = []
+
+    for req in body.instances:
+        try:
+            instance = RDSInstance(
+                instance_id=req.instance_id,
+                engine=EngineType(req.engine),
+                engine_version=req.engine_version,
+                instance_class=req.instance_class,
+                region=req.region,
+                multi_az=req.multi_az,
+                storage_type=StorageType(req.storage_type),
+                allocated_storage_gb=req.allocated_storage_gb,
+                provisioned_iops=req.provisioned_iops,
+                read_replica_count=req.read_replica_count,
+                backup_retention_days=req.backup_retention_days,
+                snapshot_storage_gb=req.snapshot_storage_gb,
+                tags=req.tags,
+            )
+            _instance_store[instance.instance_id] = instance
+            registered_ids.append(instance.instance_id)
+        except Exception as e:
+            errors.append(f"{req.instance_id}: {e}")
+
+    return BulkRegisterResponse(
+        registered=len(registered_ids),
+        failed=len(errors),
+        instance_ids=registered_ids,
+        errors=errors,
+    )
 
 
 @router.post(

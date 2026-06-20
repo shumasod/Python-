@@ -245,8 +245,10 @@ class RecommendationEngine:
             logger.warning("スケールアップ先が見つかりません: %s", instance.instance_class)
             return None
 
-        current_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
+        current_rate = self._get_hourly_rate(instance.instance_class)
         next_rate = INSTANCE_HOURLY_RATES.get(next_class, 0)
+        if current_rate == 0:
+            logger.warning("インスタンスクラスの料金データが見つかりません: %s", instance.instance_class)
         additional_cost = (next_rate - current_rate) * 730
 
         current_specs = INSTANCE_SPECS.get(instance.instance_class, {})
@@ -307,7 +309,7 @@ class RecommendationEngine:
             recommended_class = self._SCALE_UP_MAP.get(instance.instance_class, instance.instance_class)
 
         next_specs = INSTANCE_SPECS.get(recommended_class, {})
-        current_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
+        current_rate = self._get_hourly_rate(instance.instance_class)
         next_rate = INSTANCE_HOURLY_RATES.get(recommended_class, 0)
         additional_cost = (next_rate - current_rate) * 730
 
@@ -350,7 +352,7 @@ class RecommendationEngine:
         if not smaller_class:
             return None
 
-        current_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
+        current_rate = self._get_hourly_rate(instance.instance_class)
         smaller_rate = INSTANCE_HOURLY_RATES.get(smaller_class, 0)
         monthly_savings = (current_rate - smaller_rate) * 730
 
@@ -421,7 +423,7 @@ class RecommendationEngine:
         cost_breakdown: CostBreakdown,
     ) -> Recommendation:
         """読み取り負荷分散のためのリードレプリカ追加提案"""
-        hourly_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
+        hourly_rate = self._get_hourly_rate(instance.instance_class)
         replica_monthly_cost = hourly_rate * 730
 
         priority = (
@@ -566,8 +568,13 @@ class RecommendationEngine:
         if not graviton_class:
             return None
 
-        current_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
-        graviton_rate = INSTANCE_HOURLY_RATES.get(graviton_class, 0)
+        current_rate = self._get_hourly_rate(instance.instance_class)
+        graviton_rate = self._get_hourly_rate(graviton_class)
+
+        if current_rate <= 0 and graviton_rate <= 0:
+            logger.debug("Graviton 移行推奨スキップ: 料金データなし (%s)", instance.instance_class)
+            return None
+
         monthly_savings = (current_rate - graviton_rate) * 730
 
         if instance.multi_az:
@@ -605,7 +612,7 @@ class RecommendationEngine:
         cost_breakdown: CostBreakdown,
     ) -> Recommendation:
         """マルチAZ 有効化提案（可用性向上）"""
-        hourly_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class, 0)
+        hourly_rate = self._get_hourly_rate(instance.instance_class)
         additional_monthly_cost = hourly_rate * 730  # スタンバイインスタンス分
 
         return Recommendation(
@@ -634,6 +641,13 @@ class RecommendationEngine:
     # ----------------------------------------------------------
     # ヘルパーメソッド
     # ----------------------------------------------------------
+
+    def _get_hourly_rate(self, instance_class: str) -> float:
+        """時間単価を取得する。不明なクラスの場合は警告ログを出力して 0 を返す"""
+        rate = INSTANCE_HOURLY_RATES.get(instance_class, 0)
+        if rate == 0:
+            logger.warning("料金データが見つかりません: %s (0として処理)", instance_class)
+        return rate
 
     def _next_id(self, prefix: str) -> str:
         """一意な提案IDを生成"""

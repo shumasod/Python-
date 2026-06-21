@@ -736,6 +736,56 @@ def _create_player() -> Yankee:
     return Yankee(name, territory)
 
 
+# ─── 複数エンディング ─────────────────────────────────────
+def get_ending(player: "Yankee") -> tuple[str, str]:
+    """プレイヤーの状態から最も適切なエンディングを選んで返す (タイトル, 本文)"""
+    r = player.respect
+    t = len(player.territories_owned)
+    g = player.gold
+
+    if r >= 200 and t >= 4:
+        title = "👑 TRUE ENDING ─ 伝説の番長"
+        body  = (f"  {player.name}は全ての縄張りを制覇し、街の伝説となった。\n"
+                 f"  誰も彼の名を知らぬ者はいない。\n"
+                 f"  「俺の物語はまだ終わらない。」")
+    elif r >= 150:
+        title = "🔥 ENDING A ─ 最強への道"
+        body  = (f"  {player.name}はその名を轟かせた。\n"
+                 f"  まだ頂上はある。だが今日のところは——\n"
+                 f"  「悪くない旅だった。」")
+    elif r >= 100 and g >= 300:
+        title = "💰 ENDING B ─ 義理と金"
+        body  = (f"  {player.name}は戦いながらも懐を温めた。\n"
+                 f"  仁義と金、両方手に入れた男の話。\n"
+                 f"  「これが俺の生き様だ。」")
+    elif t >= 3:
+        title = "🗺 ENDING C ─ 縄張りの王"
+        body  = (f"  {player.name}は広大な縄張りを手にした。\n"
+                 f"  戦いよりも、守ることを覚えた。\n"
+                 f"  「俺が守る。それだけだ。」")
+    elif player.win_streak >= 5:
+        title = "⚡ ENDING D ─ 連戦連勝"
+        body  = (f"  {player.name}は倒れることなく戦い続けた。\n"
+                 f"  {player.win_streak}連勝。その記録は語り継がれる。\n"
+                 f"  「負ける気がしなかった。」")
+    else:
+        title = "… ENDING E ─ まだ途中"
+        body  = (f"  {player.name}の旅は終わっていない。\n"
+                 f"  仁義{r}pt。これからだ。\n"
+                 f"  「いつかまた来る。」")
+
+    return title, body
+
+
+def show_ending(player: "Yankee") -> None:
+    title, body = get_ending(player)
+    print(f"\n{'★'*50}")
+    print(f"  {title}")
+    print(f"{'─'*50}")
+    print(body)
+    print(f"{'★'*50}")
+
+
 # ─── main ─────────────────────────────────────────────────
 def main() -> None:
     print("=" * 50)

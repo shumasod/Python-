@@ -797,5 +797,47 @@ def main() -> None:
         play_interactive()
 
 
+# ─── CLIエントリポイント ──────────────────────────────────
+def parse_args() -> "argparse.Namespace":
+    import argparse
+    p = argparse.ArgumentParser(
+        description="不良ヤンキーシミュレーター",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  python yankee.py
+  python yankee.py --rpg --name タロウ --territory 北区
+  python yankee.py --demo
+  python yankee.py --status --name テスト
+""",
+    )
+    p.add_argument("--name",      default="タケシ",   help="ヤンキーの名前")
+    p.add_argument("--territory", default="東側",     help="縄張りの名前")
+    p.add_argument("--rpg",       action="store_true", help="インタラクティブRPGを直接起動")
+    p.add_argument("--demo",      action="store_true", help="デモ（ノンインタラクティブ）を実行")
+    p.add_argument("--status",    action="store_true", help="キャラクターのステータスのみ表示")
+    p.add_argument("--no-sleep",  action="store_true", help="time.sleep をスキップして高速実行")
+    return p.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    _args = parse_args()
+
+    if _args.no_sleep:
+        time.sleep = lambda _: None  # type: ignore[assignment]
+
+    if _args.rpg:
+        play_interactive()
+    elif _args.status:
+        y = Yankee(_args.name, _args.territory)
+        y.show_face()
+    elif _args.demo:
+        a = Yankee(_args.name, _args.territory)
+        b = Yankee("対戦相手", "向こう側")
+        a.show_face()
+        a.fight(b)
+        import json as _json
+        print(_json.dumps(a.status(), ensure_ascii=False, indent=2))
+    else:
+        main()

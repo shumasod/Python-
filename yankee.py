@@ -56,6 +56,32 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── 仲間（アライ）システム ──────────────────────────────
+@dataclass
+class Ally:
+    name: str
+    assist_atk: int = 5
+    assist_chance: float = 0.30
+    lines: list = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.lines:
+            self.lines = [f"「{self.name}：任せろ！」", f"「{self.name}：ここは俺に！」"]
+
+    def try_assist(self) -> tuple[int, str | None]:
+        if random.random() < self.assist_chance:
+            return self.assist_atk, random.choice(self.lines)
+        return 0, None
+
+
+ALLY_ROSTER: list[Ally] = [
+    Ally("ケンジ", assist_atk=8,  assist_chance=0.35),
+    Ally("マサル", assist_atk=12, assist_chance=0.25),
+    Ally("ジュン", assist_atk=6,  assist_chance=0.40),
+    Ally("ヒロシ", assist_atk=15, assist_chance=0.20),
+]
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""
@@ -130,6 +156,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
+        self.ally: Ally | None = None
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -338,6 +365,17 @@ class Yankee:
         emhp = self.effective_max_hp
         self.hp = min(emhp, self.hp + recovered)
         print(f"{self.name}: 「…少し休んだ。」  (HP +{recovered} → {self.hp}/{emhp})")
+
+    # ── 仲間 ──────────────────────────────────────────────
+    def recruit_ally(self, ally: Ally) -> None:
+        self.ally = ally
+        print(f"  {ally.name} が仲間になった！  "
+              f"(ATK:{ally.assist_atk} / 確率:{int(ally.assist_chance*100)}%)")
+
+    def dismiss_ally(self) -> None:
+        if self.ally:
+            print(f"  {self.ally.name}：「また会おうぜ。」")
+            self.ally = None
 
     # ── ステータス / セーブ ───────────────────────────────
     def status(self) -> dict:

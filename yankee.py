@@ -56,6 +56,34 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── 天気システム ─────────────────────────────────────────
+# (天気名, アイコン, ATK補正, HP補正, 説明)
+_WEATHER_TABLE: list[tuple[str, str, float, float, str]] = [
+    ("晴れ",   "☀",  1.0,  1.0,  "普通の状態。補正なし"),
+    ("雨",     "🌧", 0.9,  1.1,  "雨で足元が悪い。ATK-10% / HP+10%"),
+    ("嵐",     "⛈", 1.3,  0.8,  "荒天で気合が入る。ATK+30% / HP-20%"),
+    ("霧",     "🌫", 0.8,  1.0,  "視界不良。ATK-20%"),
+    ("猛暑",   "🔆", 1.2,  0.9,  "熱くなる。ATK+20% / HP-10%"),
+    ("深夜",   "🌙", 1.1,  1.0,  "夜は集中力が増す。ATK+10%"),
+]
+
+
+def get_weather() -> tuple[str, str, float, float, str]:
+    """ランダムに天気を選んで返す"""
+    return random.choice(_WEATHER_TABLE)
+
+
+def announce_weather(weather: tuple) -> None:
+    name, icon, atk_mod, hp_mod, desc = weather
+    print(f"\n  {icon} 天気: {name}  ── {desc}")
+
+
+def apply_weather_to_fight(atk: int, weather: tuple) -> int:
+    """天気のATK補正を適用したダメージを返す"""
+    _, _, atk_mod, _, _ = weather
+    return max(1, int(atk * atk_mod))
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""

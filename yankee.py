@@ -56,6 +56,47 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── バトル統計 ───────────────────────────────────────────
+@dataclass
+class BattleStats:
+    wins:               int = 0
+    losses:             int = 0
+    total_damage_dealt: int = 0
+    total_damage_recv:  int = 0
+    longest_streak:     int = 0
+    knockouts:          int = 0
+
+    @property
+    def total_fights(self) -> int:
+        return self.wins + self.losses
+
+    @property
+    def win_rate(self) -> float:
+        return self.wins / self.total_fights if self.total_fights else 0.0
+
+    def record_win(self, dmg_dealt: int, dmg_recv: int, streak: int, rounds: int) -> None:
+        self.wins               += 1
+        self.total_damage_dealt += dmg_dealt
+        self.total_damage_recv  += dmg_recv
+        self.longest_streak      = max(self.longest_streak, streak)
+        if rounds == 1:
+            self.knockouts += 1
+
+    def record_loss(self, dmg_dealt: int, dmg_recv: int) -> None:
+        self.losses             += 1
+        self.total_damage_dealt += dmg_dealt
+        self.total_damage_recv  += dmg_recv
+
+    def show(self) -> None:
+        print(f"\n  ── バトル統計 ──────────────────────────")
+        print(f"  総試合数   : {self.total_fights}")
+        print(f"  勝敗       : {self.wins}勝 {self.losses}敗  ({self.win_rate*100:.1f}%)")
+        print(f"  総与ダメージ: {self.total_damage_dealt}")
+        print(f"  総受ダメージ: {self.total_damage_recv}")
+        print(f"  最長連勝   : {self.longest_streak}")
+        print(f"  1発KO      : {self.knockouts}回")
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""
@@ -130,6 +171,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
+        self.stats = BattleStats()
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -328,6 +370,14 @@ class Yankee:
             loser.rivals.append(winner)
         if loser not in winner.rivals:
             winner.rivals.append(loser)
+
+        # 統計記録
+        dealt  = opponent.effective_max_hp - opponent.hp
+        recvd  = self.effective_max_hp - self.hp
+        if winner is self:
+            self.stats.record_win(dealt, recvd, self.win_streak, round_num)
+        else:
+            self.stats.record_loss(dealt, recvd)
 
         return winner
 

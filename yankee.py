@@ -56,6 +56,41 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
+# ─── 縄張り防衛 ───────────────────────────────────────────
+_INVADERS: list[tuple[str, str]] = [
+    ("流れ者ジョー",   "旅の途中"),
+    ("裏切り者コウジ", "元同盟"),
+    ("新参チンピラ",   "駅前"),
+    ("他県の番長",     "遠征"),
+    ("影の組織員",     "不明"),
+]
+
+
+def territory_defense_event(defender: "Yankee") -> bool:
+    """縄張りに侵入者が来た防衛戦。勝利でTrue、敗北でFalseを返す"""
+    if not defender.territories_owned:
+        return True
+
+    target = random.choice(defender.territories_owned)
+    inv_name, inv_origin = random.choice(_INVADERS)
+    invader = Yankee(inv_name, inv_origin)
+
+    print(f"\n  ！ 縄張り侵入警報 ！")
+    print(f"  [{target}] に {inv_name}（{inv_origin}）が現れた！")
+    time.sleep(0.3)
+
+    winner = defender.fight(invader)
+    if winner is defender:
+        print(f"  {defender.name}: 「俺の縄張りに手を出すんじゃねー！」")
+        defender.respect += 20
+        return True
+    else:
+        print(f"  {target} が {inv_name} に奪われた……")
+        if target in defender.territories_owned and len(defender.territories_owned) > 1:
+            defender.territories_owned.remove(target)
+        return False
+
+
 # ─── Yankee クラス ────────────────────────────────────────
 class Yankee:
     """不良ヤンキーキャラクタークラス"""

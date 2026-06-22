@@ -91,45 +91,30 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── バトル統計 ───────────────────────────────────────────
+# ─── 仲間（アライ）システム ──────────────────────────────
 @dataclass
-class BattleStats:
-    wins:               int = 0
-    losses:             int = 0
-    total_damage_dealt: int = 0
-    total_damage_recv:  int = 0
-    longest_streak:     int = 0
-    knockouts:          int = 0
+class Ally:
+    name: str
+    assist_atk: int = 5
+    assist_chance: float = 0.30
+    lines: list = field(default_factory=list)
 
-    @property
-    def total_fights(self) -> int:
-        return self.wins + self.losses
+    def __post_init__(self) -> None:
+        if not self.lines:
+            self.lines = [f"「{self.name}：任せろ！」", f"「{self.name}：ここは俺に！」"]
 
-    @property
-    def win_rate(self) -> float:
-        return self.wins / self.total_fights if self.total_fights else 0.0
+    def try_assist(self) -> tuple[int, str | None]:
+        if random.random() < self.assist_chance:
+            return self.assist_atk, random.choice(self.lines)
+        return 0, None
 
-    def record_win(self, dmg_dealt: int, dmg_recv: int, streak: int, rounds: int) -> None:
-        self.wins               += 1
-        self.total_damage_dealt += dmg_dealt
-        self.total_damage_recv  += dmg_recv
-        self.longest_streak      = max(self.longest_streak, streak)
-        if rounds == 1:
-            self.knockouts += 1
 
-    def record_loss(self, dmg_dealt: int, dmg_recv: int) -> None:
-        self.losses             += 1
-        self.total_damage_dealt += dmg_dealt
-        self.total_damage_recv  += dmg_recv
-
-    def show(self) -> None:
-        print(f"\n  ── バトル統計 ──────────────────────────")
-        print(f"  総試合数   : {self.total_fights}")
-        print(f"  勝敗       : {self.wins}勝 {self.losses}敗  ({self.win_rate*100:.1f}%)")
-        print(f"  総与ダメージ: {self.total_damage_dealt}")
-        print(f"  総受ダメージ: {self.total_damage_recv}")
-        print(f"  最長連勝   : {self.longest_streak}")
-        print(f"  1発KO      : {self.knockouts}回")
+ALLY_ROSTER: list[Ally] = [
+    Ally("ケンジ", assist_atk=8,  assist_chance=0.35),
+    Ally("マサル", assist_atk=12, assist_chance=0.25),
+    Ally("ジュン", assist_atk=6,  assist_chance=0.40),
+    Ally("ヒロシ", assist_atk=15, assist_chance=0.20),
+]
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -206,7 +191,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
-        self.stats = BattleStats()
+        self.ally: Ally | None = None
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -433,6 +418,17 @@ class Yankee:
         emhp = self.effective_max_hp
         self.hp = min(emhp, self.hp + recovered)
         print(f"{self.name}: 「…少し休んだ。」  (HP +{recovered} → {self.hp}/{emhp})")
+
+    # ── 仲間 ──────────────────────────────────────────────
+    def recruit_ally(self, ally: Ally) -> None:
+        self.ally = ally
+        print(f"  {ally.name} が仲間になった！  "
+              f"(ATK:{ally.assist_atk} / 確率:{int(ally.assist_chance*100)}%)")
+
+    def dismiss_ally(self) -> None:
+        if self.ally:
+            print(f"  {self.ally.name}：「また会おうぜ。」")
+            self.ally = None
 
     # ── ステータス / セーブ ───────────────────────────────
     def status(self) -> dict:

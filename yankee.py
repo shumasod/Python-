@@ -7,7 +7,7 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 
@@ -91,30 +91,58 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── 仲間（アライ）システム ──────────────────────────────
+# ─── 状態異常 ─────────────────────────────────────────────
+class StatusEffect(Enum):
+    RAGE     = "激怒"    # ATK +50%
+    FOCUS    = "集中"    # 必殺技確率 2倍
+    FATIGUE  = "疲労"    # ATK -30%
+    INSPIRED = "奮起"    # 回復量 +20%
+
+_STATUS_DURATION: dict[StatusEffect, int] = {
+    StatusEffect.RAGE:     2,
+    StatusEffect.FOCUS:    2,
+    StatusEffect.FATIGUE:  3,
+    StatusEffect.INSPIRED: 999,
+}
+
+
 @dataclass
-class Ally:
-    name: str
-    assist_atk: int = 5
-    assist_chance: float = 0.30
-    lines: list = field(default_factory=list)
+class ActiveStatus:
+    effect: StatusEffect
+    remaining_turns: int
 
-    def __post_init__(self) -> None:
-        if not self.lines:
-            self.lines = [f"「{self.name}：任せろ！」", f"「{self.name}：ここは俺に！」"]
+    def tick(self) -> bool:
+        self.remaining_turns -= 1
+        return self.remaining_turns > 0
 
-    def try_assist(self) -> tuple[int, str | None]:
-        if random.random() < self.assist_chance:
-            return self.assist_atk, random.choice(self.lines)
-        return 0, None
+    def __str__(self) -> str:
+        return f"{self.effect.value}({self.remaining_turns}T)"
 
 
-ALLY_ROSTER: list[Ally] = [
-    Ally("ケンジ", assist_atk=8,  assist_chance=0.35),
-    Ally("マサル", assist_atk=12, assist_chance=0.25),
-    Ally("ジュン", assist_atk=6,  assist_chance=0.40),
-    Ally("ヒロシ", assist_atk=15, assist_chance=0.20),
-]
+def apply_status(yankee: "Yankee", effect: StatusEffect) -> None:
+    """状態異常を付与する（同種は上書き）"""
+    yankee.active_statuses = [s for s in yankee.active_statuses if s.effect != effect]
+    dur = _STATUS_DURATION[effect]
+    yankee.active_statuses.append(ActiveStatus(effect, dur))
+    print(f"  {yankee.name} に【{effect.value}】付与！ ({dur}T)")
+
+
+def tick_statuses(yankee: "Yankee") -> None:
+    """ターン終了時に全状態異常を1T進める"""
+    expired = [s for s in yankee.active_statuses if not s.tick()]
+    for s in expired:
+        yankee.active_statuses.remove(s)
+        print(f"  {yankee.name} の【{s.effect.value}】が切れた")
+
+
+def get_atk_multiplier(yankee: "Yankee") -> float:
+    mult = 1.0
+    for s in yankee.active_statuses:
+        if s.effect == StatusEffect.RAGE:
+            mult *= 1.5
+        elif s.effect == StatusEffect.FATIGUE:
+            mult *= 0.7
+    return mult
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -191,7 +219,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
-        self.ally: Ally | None = None
+        self.active_statuses: list[ActiveStatus] = []
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)

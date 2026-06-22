@@ -91,49 +91,32 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── 称号・実績システム ───────────────────────────────────
-# (条件関数, 称号名, 説明)
-ACHIEVEMENTS: list[tuple] = [
-    (lambda y: y.win_streak >= 1,                    "初勝利",         "初めての勝利"),
-    (lambda y: y.win_streak >= 5,                    "五連覇",         "5連勝達成"),
-    (lambda y: y.win_streak >= 10,                   "無敗伝説",       "10連勝達成"),
-    (lambda y: y.respect >= 100,                     "番長の証",       "仁義100pt到達"),
-    (lambda y: y.respect >= 200,                     "伝説の男",       "仁義200pt到達"),
-    (lambda y: y.gold >= 500,                        "金持ちヤンキー", "所持金500円超え"),
-    (lambda y: len(y.items) >= 3,                    "武装完了",       "アイテム3個以上装備"),
-    (lambda y: len(y.territories_owned) >= 3,        "縄張り拡大",     "3つ以上の縄張りを支配"),
-    (lambda y: y.base_atk >= 20,                     "修行の成果",     "修行で攻撃力+20"),
-    (lambda y: y.max_hp >= 150,                      "鉄の肉体",       "最大HP150超え"),
-    (lambda y: len(y.rivals) >= 3,                   "多くの宿敵",     "ライバル3人以上"),
-    (lambda y: y.respect >= 60 and y.gold >= 200,    "幹部の風格",     "幹部ランクで金持ち"),
+# ─── 天気システム ─────────────────────────────────────────
+# (天気名, アイコン, ATK補正, HP補正, 説明)
+_WEATHER_TABLE: list[tuple[str, str, float, float, str]] = [
+    ("晴れ",   "☀",  1.0,  1.0,  "普通の状態。補正なし"),
+    ("雨",     "🌧", 0.9,  1.1,  "雨で足元が悪い。ATK-10% / HP+10%"),
+    ("嵐",     "⛈", 1.3,  0.8,  "荒天で気合が入る。ATK+30% / HP-20%"),
+    ("霧",     "🌫", 0.8,  1.0,  "視界不良。ATK-20%"),
+    ("猛暑",   "🔆", 1.2,  0.9,  "熱くなる。ATK+20% / HP-10%"),
+    ("深夜",   "🌙", 1.1,  1.0,  "夜は集中力が増す。ATK+10%"),
 ]
 
 
-def check_achievements(yankee: "Yankee") -> list[str]:
-    """新たに解除された称号リストを返す"""
-    newly_unlocked: list[str] = []
-    for condition, title, desc in ACHIEVEMENTS:
-        if title not in yankee.unlocked_achievements:
-            try:
-                if condition(yankee):
-                    yankee.unlocked_achievements.add(title)
-                    newly_unlocked.append(f"  🏆 称号解除「{title}」— {desc}")
-            except Exception:
-                pass
-    return newly_unlocked
+def get_weather() -> tuple[str, str, float, float, str]:
+    """ランダムに天気を選んで返す"""
+    return random.choice(_WEATHER_TABLE)
 
 
-def show_achievements(yankee: "Yankee") -> None:
-    """称号一覧を表示する"""
-    print(f"\n  ── {yankee.name} の称号 ──────────────────")
-    unlocked = 0
-    for _, title, desc in ACHIEVEMENTS:
-        if title in yankee.unlocked_achievements:
-            print(f"  [✓] {title:12s}  {desc}")
-            unlocked += 1
-        else:
-            print(f"  [ ] ????????    （未解除）")
-    print(f"  {unlocked}/{len(ACHIEVEMENTS)} 解除済み")
+def announce_weather(weather: tuple) -> None:
+    name, icon, atk_mod, hp_mod, desc = weather
+    print(f"\n  {icon} 天気: {name}  ── {desc}")
+
+
+def apply_weather_to_fight(atk: int, weather: tuple) -> int:
+    """天気のATK補正を適用したダメージを返す"""
+    _, _, atk_mod, _, _ = weather
+    return max(1, int(atk * atk_mod))
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -825,6 +808,56 @@ def _create_player() -> Yankee:
     name = input("\nおまえの名前は？ > ").strip() or "名無し"
     territory = input("縄張りは？ > ").strip() or "どこでもない"
     return Yankee(name, territory)
+
+
+# ─── 複数エンディング ─────────────────────────────────────
+def get_ending(player: "Yankee") -> tuple[str, str]:
+    """プレイヤーの状態から最も適切なエンディングを選んで返す (タイトル, 本文)"""
+    r = player.respect
+    t = len(player.territories_owned)
+    g = player.gold
+
+    if r >= 200 and t >= 4:
+        title = "👑 TRUE ENDING ─ 伝説の番長"
+        body  = (f"  {player.name}は全ての縄張りを制覇し、街の伝説となった。\n"
+                 f"  誰も彼の名を知らぬ者はいない。\n"
+                 f"  「俺の物語はまだ終わらない。」")
+    elif r >= 150:
+        title = "🔥 ENDING A ─ 最強への道"
+        body  = (f"  {player.name}はその名を轟かせた。\n"
+                 f"  まだ頂上はある。だが今日のところは——\n"
+                 f"  「悪くない旅だった。」")
+    elif r >= 100 and g >= 300:
+        title = "💰 ENDING B ─ 義理と金"
+        body  = (f"  {player.name}は戦いながらも懐を温めた。\n"
+                 f"  仁義と金、両方手に入れた男の話。\n"
+                 f"  「これが俺の生き様だ。」")
+    elif t >= 3:
+        title = "🗺 ENDING C ─ 縄張りの王"
+        body  = (f"  {player.name}は広大な縄張りを手にした。\n"
+                 f"  戦いよりも、守ることを覚えた。\n"
+                 f"  「俺が守る。それだけだ。」")
+    elif player.win_streak >= 5:
+        title = "⚡ ENDING D ─ 連戦連勝"
+        body  = (f"  {player.name}は倒れることなく戦い続けた。\n"
+                 f"  {player.win_streak}連勝。その記録は語り継がれる。\n"
+                 f"  「負ける気がしなかった。」")
+    else:
+        title = "… ENDING E ─ まだ途中"
+        body  = (f"  {player.name}の旅は終わっていない。\n"
+                 f"  仁義{r}pt。これからだ。\n"
+                 f"  「いつかまた来る。」")
+
+    return title, body
+
+
+def show_ending(player: "Yankee") -> None:
+    title, body = get_ending(player)
+    print(f"\n{'★'*50}")
+    print(f"  {title}")
+    print(f"{'─'*50}")
+    print(body)
+    print(f"{'★'*50}")
 
 
 # ─── main ─────────────────────────────────────────────────

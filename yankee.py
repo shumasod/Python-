@@ -91,32 +91,45 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── 天気システム ─────────────────────────────────────────
-# (天気名, アイコン, ATK補正, HP補正, 説明)
-_WEATHER_TABLE: list[tuple[str, str, float, float, str]] = [
-    ("晴れ",   "☀",  1.0,  1.0,  "普通の状態。補正なし"),
-    ("雨",     "🌧", 0.9,  1.1,  "雨で足元が悪い。ATK-10% / HP+10%"),
-    ("嵐",     "⛈", 1.3,  0.8,  "荒天で気合が入る。ATK+30% / HP-20%"),
-    ("霧",     "🌫", 0.8,  1.0,  "視界不良。ATK-20%"),
-    ("猛暑",   "🔆", 1.2,  0.9,  "熱くなる。ATK+20% / HP-10%"),
-    ("深夜",   "🌙", 1.1,  1.0,  "夜は集中力が増す。ATK+10%"),
-]
+# ─── バトル統計 ───────────────────────────────────────────
+@dataclass
+class BattleStats:
+    wins:               int = 0
+    losses:             int = 0
+    total_damage_dealt: int = 0
+    total_damage_recv:  int = 0
+    longest_streak:     int = 0
+    knockouts:          int = 0
 
+    @property
+    def total_fights(self) -> int:
+        return self.wins + self.losses
 
-def get_weather() -> tuple[str, str, float, float, str]:
-    """ランダムに天気を選んで返す"""
-    return random.choice(_WEATHER_TABLE)
+    @property
+    def win_rate(self) -> float:
+        return self.wins / self.total_fights if self.total_fights else 0.0
 
+    def record_win(self, dmg_dealt: int, dmg_recv: int, streak: int, rounds: int) -> None:
+        self.wins               += 1
+        self.total_damage_dealt += dmg_dealt
+        self.total_damage_recv  += dmg_recv
+        self.longest_streak      = max(self.longest_streak, streak)
+        if rounds == 1:
+            self.knockouts += 1
 
-def announce_weather(weather: tuple) -> None:
-    name, icon, atk_mod, hp_mod, desc = weather
-    print(f"\n  {icon} 天気: {name}  ── {desc}")
+    def record_loss(self, dmg_dealt: int, dmg_recv: int) -> None:
+        self.losses             += 1
+        self.total_damage_dealt += dmg_dealt
+        self.total_damage_recv  += dmg_recv
 
-
-def apply_weather_to_fight(atk: int, weather: tuple) -> int:
-    """天気のATK補正を適用したダメージを返す"""
-    _, _, atk_mod, _, _ = weather
-    return max(1, int(atk * atk_mod))
+    def show(self) -> None:
+        print(f"\n  ── バトル統計 ──────────────────────────")
+        print(f"  総試合数   : {self.total_fights}")
+        print(f"  勝敗       : {self.wins}勝 {self.losses}敗  ({self.win_rate*100:.1f}%)")
+        print(f"  総与ダメージ: {self.total_damage_dealt}")
+        print(f"  総受ダメージ: {self.total_damage_recv}")
+        print(f"  最長連勝   : {self.longest_streak}")
+        print(f"  1発KO      : {self.knockouts}回")
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -193,7 +206,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
-        self.battle_log: list[BattleRecord] = []
+        self.stats = BattleStats()
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -402,6 +415,14 @@ class Yankee:
             loser.rivals.append(winner)
         if loser not in winner.rivals:
             winner.rivals.append(loser)
+
+        # 統計記録
+        dealt  = opponent.effective_max_hp - opponent.hp
+        recvd  = self.effective_max_hp - self.hp
+        if winner is self:
+            self.stats.record_win(dealt, recvd, self.win_streak, round_num)
+        else:
+            self.stats.record_loss(dealt, recvd)
 
         return winner
 

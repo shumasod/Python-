@@ -91,58 +91,39 @@ def get_rank(respect: int) -> tuple[str, str]:
     return "チンピラ", "…"
 
 
-# ─── 状態異常 ─────────────────────────────────────────────
-class StatusEffect(Enum):
-    RAGE     = "激怒"    # ATK +50%
-    FOCUS    = "集中"    # 必殺技確率 2倍
-    FATIGUE  = "疲労"    # ATK -30%
-    INSPIRED = "奮起"    # 回復量 +20%
-
-_STATUS_DURATION: dict[StatusEffect, int] = {
-    StatusEffect.RAGE:     2,
-    StatusEffect.FOCUS:    2,
-    StatusEffect.FATIGUE:  3,
-    StatusEffect.INSPIRED: 999,
-}
+# ─── 縄張り防衛 ───────────────────────────────────────────
+_INVADERS: list[tuple[str, str]] = [
+    ("流れ者ジョー",   "旅の途中"),
+    ("裏切り者コウジ", "元同盟"),
+    ("新参チンピラ",   "駅前"),
+    ("他県の番長",     "遠征"),
+    ("影の組織員",     "不明"),
+]
 
 
-@dataclass
-class ActiveStatus:
-    effect: StatusEffect
-    remaining_turns: int
+def territory_defense_event(defender: "Yankee") -> bool:
+    """縄張りに侵入者が来た防衛戦。勝利でTrue、敗北でFalseを返す"""
+    if not defender.territories_owned:
+        return True
 
-    def tick(self) -> bool:
-        self.remaining_turns -= 1
-        return self.remaining_turns > 0
+    target = random.choice(defender.territories_owned)
+    inv_name, inv_origin = random.choice(_INVADERS)
+    invader = Yankee(inv_name, inv_origin)
 
-    def __str__(self) -> str:
-        return f"{self.effect.value}({self.remaining_turns}T)"
+    print(f"\n  ！ 縄張り侵入警報 ！")
+    print(f"  [{target}] に {inv_name}（{inv_origin}）が現れた！")
+    time.sleep(0.3)
 
-
-def apply_status(yankee: "Yankee", effect: StatusEffect) -> None:
-    """状態異常を付与する（同種は上書き）"""
-    yankee.active_statuses = [s for s in yankee.active_statuses if s.effect != effect]
-    dur = _STATUS_DURATION[effect]
-    yankee.active_statuses.append(ActiveStatus(effect, dur))
-    print(f"  {yankee.name} に【{effect.value}】付与！ ({dur}T)")
-
-
-def tick_statuses(yankee: "Yankee") -> None:
-    """ターン終了時に全状態異常を1T進める"""
-    expired = [s for s in yankee.active_statuses if not s.tick()]
-    for s in expired:
-        yankee.active_statuses.remove(s)
-        print(f"  {yankee.name} の【{s.effect.value}】が切れた")
-
-
-def get_atk_multiplier(yankee: "Yankee") -> float:
-    mult = 1.0
-    for s in yankee.active_statuses:
-        if s.effect == StatusEffect.RAGE:
-            mult *= 1.5
-        elif s.effect == StatusEffect.FATIGUE:
-            mult *= 0.7
-    return mult
+    winner = defender.fight(invader)
+    if winner is defender:
+        print(f"  {defender.name}: 「俺の縄張りに手を出すんじゃねー！」")
+        defender.respect += 20
+        return True
+    else:
+        print(f"  {target} が {inv_name} に奪われた……")
+        if target in defender.territories_owned and len(defender.territories_owned) > 1:
+            defender.territories_owned.remove(target)
+        return False
 
 
 # ─── Yankee クラス ────────────────────────────────────────

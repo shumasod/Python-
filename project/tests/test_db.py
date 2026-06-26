@@ -22,6 +22,9 @@ def _install_fake_asyncpg(monkeypatch, pool_mock):
     """sys.modules に fake asyncpg を差し込み、create_pool が pool_mock を返すようにする"""
     fake = SimpleNamespace(create_pool=AsyncMock(return_value=pool_mock))
     monkeypatch.setitem(sys.modules, "asyncpg", fake)
+    # DB_PASSWORD チェックをパスするためにテスト用パスワードを注入
+    import app.db as db_mod
+    monkeypatch.setattr(db_mod, "DB_CONFIG", {**db_mod.DB_CONFIG, "password": "test_password"})
     return fake
 
 

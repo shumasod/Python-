@@ -9,6 +9,7 @@ A/B テスト・シャドウモードの精度追跡に使用する
   GET  /api/v1/result/summary    : 直近の的中率サマリー
 """
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,20 @@ from pydantic import BaseModel, Field
 from app.api.auth import verify_api_key
 from app.api.scoring import _rank_proba
 from app.config import AB_LOG_DIR, PREDICTION_LOG_DIR, RESULT_LOG_DIR
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_race_id(race_id: str) -> None:
+    if not _RACE_ID_RE.match(race_id):
+        raise HTTPException(
+            status_code=422,
+            detail="race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
 
 RESULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -141,6 +152,7 @@ async def record_result(
     _api_key: str = Depends(verify_api_key),
 ) -> RaceResultResponse:
     """レース結果を記録する"""
+    _validate_race_id(race_id)
     path = _result_path(race_id)
     if path.exists():
         raise HTTPException(
@@ -175,7 +187,7 @@ async def record_result(
         pass
 
     logger.info(
-        f"結果記録: race_id={race_id} winner={body.true_winner} "
+        f"結果記録: race_id={sanitize_for_log(race_id)} winner={body.true_winner} "
         f"correct={comparison['is_correct']}"
     )
 
@@ -251,6 +263,7 @@ async def get_result(
     _api_key: str = Depends(verify_api_key),
 ) -> RaceResultResponse:
     """記録済みのレース結果を返す"""
+    _validate_race_id(race_id)
     path = _result_path(race_id)
     if not path.exists():
         raise HTTPException(

@@ -108,14 +108,26 @@ async def _metrics_mw(request: Request, call_next) -> Response:
     return await metrics_middleware(request, call_next)
 
 # CORS（本番では ALLOWED_ORIGINS 環境変数で制限）
-_allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# デフォルトは localhost のみ。本番では ALLOWED_ORIGINS=https://your-domain.com を設定すること。
+_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
+
+
+@app.middleware("http")
+async def _security_headers_mw(request: Request, call_next) -> Response:
+    """セキュリティ関連レスポンスヘッダーを全レスポンスに付与する"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 # ---- ルーター登録 ----
 app.include_router(predict_router,  prefix="/api/v1", tags=["predict"])

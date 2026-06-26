@@ -41,6 +41,12 @@ except ImportError:  # pragma: no cover
 
 # ---- メトリクス定義 ----
 
+# モジュールレベルで初期化（prometheus 非インストール時も属性として存在させる）
+PREDICT_REQUESTS = None
+PREDICT_LATENCY = None
+MODEL_INFO = None
+MODEL_LOADED = None
+
 if _PROMETHEUS_AVAILABLE:
     # 予測リクエスト総数（status=success/error でラベル分け）
     PREDICT_REQUESTS = Counter(

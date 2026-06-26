@@ -9,6 +9,7 @@ POST /predict エンドポイントを定義する
   - DBへの予測ログ保存（BackgroundTask）
   - Prometheusメトリクス記録
 """
+import re
 import time
 from typing import Any
 
@@ -68,10 +69,20 @@ class WeatherInfo(BaseModel):
     water_temp: float = Field(20.0, description="水温 (℃)")
 
 
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
 class RaceRequest(BaseModel):
     """POST /predict のリクエストボディ"""
-    race_id: str | None = Field(None, description="レースID（任意）")
+    race_id: str | None = Field(None, description="レースID（任意、英数字・_・- のみ最大64文字）")
     race: dict[str, Any] = Field(..., description="レース情報")
+
+    @field_validator("race_id")
+    @classmethod
+    def validate_race_id_format(cls, v: str | None) -> str | None:
+        if v is not None and not _RACE_ID_RE.match(v):
+            raise ValueError("race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）")
+        return v
 
     @field_validator("race")
     @classmethod

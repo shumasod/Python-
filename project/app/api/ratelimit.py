@@ -69,7 +69,8 @@ async def rate_limit_exceeded_handler(request: Request, exc) -> Response:
         app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
     """
     from fastapi.responses import JSONResponse
-    logger.warning(f"レートリミット超過: {request.client.host} → {request.url.path}")
+    client_host = request.client.host if request.client else "unknown"
+    logger.warning(f"レートリミット超過: {client_host} → {request.url.path}")
     return JSONResponse(
         status_code=429,
         content={

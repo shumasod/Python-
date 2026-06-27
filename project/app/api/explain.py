@@ -220,6 +220,7 @@ async def explain_endpoint(
         result = explain_race(request.race)
         return ExplainResponse(race_id=request.race_id, **result)
     except FileNotFoundError as e:
+        logger.error(f"モデルファイルエラー: {e}")
         raise HTTPException(
             status_code=503,
             detail="モデルが未学習です。先にトレーニングを実行してください。",

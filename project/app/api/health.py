@@ -93,7 +93,8 @@ def _check_model() -> dict[str, Any]:
             "size_kb": size_kb,
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.warning(f"モデルチェックエラー: {e}")
+        return {"status": "error", "message": "モデルチェック中にエラーが発生しました"}
 
 
 async def _check_db() -> dict[str, Any]:
@@ -107,7 +108,7 @@ async def _check_db() -> dict[str, Any]:
         return {"status": "ok", "latency_ms": latency_ms}
     except Exception as e:
         logger.warning(f"DBヘルスチェック失敗: {e}")
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "DB接続に失敗しました"}
 
 
 def _check_disk() -> dict[str, Any]:

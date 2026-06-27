@@ -67,6 +67,17 @@ class TestGetPool:
             await db_mod.get_pool()
 
     @pytest.mark.anyio
+    async def test_raises_when_password_empty(self, monkeypatch):
+        """DB_PASSWORD が空のとき ValueError を発生させること"""
+        pool = _make_pool_mock()
+        fake = SimpleNamespace(create_pool=AsyncMock(return_value=pool))
+        monkeypatch.setitem(sys.modules, "asyncpg", fake)
+        import app.db as db_mod
+        monkeypatch.setattr(db_mod, "DB_CONFIG", {**db_mod.DB_CONFIG, "password": ""})
+        with pytest.raises(ValueError, match="DB_PASSWORD"):
+            await db_mod.get_pool()
+
+    @pytest.mark.anyio
     async def test_pool_is_cached(self, monkeypatch):
         """2回目以降はキャッシュされた pool を返すこと"""
         pool = _make_pool_mock()

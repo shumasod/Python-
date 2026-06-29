@@ -9,16 +9,17 @@ POST /predict エンドポイントを定義する
   - DBへの予測ログ保存（BackgroundTask）
   - Prometheusメトリクス記録
 """
+import re
 import time
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import verify_api_key
 from app.model.features import N_BOATS
 from app.model.predict import predict_race
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 # オプション依存モジュール
 try:
@@ -41,6 +42,17 @@ except ImportError:  # pragma: no cover
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_race_id(race_id: str) -> None:
+    """race_id がパストラバーサルの危険がない形式か検証する"""
+    if not _RACE_ID_RE.match(race_id):
+        raise HTTPException(
+            status_code=422,
+            detail="race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
 
 
 # ============================================================
@@ -68,10 +80,20 @@ class WeatherInfo(BaseModel):
     water_temp: float = Field(20.0, description="水温 (℃)")
 
 
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
 class RaceRequest(BaseModel):
     """POST /predict のリクエストボディ"""
-    race_id: str | None = Field(None, description="レースID（任意）")
+    race_id: str | None = Field(None, description="レースID（任意、英数字・_・- のみ最大64文字）")
     race: dict[str, Any] = Field(..., description="レース情報")
+
+    @field_validator("race_id")
+    @classmethod
+    def validate_race_id_format(cls, v: str | None) -> str | None:
+        if v is not None and not _RACE_ID_RE.match(v):
+            raise ValueError("race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）")
+        return v
 
     @field_validator("race")
     @classmethod
@@ -136,7 +158,7 @@ async def predict_endpoint(
     race_id = request.race_id
 
     try:
-        logger.info(f"予測リクエスト受信: race_id={race_id}")
+        logger.info(f"予測リクエスト受信: race_id={sanitize_for_log(race_id)}")
 
         # ---- キャッシュ確認 ----
         if _CACHE_AVAILABLE:
@@ -177,7 +199,7 @@ async def predict_endpoint(
         logger.error(f"モデルファイルエラー: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"モデルが未学習です。先にトレーニングを実行してください。詳細: {e}",
+            detail="モデルが未学習です。先にトレーニングを実行してください。",
         ) from e
     except ValueError as e:
         logger.error(f"入力値エラー: {e}")
@@ -192,7 +214,7 @@ async def predict_endpoint(
 
 @router.get("/stats", summary="予測統計情報")
 async def stats_endpoint(
-    days: int = 7,
+    days: int = Query(7, ge=1, le=365, description="集計対象日数（1〜365）"),
     _api_key: str = Depends(verify_api_key),
 ) -> dict[str, Any]:
     """過去N日間の予測API利用統計（DB接続が必要）"""
@@ -217,6 +239,7 @@ async def invalidate_cache_endpoint(
     _api_key: str = Depends(verify_api_key),
 ) -> dict[str, Any]:
     """指定レースIDのキャッシュを削除する"""
+    _validate_race_id(race_id)
     if not _CACHE_AVAILABLE:
         return {"message": "キャッシュが無効です"}
 
@@ -297,11 +320,11 @@ async def predict_batch_endpoint(
             })
             failed += 1
         except Exception as e:
-            logger.error(f"バッチ予測エラー race_id={race_id}: {e}")
+            logger.error(f"バッチ予測エラー race_id={sanitize_for_log(race_id)}: {e}")
             results.append({
                 "race_id": race_id,
                 "status": "error",
-                "error": str(e),
+                "error": "内部エラーが発生しました",
             })
             failed += 1
 

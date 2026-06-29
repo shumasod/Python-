@@ -79,7 +79,7 @@ def _make_cache_key(race_data: dict[str, Any], race_id: str | None = None) -> st
     """
     raw = race_id or json.dumps(race_data, sort_keys=True, ensure_ascii=False)
 
-    key_hash = hashlib.md5(raw.encode()).hexdigest()
+    key_hash = hashlib.sha256(raw.encode()).hexdigest()
     return f"{_KEY_PREFIX}{key_hash}"
 
 

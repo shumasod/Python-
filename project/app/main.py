@@ -131,6 +131,17 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
+
+@app.middleware("http")
+async def _security_headers_mw(request: Request, call_next) -> Response:
+    """セキュリティ関連レスポンスヘッダーを全レスポンスに付与する"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
 # ---- ルーター登録 ----
 app.include_router(predict_router,  prefix="/api/v1", tags=["predict"])
 app.include_router(explain_router,  prefix="/api/v1", tags=["explain"])

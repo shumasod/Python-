@@ -3,6 +3,7 @@ FastAPI アプリケーションエントリーポイント
 競艇予想AI APIサーバー
 """
 import os
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
@@ -107,9 +108,21 @@ app = FastAPI(
 async def _metrics_mw(request: Request, call_next) -> Response:
     return await metrics_middleware(request, call_next)
 
+# セキュリティレスポンスヘッダーミドルウェア
+@app.middleware("http")
+async def _security_headers_mw(request: Request, call_next: Callable) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
+
 # CORS（本番では ALLOWED_ORIGINS 環境変数で制限）
-# デフォルトは localhost のみ。本番では ALLOWED_ORIGINS=https://your-domain.com を設定すること。
-_allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
+_allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:8080",
+).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,

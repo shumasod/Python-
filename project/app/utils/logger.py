@@ -64,3 +64,22 @@ def get_logger(name: str, log_level: str = "INFO") -> logging.Logger:
     logger.addHandler(file_handler)
 
     return logger
+
+
+def sanitize_for_log(value: object, max_len: int = 200) -> str:
+    """
+    ログに書き出す前にユーザー入力をサニタイズする（CWE-117 ログインジェクション対策）
+
+    - 改行・タブ・NUL を可視エスケープに変換
+    - 200文字を超える場合は切り詰める
+    """
+    text = str(value)
+    text = (
+        text.replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+            .replace("\x00", "\\x00")
+    )
+    if len(text) > max_len:
+        text = text[:max_len] + "…"
+    return text

@@ -27,7 +27,6 @@ _RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 def _validate_race_id(race_id: str) -> None:
-    """race_id がパストラバーサルの危険がない形式か検証する"""
     if not _RACE_ID_RE.match(race_id):
         raise HTTPException(
             status_code=422,

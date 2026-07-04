@@ -62,6 +62,16 @@ main() {
 
     purge_old_files "${BACKUP_BASE_DIR}" "${FULL_RETENTION_DAYS}" "*"
 
+    # カタログ更新
+    local catalog_file="${BACKUP_BASE_DIR}/catalog.json"
+    local backed_files=()
+    while IFS= read -r f; do backed_files+=("$f"); done \
+        < <(find "${backup_dir}" -name "*.sql*" -newer "${catalog_file}" -type f 2>/dev/null \
+            || find "${backup_dir}" -name "*.sql*" -type f | sort -r | head -5)
+    if [[ ${#backed_files[@]} -gt 0 ]]; then
+        update_backup_catalog "${catalog_file}" "full" "${backed_files[@]}"
+    fi
+
     log_info "フルバックアップ完了: ${backup_dir}"
     log_info "=========================================="
 

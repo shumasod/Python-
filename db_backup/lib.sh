@@ -78,6 +78,59 @@ purge_old_files() {
     log_info "古いファイル削除: ${dir}/${pattern} (${days}日以前)"
 }
 
+# ─── バックアップカタログ更新 ─────────────────────────────────
+# バックアップカタログ（catalog.json）を更新
+# 引数: catalog_file backup_type backup_files...
+update_backup_catalog() {
+    local catalog_file="$1" backup_type="$2"
+    shift 2
+    local files=("$@")
+
+    local timestamp; timestamp=$(date '+%Y-%m-%dT%H:%M:%S%z')
+    local hostname; hostname=$(hostname)
+
+    # 各ファイルのサイズとチェックサム（md5 / md5sum）を収集
+    local file_entries="[]"
+    for f in "${files[@]}"; do
+        [[ ! -f "${f}" ]] && continue
+        local size_bytes; size_bytes=$(stat -c%s "${f}" 2>/dev/null || stat -f%z "${f}" 2>/dev/null || echo 0)
+        local checksum=""
+        if command -v md5sum &>/dev/null; then
+            checksum=$(md5sum "${f}" | awk '{print $1}')
+        elif command -v md5 &>/dev/null; then
+            checksum=$(md5 -q "${f}")
+        fi
+        local fname; fname=$(basename "${f}")
+        # JSON エントリをシェルで構築（jq 不要）
+        local entry
+        entry=$(printf '{"file":"%s","size_bytes":%s,"md5":"%s"}' \
+            "${fname}" "${size_bytes}" "${checksum}")
+        if [[ "${file_entries}" == "[]" ]]; then
+            file_entries="[${entry}]"
+        else
+            file_entries="${file_entries%]},${entry}]"
+        fi
+    done
+
+    local entry
+    entry=$(printf '{"timestamp":"%s","type":"%s","host":"%s","db_type":"%s","files":%s}' \
+        "${timestamp}" "${backup_type}" "${hostname}" "${DB_TYPE:-unknown}" "${file_entries}")
+
+    # 既存カタログに追記（簡易実装: 末尾の ] の前に挿入）
+    if [[ ! -f "${catalog_file}" ]]; then
+        echo "[${entry}]" > "${catalog_file}"
+    else
+        # 末尾の ] を取り除いて新エントリを追加
+        local existing; existing=$(cat "${catalog_file}")
+        if [[ "${existing}" == "[]" ]]; then
+            echo "[${entry}]" > "${catalog_file}"
+        else
+            echo "${existing%]},${entry}]" > "${catalog_file}"
+        fi
+    fi
+    log_info "カタログ更新: ${catalog_file}"
+}
+
 # ─── Slack 通知 ───────────────────────────────────────────────
 notify_slack() {
     local status="$1" message="$2"

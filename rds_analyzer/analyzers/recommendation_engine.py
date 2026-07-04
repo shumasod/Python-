@@ -52,6 +52,7 @@ class RecommendationType(str, Enum):
     UPGRADE_GRAVITON = "upgrade_graviton"          # Graviton インスタンスへ移行
     REDUCE_CONNECTIONS = "reduce_connections"      # コネクション削減（PgBouncer等）
     ADD_COVERING_INDEX = "add_covering_index"      # カバリングインデックス追加
+    COST_OPTIMIZATION = "cost_optimization"        # コスト最適化（RI 購入など）
 
 
 @dataclass
@@ -217,6 +218,11 @@ class RecommendationEngine:
         if not instance.multi_az:
             rec = self._recommend_multi_az(instance, cost_breakdown)
             recommendations.append(rec)
+
+        # 11. リザーブドインスタンス推奨
+        ri_rec = self._recommend_reserved_instance(instance, cost_breakdown)
+        if ri_rec:
+            recommendations.append(ri_rec)
 
         # 優先度順（CRITICAL > HIGH > MEDIUM > LOW）でソート
         priority_order = {
@@ -629,6 +635,52 @@ class RecommendationEngine:
                 "フェイルオーバーテストを実施（任意）",
             ],
             reference_url="https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html",
+        )
+
+    def _recommend_reserved_instance(
+        self,
+        instance: RDSInstance,
+        breakdown: CostBreakdown,
+    ) -> Optional[Recommendation]:
+        """リザーブドインスタンス購入によるコスト削減提案"""
+        monthly_cost = breakdown.compute_cost_usd
+
+        # 月額 $30 以下は節約効果が小さいため対象外
+        if monthly_cost <= 30:
+            return None
+
+        monthly_1yr_savings = monthly_cost * 0.35
+        monthly_3yr_savings = monthly_cost * 0.60
+        annual_1yr_savings = monthly_1yr_savings * 12
+
+        priority = (
+            RecommendationPriority.HIGH
+            if annual_1yr_savings >= 500
+            else RecommendationPriority.MEDIUM
+        )
+
+        return Recommendation(
+            recommendation_id=self._next_id("reserved"),
+            type=RecommendationType.COST_OPTIMIZATION,
+            priority=priority,
+            title=f"リザーブドインスタンス ({instance.instance_class}) で月額推定 ${monthly_1yr_savings:.2f} 削減",
+            description=(
+                f"1年リザーブド (35% 割引) で推定 ${monthly_1yr_savings:.2f}/月節約、"
+                f"3年リザーブド (60% 割引) で推定 ${monthly_3yr_savings:.2f}/月節約が見込めます。"
+                "これらは推定値です。実際の割引率はAWS公式料金表をご確認ください。"
+            ),
+            current_config=f"オンデマンド: {instance.instance_class} (推定 ${monthly_cost:.2f}/月)",
+            recommended_config=f"1年リザーブド: 推定 ${monthly_cost - monthly_1yr_savings:.2f}/月",
+            estimated_monthly_savings_usd=monthly_1yr_savings,
+            estimated_performance_improvement_pct=0.0,
+            implementation_complexity=1,
+            action_steps=[
+                "過去の使用状況を確認し、長期稼働が見込まれることを確認",
+                "AWS コンソール > Savings Plans または Reserved Instances で購入",
+                "1年または3年の契約期間と支払いオプション（全額前払い/一部前払い/前払いなし）を選択",
+                "購入後は自動的に割引が適用される（インスタンス変更不要）",
+            ],
+            reference_url="https://aws.amazon.com/rds/reserved-instances/",
         )
 
     # ----------------------------------------------------------

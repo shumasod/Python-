@@ -694,6 +694,8 @@ async def generate_report(
 async def analyze_covering_indexes(
     instance_id: str,
     body: IndexAnalysisApiRequest,
+    ratio_medium: float = Query(default=10.0, ge=1.0, description="medium 優先度のスキャン比率閾値"),
+    min_exec_count: float = Query(default=0.0, ge=0.0, description="分析対象とする最小実行頻度（1日あたり）"),
 ) -> IndexAnalysisResponse:
     """
     クエリパターンと既存インデックスを分析してカバリングインデックスを推奨する
@@ -726,7 +728,7 @@ async def analyze_covering_indexes(
         ],
     )
 
-    analyzer = CoveringIndexAnalyzer()
+    analyzer = CoveringIndexAnalyzer(ratio_medium=ratio_medium, min_exec_count_per_day=min_exec_count)
     result = analyzer.analyze(request)
 
     # 分析結果をキャッシュ

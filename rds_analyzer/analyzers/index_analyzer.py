@@ -167,6 +167,7 @@ class CoveringIndexAnalyzer:
             estimated_scan_ratio=round(ratio, 1),
             estimated_latency_improvement_pct=round(improvement_pct, 1),
             estimated_daily_rows_saved=round(daily_saved, 0),
+            confidence_score=self._confidence_score(query),
             create_statement_mysql=self._mysql_create(
                 query.table_name, idx_name, mysql_key_cols
             ),
@@ -261,6 +262,44 @@ class CoveringIndexAnalyzer:
             create_statement_mysql=self._mysql_create(table, idx_name, mysql_key),
             create_statement_postgresql=self._pg_create(table, idx_name, key_cols, include_cols, "postgresql"),
         )
+
+    # ----------------------------------------------------------
+    # 信頼スコア
+    # ----------------------------------------------------------
+
+    def _confidence_score(self, pattern: QueryPattern) -> float:
+        """
+        0.0–1.0 の信頼スコアを算出する。
+        実行回数・スキャン比率・レイテンシが高いほど信頼度が高い。
+        """
+        score = 0.0
+        ratio = pattern.avg_rows_examined / max(pattern.avg_rows_returned, 1)
+
+        # スキャン比率 (最大0.4)
+        if ratio >= 1000:
+            score += 0.4
+        elif ratio >= 100:
+            score += 0.3
+        elif ratio >= 10:
+            score += 0.2
+
+        # 実行頻度 (最大0.4)
+        if pattern.execution_count_per_day >= 1000:
+            score += 0.4
+        elif pattern.execution_count_per_day >= 100:
+            score += 0.3
+        elif pattern.execution_count_per_day >= 10:
+            score += 0.2
+        elif pattern.execution_count_per_day >= 1:
+            score += 0.1
+
+        # レイテンシ (最大0.2)
+        if pattern.avg_latency_ms >= 1000:
+            score += 0.2
+        elif pattern.avg_latency_ms >= 100:
+            score += 0.1
+
+        return round(min(score, 1.0), 2)
 
     # ----------------------------------------------------------
     # 優先度・理由文

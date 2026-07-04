@@ -131,7 +131,21 @@ def get_metrics_or_404(instance_id: str) -> MetricsHistory:
 @router.get("/health", response_model=HealthCheckResponse, tags=["system"])
 async def health_check() -> HealthCheckResponse:
     """サービスのヘルスチェック"""
-    return HealthCheckResponse(version=__version__)
+    return HealthCheckResponse(
+        version=__version__,
+        instance_count=len(_instance_store),
+        metrics_count=len(_metrics_store),
+    )
+
+
+@router.get("/version", response_model=dict, tags=["system"])
+async def get_version() -> dict:
+    """API バージョン情報を返す"""
+    return {
+        "version": __version__,
+        "api": "RDS Analyzer API",
+        "description": "AWS RDS コスト・パフォーマンス分析ツール",
+    }
 
 
 @router.post(

@@ -71,6 +71,26 @@ class TestHealthCheck:
         assert data["status"] == "ok"
         assert "version" in data
 
+    def test_health_check_instance_count_after_register(
+        self, client, sample_instance_payload
+    ):
+        """インスタンス登録後に instance_count が増える"""
+        before = client.get("/api/v1/health").json()["instance_count"]
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        after = client.get("/api/v1/health").json()["instance_count"]
+        assert after == before + 1
+
+    def test_version_endpoint_returns_200(self, client):
+        response = client.get("/api/v1/version")
+        assert response.status_code == 200
+        data = response.json()
+        assert "version" in data
+
+    def test_version_endpoint_contains_api_key(self, client):
+        response = client.get("/api/v1/version")
+        data = response.json()
+        assert "api" in data
+
 
 class TestInstanceRegistration:
     def test_register_instance_success(self, client, sample_instance_payload):

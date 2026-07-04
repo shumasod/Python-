@@ -174,6 +174,46 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
     return {"message": "登録しました", "instance_id": instance.instance_id}
 
 
+@router.get(
+    "/rds",
+    response_model=list[dict],
+    tags=["instances"],
+    summary="登録済み RDS インスタンス一覧を取得（タグフィルタ対応）",
+)
+async def list_instances(
+    tag_key: Optional[str] = Query(default=None, description="フィルタするタグキー"),
+    tag_value: Optional[str] = Query(default=None, description="フィルタするタグ値（tag_key と併用）"),
+) -> list[dict]:
+    """
+    登録済み RDS インスタンスの一覧を返す
+
+    - `tag_key` + `tag_value` を両方指定 → そのタグキーと値が一致するインスタンスのみ返す
+    - `tag_key` のみ指定 → そのタグキーを持つインスタンスのみ返す
+    - 両方省略 → 全インスタンスを返す
+    """
+    instances = list(_instance_store.values())
+
+    if tag_key is not None and tag_value is not None:
+        instances = [i for i in instances if i.tags.get(tag_key) == tag_value]
+    elif tag_key is not None:
+        instances = [i for i in instances if tag_key in i.tags]
+
+    return [
+        {
+            "instance_id": i.instance_id,
+            "engine": i.engine.value,
+            "engine_version": i.engine_version,
+            "instance_class": i.instance_class,
+            "region": i.region,
+            "storage_type": i.storage_type.value,
+            "allocated_storage_gb": i.allocated_storage_gb,
+            "multi_az": i.multi_az,
+            "tags": i.tags,
+        }
+        for i in instances
+    ]
+
+
 @router.post(
     "/rds/{instance_id}/metrics",
     response_model=dict,

@@ -66,6 +66,11 @@ main() {
 
     purge_old_files "${BACKUP_BASE_DIR}" "${FULL_RETENTION_DAYS}" "*"
 
+    # 件数ベースローテーション（RETENTION_COUNT 設定時）
+    if [[ -n "${RETENTION_COUNT:-}" ]]; then
+        purge_old_files_by_count "${BACKUP_BASE_DIR}" "${RETENTION_COUNT}" "*.sql.gz"
+    fi
+
     # バックアップファイルの整合性を検証
     if [[ "${COMPRESS}" == "true" && "${SKIP_VERIFY}" == "false" ]]; then
         verify_backup_files "${backup_dir}" "*.sql.gz" \

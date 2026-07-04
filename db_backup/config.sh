@@ -51,6 +51,10 @@ LOG_DIR="/var/log/db_backup"
 FULL_RETENTION_DAYS=7
 INCREMENTAL_RETENTION_DAYS=3
 
+# 件数ベースの保持（設定時は日数ベースより優先）
+# RETENTION_COUNT=10  # デフォルト未設定（空=無効）
+RETENTION_COUNT="${RETENTION_COUNT:-}"
+
 # ─── 圧縮設定 ─────────────────────────────────────────────────
 COMPRESS=true
 COMPRESS_LEVEL=6

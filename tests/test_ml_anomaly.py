@@ -1,8 +1,9 @@
 """
-ML 異常検知 + コスト予測 テスト
+ML 異常検知 + コスト予測 + ストレージ残量予測 テスト
 """
 
 import pytest
+from datetime import date
 from rds_analyzer.analyzers.ml_anomaly_detector import MLAnomalyDetector
 
 
@@ -95,3 +96,98 @@ class TestCostTrend:
         result = detector.calculate_cost_trend(history)
         assert result["trend"] == "increasing"
         assert result["monthly_change_rate_pct"] > 5.0
+
+
+class TestStorageProjection:
+    """project_storage_growth のテスト"""
+
+    # 1 GB = 1024^3 bytes
+    GB = 1024 ** 3
+
+    def test_growing_usage_projects_days_until_full(self, detector):
+        """使用量が増加している場合、days_until_full が正の値で返る"""
+        allocated_gb = 100.0
+        # 空き容量が 50GB → 40GB → 30GB → 20GB → 10GB と減少（毎時 10GB 減）
+        history = [50.0 * self.GB, 40.0 * self.GB, 30.0 * self.GB, 20.0 * self.GB, 10.0 * self.GB]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+
+        assert result["days_until_full"] is not None
+        assert result["days_until_full"] > 0
+        assert result["projected_full_date"] is not None
+        # 10GB 残り、毎時 10GB 消費 → 約 1時間 → 1/24 日
+        # 実際は線形回帰なので厳密な1/24とは異なるが正であることを確認
+        assert result["trend_gb_per_day"] < 0  # 減少トレンド
+
+    def test_stable_usage_returns_none(self, detector):
+        """使用量が横ばい（増加なし）の場合、days_until_full は None"""
+        allocated_gb = 100.0
+        history = [50.0 * self.GB] * 10  # 変化なし
+        result = detector.project_storage_growth(history, allocated_gb)
+
+        assert result["days_until_full"] is None
+        assert result["projected_full_date"] is None
+
+    def test_shrinking_usage_returns_none(self, detector):
+        """空き容量が増加している（使用量減少）場合、days_until_full は None"""
+        allocated_gb = 100.0
+        # 空き容量が増加 → slope >= 0
+        history = [10.0 * self.GB, 20.0 * self.GB, 30.0 * self.GB, 40.0 * self.GB]
+        result = detector.project_storage_growth(history, allocated_gb)
+
+        assert result["days_until_full"] is None
+        assert result["projected_full_date"] is None
+        assert result["trend_gb_per_day"] >= 0
+
+    def test_fewer_than_2_data_points_returns_none(self, detector):
+        """データが 1 点以下の場合、days_until_full は None"""
+        allocated_gb = 100.0
+        result = detector.project_storage_growth([30.0 * self.GB], allocated_gb)
+
+        assert result["days_until_full"] is None
+        assert result["projected_full_date"] is None
+
+    def test_confidence_high_for_168_or_more_points(self, detector):
+        """168 点以上（1週間分・毎時）は confidence = 'high'"""
+        allocated_gb = 200.0
+        # 空き容量が減少する 168 点のデータ（200GB→32GB）
+        start = 200.0 * self.GB
+        end = 32.0 * self.GB
+        history = [start - (start - end) * i / 167 for i in range(168)]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+        assert result["confidence"] == "high"
+
+    def test_confidence_medium_for_24_to_167_points(self, detector):
+        """24〜167 点は confidence = 'medium'"""
+        allocated_gb = 100.0
+        history = [50.0 * self.GB - i * 0.5 * self.GB for i in range(24)]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+        assert result["confidence"] == "medium"
+
+    def test_confidence_low_for_fewer_than_24_points(self, detector):
+        """24 点未満は confidence = 'low'"""
+        allocated_gb = 100.0
+        history = [50.0 * self.GB, 49.0 * self.GB, 48.0 * self.GB]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+        assert result["confidence"] == "low"
+
+    def test_current_used_gb_equals_allocated_minus_free(self, detector):
+        """current_used_gb = allocated_gb - current_free_gb"""
+        allocated_gb = 100.0
+        free_bytes = 30.0 * self.GB
+        history = [40.0 * self.GB, 35.0 * self.GB, free_bytes]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+
+        expected_free_gb = free_bytes / self.GB
+        assert abs(result["current_free_gb"] - expected_free_gb) < 1e-3
+        assert abs(result["current_used_gb"] - (allocated_gb - expected_free_gb)) < 1e-3
+
+    def test_projected_full_date_is_future(self, detector):
+        """projected_full_date は今日以降の日付"""
+        allocated_gb = 100.0
+        # 空き容量が緩やかに減少（数百日後に満杯）
+        history = [60.0 * self.GB - i * 0.001 * self.GB for i in range(24)]
+        result = detector.project_storage_growth(history, allocated_gb, interval_hours=1.0)
+
+        if result["projected_full_date"] is not None:
+            projected = date.fromisoformat(result["projected_full_date"])
+            assert projected >= date.today()

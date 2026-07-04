@@ -296,6 +296,92 @@ class MLAnomalyDetector:
         }
 
     # ----------------------------------------------------------
+    # ストレージ残量予測
+    # ----------------------------------------------------------
+
+    def project_storage_growth(
+        self,
+        free_storage_bytes_history: list[float],  # most-recent last
+        allocated_gb: float,
+        interval_hours: float = 1.0,
+    ) -> dict:
+        """
+        Fit a linear trend to free_storage_bytes history and project
+        how many days until storage is full (free_bytes → 0).
+
+        Returns:
+          {
+            "allocated_gb": float,
+            "current_free_gb": float,
+            "current_used_gb": float,
+            "trend_gb_per_day": float,   # negative = growing usage
+            "days_until_full": float | None,  # None if not shrinking or <2 data pts
+            "projected_full_date": str | None,  # ISO date string
+            "confidence": str,           # "high"/"medium"/"low" based on data points
+          }
+        """
+        data = free_storage_bytes_history
+        n = len(data)
+
+        if n < 2:
+            current_free_gb = data[-1] / (1024 ** 3) if n == 1 else 0.0
+            return {
+                "allocated_gb": allocated_gb,
+                "current_free_gb": current_free_gb,
+                "current_used_gb": allocated_gb - current_free_gb,
+                "trend_gb_per_day": 0.0,
+                "days_until_full": None,
+                "projected_full_date": None,
+                "confidence": "low",
+            }
+
+        # Simple linear regression: x = index, y = free_storage_bytes
+        x_mean = (n - 1) / 2
+        y_mean = sum(data) / n
+        numerator = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(data))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        slope = numerator / denominator if denominator != 0 else 0.0
+
+        # Convert slope (bytes/interval) to GB/day
+        trend_gb_per_day = slope * (24 / interval_hours) / (1024 ** 3)
+
+        current_free_gb = data[-1] / (1024 ** 3)
+        current_used_gb = allocated_gb - current_free_gb
+
+        # Confidence based on data point count
+        if n >= 168:
+            confidence = "high"
+        elif n >= 24:
+            confidence = "medium"
+        else:
+            confidence = "low"
+
+        # If slope >= 0, storage is not shrinking → no projection
+        if slope >= 0:
+            return {
+                "allocated_gb": allocated_gb,
+                "current_free_gb": round(current_free_gb, 4),
+                "current_used_gb": round(current_used_gb, 4),
+                "trend_gb_per_day": round(trend_gb_per_day, 6),
+                "days_until_full": None,
+                "projected_full_date": None,
+                "confidence": confidence,
+            }
+
+        days_until_full = current_free_gb / abs(trend_gb_per_day)
+        projected_date = (date.today() + timedelta(days=days_until_full)).strftime("%Y-%m-%d")
+
+        return {
+            "allocated_gb": allocated_gb,
+            "current_free_gb": round(current_free_gb, 4),
+            "current_used_gb": round(current_used_gb, 4),
+            "trend_gb_per_day": round(trend_gb_per_day, 6),
+            "days_until_full": round(days_until_full, 2),
+            "projected_full_date": projected_date,
+            "confidence": confidence,
+        }
+
+    # ----------------------------------------------------------
     # ヘルパー
     # ----------------------------------------------------------
 

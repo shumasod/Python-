@@ -258,3 +258,15 @@ class IndexAnalysisResponse(BaseModel):
     queries_needing_index: int
     estimated_total_improvement_pct: float
     recommendations: list[CoveringIndexRecommendationResponse]
+
+
+class StorageProjectionResponse(BaseModel):
+    """GET /rds/{id}/storage-projection レスポンス"""
+    instance_id: str
+    allocated_gb: float
+    current_free_gb: float
+    current_used_gb: float
+    trend_gb_per_day: float
+    days_until_full: Optional[float] = None
+    projected_full_date: Optional[str] = None
+    confidence: str

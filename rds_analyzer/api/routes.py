@@ -40,6 +40,7 @@ from .schemas import (
     RDSSummaryResponse,
     RecommendationItem,
     RecommendationResponse,
+    StorageProjectionResponse,
 )
 from ..analyzers.cost_analyzer import CostAnalyzer
 from ..analyzers.index_analyzer import CoveringIndexAnalyzer
@@ -565,6 +566,54 @@ async def get_cost_forecast(
             for f in forecasts
         ],
     }
+
+
+@router.get(
+    "/rds/{instance_id}/storage-projection",
+    response_model=StorageProjectionResponse,
+    tags=["analysis"],
+    summary="ストレージ残量予測",
+)
+async def get_storage_projection(
+    instance_id: str,
+    ml_detector: MLAnomalyDetector = Depends(get_ml_detector),
+) -> StorageProjectionResponse:
+    """
+    ストレージの空き容量履歴から線形トレンドを推定し、
+    ストレージが満杯になるまでの日数を予測する。
+
+    - days_until_full: 予測残日数（増加傾向/データ不足時は null）
+    - projected_full_date: 予測満杯日（ISO 日付文字列、または null）
+    - confidence: データ量に基づく信頼度（high/medium/low）
+    """
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    # MetricsHistory.free_storage_bytes は MetricsStatistics（集計値）のため、
+    # [max → avg → min] の順（古い→新しい）で時系列を近似する。
+    # 空きストレージは使用量増加に伴い単調減少するため、
+    # max が過去の値、min が直近の値に対応する。
+    free_storage_history = [
+        metrics.free_storage_bytes.max,
+        metrics.free_storage_bytes.avg,
+        metrics.free_storage_bytes.min,
+    ]
+
+    result = ml_detector.project_storage_growth(
+        free_storage_bytes_history=free_storage_history,
+        allocated_gb=float(instance.allocated_storage_gb),
+    )
+
+    return StorageProjectionResponse(
+        instance_id=instance_id,
+        allocated_gb=result["allocated_gb"],
+        current_free_gb=result["current_free_gb"],
+        current_used_gb=result["current_used_gb"],
+        trend_gb_per_day=result["trend_gb_per_day"],
+        days_until_full=result["days_until_full"],
+        projected_full_date=result["projected_full_date"],
+        confidence=result["confidence"],
+    )
 
 
 @router.get(

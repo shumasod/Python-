@@ -258,3 +258,27 @@ class IndexAnalysisResponse(BaseModel):
     queries_needing_index: int
     estimated_total_improvement_pct: float
     recommendations: list[CoveringIndexRecommendationResponse]
+
+
+# ============================================================
+# メトリクス百分位数
+# ============================================================
+
+class MetricPercentiles(BaseModel):
+    """単一メトリクスの百分位数統計"""
+    p50: float
+    p95: float
+    p99: float
+    min: float
+    max: float
+    avg: float
+
+
+class MetricsPercentilesResponse(BaseModel):
+    """GET /rds/{id}/metrics/percentiles レスポンス"""
+    instance_id: str
+    cpu_utilization: MetricPercentiles
+    read_iops: MetricPercentiles
+    write_iops: MetricPercentiles
+    read_latency_ms: MetricPercentiles
+    free_storage_gb: MetricPercentiles

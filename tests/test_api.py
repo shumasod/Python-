@@ -526,3 +526,73 @@ class TestNotify:
     def test_notify_not_found(self, client):
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
+
+
+class TestMetricsPercentiles:
+    """GET /rds/{id}/metrics/percentiles エンドポイントのテスト"""
+
+    def test_returns_404_when_instance_not_found(self, client):
+        """存在しないインスタンスは 404 を返す"""
+        resp = client.get("/api/v1/rds/no-such-instance/metrics/percentiles")
+        assert resp.status_code == 404
+
+    def test_returns_404_when_no_metrics_posted(
+        self, client, sample_instance_payload
+    ):
+        """インスタンスは存在するがメトリクス未投入の場合は 404 を返す"""
+        payload = {**sample_instance_payload, "instance_id": "no-metrics-pct"}
+        client.post("/api/v1/rds", json=payload)
+        resp = client.get("/api/v1/rds/no-metrics-pct/metrics/percentiles")
+        assert resp.status_code == 404
+
+    def test_returns_200_with_all_percentile_fields(
+        self, client, sample_instance_payload, sample_metrics_payload
+    ):
+        """メトリクス投入後は 200 とすべての百分位数フィールドを返す"""
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001/metrics/percentiles")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert data["instance_id"] == "test-api-mysql-001"
+
+        expected_metrics = [
+            "cpu_utilization",
+            "read_iops",
+            "write_iops",
+            "read_latency_ms",
+            "free_storage_gb",
+        ]
+        expected_fields = {"p50", "p95", "p99", "min", "max", "avg"}
+
+        for metric in expected_metrics:
+            assert metric in data, f"{metric} がレスポンスに含まれていない"
+            assert expected_fields == set(data[metric].keys()), (
+                f"{metric} の百分位数フィールドが不完全"
+            )
+
+    def test_p99_gte_p95_gte_p50_invariant(
+        self, client, sample_instance_payload, sample_metrics_payload
+    ):
+        """p99 >= p95 >= p50 の不変条件を検証する"""
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001/metrics/percentiles")
+        assert resp.status_code == 200
+
+        data = resp.json()
+        for metric in ("cpu_utilization", "read_iops", "write_iops", "read_latency_ms"):
+            m = data[metric]
+            assert m["p99"] >= m["p95"], (
+                f"{metric}: p99 ({m['p99']}) < p95 ({m['p95']})"
+            )
+            assert m["p95"] >= m["p50"], (
+                f"{metric}: p95 ({m['p95']}) < p50 ({m['p50']})"
+            )

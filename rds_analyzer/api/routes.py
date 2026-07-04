@@ -33,7 +33,9 @@ from .schemas import (
     IndexAnalysisApiRequest,
     IndexAnalysisResponse,
     InstanceSummaryItem,
+    MetricPercentiles,
     MetricsInputRequest,
+    MetricsPercentilesResponse,
     PerformanceSummaryResponse,
     QueryPatternRequest,
     RDSInstanceRequest,
@@ -733,3 +735,74 @@ async def notify_slack(
         "notifications_sent": sent,
         "total": len(sent),
     }
+
+
+# ============================================================
+# メトリクス百分位数ヘルパー
+# ============================================================
+
+def _compute_percentiles(values: list[float]) -> dict:
+    """生の値リストから百分位数統計を計算する"""
+    if not values:
+        return {"p50": 0.0, "p95": 0.0, "p99": 0.0, "min": 0.0, "max": 0.0, "avg": 0.0}
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+
+    def pct(p: float) -> float:
+        idx = int(p / 100 * (n - 1))
+        return round(sorted_vals[idx], 4)
+
+    return {
+        "p50": pct(50),
+        "p95": pct(95),
+        "p99": pct(99),
+        "min": round(sorted_vals[0], 4),
+        "max": round(sorted_vals[-1], 4),
+        "avg": round(sum(sorted_vals) / n, 4),
+    }
+
+
+def _stats_to_metric_percentiles(stats: MetricsStatistics, scale: float = 1.0) -> MetricPercentiles:
+    """MetricsStatistics の集計値から MetricPercentiles を生成する。
+    raw な値リストが存在しないため avg を p50 の近似値として使用する。
+    """
+    return MetricPercentiles(
+        p50=round(stats.avg * scale, 4),
+        p95=round(stats.p95 * scale, 4),
+        p99=round(stats.p99 * scale, 4),
+        min=round(stats.min * scale, 4),
+        max=round(stats.max * scale, 4),
+        avg=round(stats.avg * scale, 4),
+    )
+
+
+# ============================================================
+# メトリクス百分位数エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/metrics/percentiles",
+    response_model=MetricsPercentilesResponse,
+    tags=["metrics"],
+    summary="メトリクスの百分位数統計を取得",
+)
+async def get_metrics_percentiles(instance_id: str) -> MetricsPercentilesResponse:
+    """
+    登録済みメトリクスの百分位数統計（p50/p95/p99/min/max/avg）を返す。
+
+    先に POST /rds/{id}/metrics でメトリクスを投入してください。
+    free_storage_gb は bytes から GB に変換して返します。
+    """
+    get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    gb_scale = 1.0 / (1024 ** 3)
+
+    return MetricsPercentilesResponse(
+        instance_id=instance_id,
+        cpu_utilization=_stats_to_metric_percentiles(metrics.cpu_utilization),
+        read_iops=_stats_to_metric_percentiles(metrics.read_iops),
+        write_iops=_stats_to_metric_percentiles(metrics.write_iops),
+        read_latency_ms=_stats_to_metric_percentiles(metrics.read_latency_ms),
+        free_storage_gb=_stats_to_metric_percentiles(metrics.free_storage_bytes, scale=gb_scale),
+    )

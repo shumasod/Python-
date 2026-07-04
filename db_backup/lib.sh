@@ -108,6 +108,34 @@ purge_old_files() {
     log_info "古いファイル削除: ${dir}/${pattern} (${days}日以前)"
 }
 
+# 件数ベースのローテーション: 最新 N 件を残して古いファイルを削除
+purge_old_files_by_count() {
+    local dir="$1" count="$2" pattern="${3:-*.sql.gz}"
+    if [[ -z "${count}" || "${count}" -lt 1 ]]; then
+        log_warn "RETENTION_COUNT が未設定のため件数ローテーションをスキップ"
+        return 0
+    fi
+    log_info "件数ローテーション: ${dir} の ${pattern} を最新 ${count} 件に制限"
+    local files=()
+    while IFS= read -r f; do files+=("$f"); done \
+        < <(find "${dir}" -name "${pattern}" -type f | sort -r)
+    local total=${#files[@]}
+    if [[ "${total}" -le "${count}" ]]; then
+        log_info "ファイル数 (${total}) が上限 (${count}) 以下のため削除不要"
+        return 0
+    fi
+    local to_delete=$(( total - count ))
+    log_info "${to_delete} ファイルを削除します"
+    for (( i=count; i<total; i++ )); do
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            log_info "[DRY-RUN] 削除: ${files[$i]}"
+        else
+            rm -f "${files[$i]}"
+            log_info "削除: ${files[$i]}"
+        fi
+    done
+}
+
 # ─── ディスク空き容量チェック ──────────────────────────────────
 check_disk_space() {
     local dir="$1"

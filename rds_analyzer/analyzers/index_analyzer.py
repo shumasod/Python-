@@ -43,7 +43,17 @@ _FREQ_MEDIUM = 100.0
 class CoveringIndexAnalyzer:
     """カバリングインデックス分析エンジン（純粋計算クラス、I/O なし）"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        ratio_critical: float = 1000.0,
+        ratio_high: float = 100.0,
+        ratio_medium: float = 10.0,
+        min_exec_count_per_day: float = 0.0,
+    ) -> None:
+        self._ratio_critical = ratio_critical
+        self._ratio_high = ratio_high
+        self._ratio_medium = ratio_medium
+        self._min_exec_count_per_day = min_exec_count_per_day
         self._counter = 0
 
     # ----------------------------------------------------------
@@ -66,6 +76,15 @@ class CoveringIndexAnalyzer:
         needing_count = 0
 
         for query in request.queries:
+            if query.execution_count_per_day < self._min_exec_count_per_day:
+                logger.debug(
+                    "クエリ '%s' は実行頻度 %.1f/日 が最小閾値 %.1f/日 未満のためスキップ",
+                    query.query_id or query.table_name,
+                    query.execution_count_per_day,
+                    self._min_exec_count_per_day,
+                )
+                continue
+
             if self._is_covered(query, request.existing_indexes):
                 covered_count += 1
                 logger.debug("クエリ '%s' は既存インデックスでカバー済み", query.query_id or query.table_name)
@@ -137,7 +156,7 @@ class CoveringIndexAnalyzer:
             return None  # WHERE 句なし: インデックスでフルスキャンを解消できない
 
         ratio = query.avg_rows_examined / max(query.avg_rows_returned, 1.0)
-        if ratio < _RATIO_MEDIUM:
+        if ratio < self._ratio_medium:
             return None  # スキャン比率が小さく改善余地が少ない
 
         # キーカラム: filter → sort → group (重複除去・順序維持)
@@ -267,11 +286,11 @@ class CoveringIndexAnalyzer:
     # ----------------------------------------------------------
 
     def _priority(self, ratio: float, daily_exec: float) -> str:
-        if ratio >= _RATIO_CRITICAL and daily_exec >= _FREQ_MEDIUM:
+        if ratio >= self._ratio_critical and daily_exec >= _FREQ_MEDIUM:
             return "critical"
-        if ratio >= _RATIO_HIGH or (ratio >= _RATIO_MEDIUM and daily_exec >= _FREQ_HIGH):
+        if ratio >= self._ratio_high or (ratio >= self._ratio_medium and daily_exec >= _FREQ_HIGH):
             return "high"
-        if ratio >= _RATIO_MEDIUM or daily_exec >= _FREQ_MEDIUM:
+        if ratio >= self._ratio_medium or daily_exec >= _FREQ_MEDIUM:
             return "medium"
         return "low"
 

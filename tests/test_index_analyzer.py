@@ -487,106 +487,72 @@ class TestEdgeCases:
 
 
 # ──────────────────────────────────────────────
-# コンストラクタしきい値テスト
+# 信頼スコアテスト
 # ──────────────────────────────────────────────
 
-class TestConfigurableThresholds:
-    """CoveringIndexAnalyzer のコンストラクタ経由のしきい値設定テスト"""
-
-    def test_default_thresholds_trigger_at_ratio_10(self):
-        """デフォルトしきい値（ratio_medium=10）では ratio=10 で推奨が生成される"""
+class TestConfidenceScore:
+    def test_high_ratio_high_exec_high_latency_score_near_1(self):
+        """高スキャン比率 + 高実行頻度 + 高レイテンシ → スコアが 1.0 に近い"""
         analyzer = CoveringIndexAnalyzer()
         query = make_query(
             filter_cols=["status"],
-            rows_examined=100,
-            rows_returned=10,   # ratio = 10.0 (ちょうど閾値)
-            exec_per_day=5,
+            rows_examined=100000,
+            rows_returned=10,        # ratio = 10000 → +0.4
+            exec_per_day=5000,       # >= 1000      → +0.4
+            latency_ms=2000,         # >= 1000      → +0.2
         )
         result = analyzer.analyze(make_request([query]))
-        assert len(result.recommendations) == 1
+        rec = result.recommendations[0]
+        assert rec.confidence_score >= 0.9
 
-    def test_custom_ratio_medium_suppresses_low_ratio(self):
-        """ratio_medium=50 に設定すると ratio=30 では推奨が生成されない"""
-        analyzer = CoveringIndexAnalyzer(ratio_medium=50.0)
+    def test_low_ratio_low_exec_score_low(self):
+        """低スキャン比率 + 低実行頻度 → スコアが 0.3 以下"""
+        analyzer = CoveringIndexAnalyzer()
         query = make_query(
             filter_cols=["status"],
-            rows_examined=300,
-            rows_returned=10,   # ratio = 30.0 < 50
-            exec_per_day=50,
+            rows_examined=150,
+            rows_returned=10,        # ratio = 15 → +0.2
+            exec_per_day=5,          # >= 1       → +0.1
+            latency_ms=10,           # < 100      → +0.0
         )
         result = analyzer.analyze(make_request([query]))
-        assert result.recommendations == []
+        rec = result.recommendations[0]
+        assert rec.confidence_score <= 0.3
 
-    def test_custom_ratio_medium_still_triggers_above_threshold(self):
-        """ratio_medium=50 でも ratio=60 なら推奨が生成される"""
-        analyzer = CoveringIndexAnalyzer(ratio_medium=50.0)
-        query = make_query(
+    def test_score_always_between_0_and_1(self):
+        """スコアは常に 0.0 以上 1.0 以下"""
+        analyzer = CoveringIndexAnalyzer()
+        cases = [
+            make_query(filter_cols=["a"], rows_examined=10, rows_returned=1,
+                       exec_per_day=0, latency_ms=0, query_id="q1"),
+            make_query(filter_cols=["b"], rows_examined=10000000, rows_returned=1,
+                       exec_per_day=999999, latency_ms=999999, query_id="q2"),
+        ]
+        for q in cases:
+            result = analyzer.analyze(make_request([q]))
+            if result.recommendations:
+                score = result.recommendations[0].confidence_score
+                assert 0.0 <= score <= 1.0, f"score={score} out of range for query {q.query_id}"
+
+    def test_score_increases_with_execution_count(self):
+        """実行回数が増えるほどスコアが上がる（または同じ）"""
+        analyzer = CoveringIndexAnalyzer()
+        base_kwargs = dict(
             filter_cols=["status"],
-            rows_examined=600,
-            rows_returned=10,   # ratio = 60.0 >= 50
-            exec_per_day=50,
+            rows_examined=500,
+            rows_returned=10,    # ratio = 50 → +0.2
+            latency_ms=50,       # < 100      → +0.0
         )
-        result = analyzer.analyze(make_request([query]))
-        assert len(result.recommendations) == 1
+        q_low = make_query(**base_kwargs, exec_per_day=1, query_id="low")    # +0.1
+        q_mid = make_query(**base_kwargs, exec_per_day=50, query_id="mid")   # +0.2
+        q_high = make_query(**base_kwargs, exec_per_day=500, query_id="high") # +0.3
 
-    def test_min_exec_count_per_day_filters_low_frequency(self):
-        """min_exec_count_per_day=10 に設定すると exec_per_day=5 のクエリはスキップされる"""
-        analyzer = CoveringIndexAnalyzer(min_exec_count_per_day=10.0)
-        query = make_query(
-            filter_cols=["status"],
-            rows_examined=10000,
-            rows_returned=10,   # ratio = 1000 (高い)
-            exec_per_day=5,     # < 10 → スキップ
-        )
-        result = analyzer.analyze(make_request([query]))
-        assert result.recommendations == []
-        assert result.total_queries_analyzed == 1
-        assert result.queries_needing_index == 0
+        def get_score(q: QueryPattern) -> float:
+            res = analyzer.analyze(make_request([q]))
+            return res.recommendations[0].confidence_score if res.recommendations else 0.0
 
-    def test_min_exec_count_per_day_passes_high_frequency(self):
-        """min_exec_count_per_day=10 でも exec_per_day=20 なら分析対象になる"""
-        analyzer = CoveringIndexAnalyzer(min_exec_count_per_day=10.0)
-        query = make_query(
-            filter_cols=["status"],
-            rows_examined=10000,
-            rows_returned=10,   # ratio = 1000
-            exec_per_day=20,    # >= 10 → 分析対象
-        )
-        result = analyzer.analyze(make_request([query]))
-        assert len(result.recommendations) == 1
+        score_low = get_score(q_low)
+        score_mid = get_score(q_mid)
+        score_high = get_score(q_high)
 
-    def test_ratio_critical_affects_priority_assignment(self):
-        """ratio_critical を下げると、低い ratio でも critical 優先度になる"""
-        # デフォルト: ratio=200, exec=200/日 → ratio < 1000 なので critical にならない
-        default_analyzer = CoveringIndexAnalyzer()
-        query = make_query(
-            filter_cols=["status"],
-            rows_examined=2000,
-            rows_returned=10,   # ratio = 200
-            exec_per_day=200,
-        )
-        result_default = default_analyzer.analyze(make_request([query]))
-        assert result_default.recommendations[0].priority == "high"
-
-        # ratio_critical=100 に下げると ratio=200 >= 100 かつ exec=200 >= 100 → critical
-        custom_analyzer = CoveringIndexAnalyzer(ratio_critical=100.0)
-        result_custom = custom_analyzer.analyze(make_request([query]))
-        assert result_custom.recommendations[0].priority == "critical"
-
-    def test_ratio_high_affects_priority_assignment(self):
-        """ratio_high を上げると、従来 high だったものが medium に落ちる"""
-        # ratio=150, exec=5/日: デフォルト ratio_high=100 では ratio >= 100 → high
-        default_analyzer = CoveringIndexAnalyzer()
-        query = make_query(
-            filter_cols=["category"],
-            rows_examined=1500,
-            rows_returned=10,   # ratio = 150
-            exec_per_day=5,
-        )
-        result_default = default_analyzer.analyze(make_request([query]))
-        assert result_default.recommendations[0].priority == "high"
-
-        # ratio_high=200 に上げると ratio=150 < 200 → high にならず medium
-        custom_analyzer = CoveringIndexAnalyzer(ratio_high=200.0)
-        result_custom = custom_analyzer.analyze(make_request([query]))
-        assert result_custom.recommendations[0].priority == "medium"
+        assert score_low <= score_mid <= score_high

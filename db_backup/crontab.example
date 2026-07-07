@@ -37,6 +37,12 @@ MAILTO=""   # エラーをメール送信する場合はアドレスを設定
 # ─── 週1回 日曜01:00 全DBフルバックアップのみ ────────────────
 # 0 1 * * 0 DB_TYPE=mysql /path/to/db_backup/backup.sh --no-incremental >> /var/log/db_backup/cron.log 2>&1
 
+# ─── バックアップ一覧表示 (週1回 日曜03:00) ──────────────────
+# 週次レポートとして既存バックアップの一覧をログに記録する例
+# 0 3 * * 0 DB_TYPE=mysql /path/to/db_backup/list_backups.sh >> /var/log/db_backup/list.log 2>&1
+# JSON形式で出力する場合:
+# 0 3 * * 0 DB_TYPE=mysql /path/to/db_backup/list_backups.sh --json >> /var/log/db_backup/list.json 2>&1
+
 # ─── ログローテーション ──────────────────────────────────────
 # /etc/logrotate.d/db_backup に以下を配置することを推奨:
 #

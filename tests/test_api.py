@@ -526,3 +526,99 @@ class TestNotify:
     def test_notify_not_found(self, client):
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
+
+
+class TestInstanceTags:
+    """インスタンスタグ対応のテスト"""
+
+    def _make_payload(self, instance_id: str, tags: dict) -> dict:
+        return {
+            "instance_id": instance_id,
+            "engine": "mysql",
+            "engine_version": "8.0.35",
+            "instance_class": "db.m5.large",
+            "region": "ap-northeast-1",
+            "multi_az": False,
+            "storage_type": "gp2",
+            "allocated_storage_gb": 100,
+            "backup_retention_days": 7,
+            "snapshot_storage_gb": 0.0,
+            "tags": tags,
+        }
+
+    def test_register_instance_with_tags_stores_tags(self, client):
+        """タグ付きでインスタンスを登録するとタグが保存される"""
+        payload = self._make_payload(
+            "tag-test-001", {"Environment": "production", "Team": "platform"}
+        )
+        resp = client.post("/api/v1/rds", json=payload)
+        assert resp.status_code == 201
+
+        # GET /rds でタグが返ることを確認
+        list_resp = client.get("/api/v1/rds")
+        assert list_resp.status_code == 200
+        instances = list_resp.json()
+        found = next((i for i in instances if i["instance_id"] == "tag-test-001"), None)
+        assert found is not None
+        assert found["tags"] == {"Environment": "production", "Team": "platform"}
+
+    def test_register_instance_without_tags_has_empty_dict(self, client):
+        """タグなしでインスタンスを登録すると tags が空辞書になる"""
+        payload = self._make_payload("tag-test-002", {})
+        resp = client.post("/api/v1/rds", json=payload)
+        assert resp.status_code == 201
+
+        list_resp = client.get("/api/v1/rds")
+        instances = list_resp.json()
+        found = next((i for i in instances if i["instance_id"] == "tag-test-002"), None)
+        assert found is not None
+        assert found["tags"] == {}
+
+    def test_filter_by_tag_key_and_value_returns_matching_instances(self, client):
+        """tag_key + tag_value フィルタで一致するインスタンスのみ返る"""
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-003", {"Env": "staging"}
+        ))
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-004", {"Env": "production"}
+        ))
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-005", {"Other": "value"}
+        ))
+
+        resp = client.get("/api/v1/rds?tag_key=Env&tag_value=staging")
+        assert resp.status_code == 200
+        ids = [i["instance_id"] for i in resp.json()]
+        assert "tag-test-003" in ids
+        assert "tag-test-004" not in ids
+        assert "tag-test-005" not in ids
+
+    def test_filter_by_tag_key_only_returns_instances_with_that_key(self, client):
+        """tag_key のみ指定するとそのキーを持つ全インスタンスが返る"""
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-006", {"Project": "alpha"}
+        ))
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-007", {"Project": "beta"}
+        ))
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-008", {"Unrelated": "yes"}
+        ))
+
+        resp = client.get("/api/v1/rds?tag_key=Project")
+        assert resp.status_code == 200
+        ids = [i["instance_id"] for i in resp.json()]
+        assert "tag-test-006" in ids
+        assert "tag-test-007" in ids
+        assert "tag-test-008" not in ids
+
+    def test_filter_with_nonexistent_tag_returns_empty_list(self, client):
+        """存在しないタグでフィルタすると空リストが返る"""
+        client.post("/api/v1/rds", json=self._make_payload(
+            "tag-test-009", {"Environment": "dev"}
+        ))
+
+        resp = client.get("/api/v1/rds?tag_key=NoSuchKey&tag_value=NoSuchValue")
+        assert resp.status_code == 200
+        ids = [i["instance_id"] for i in resp.json()]
+        assert "tag-test-009" not in ids

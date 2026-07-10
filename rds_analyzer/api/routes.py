@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 
 from .schemas import (
     AnalysisResponse,
@@ -908,3 +909,27 @@ async def notify_slack(
         "notifications_sent": sent,
         "total": len(sent),
     }
+
+
+@router.get(
+    "/rds/{instance_id}/cost-history/csv",
+    tags=["analysis"],
+    summary="コスト履歴を CSV でエクスポート",
+)
+async def export_cost_history_csv(instance_id: str) -> Response:
+    """月次コスト履歴を CSV 形式でダウンロードする"""
+    get_instance_or_404(instance_id)
+
+    history = _cost_history_store.get(instance_id, [])
+    lines = ["month,total_cost_usd"]
+    for month, cost in history:
+        lines.append(f"{month},{cost:.4f}")
+
+    csv_content = "\n".join(lines) + "\n"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=cost_history_{instance_id}.csv"
+        },
+    )

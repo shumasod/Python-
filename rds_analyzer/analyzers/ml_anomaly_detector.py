@@ -304,6 +304,69 @@ class MLAnomalyDetector:
             "mom_change_pct": mom_change_pct,
         }
 
+    def forecast_cost(
+        self,
+        historical_costs: list[tuple[str, float]],
+        forecast_months: int = 3,
+    ) -> dict:
+        """
+        過去の月次コストから 90% 信頼区間付き予測を返す（dict 形式）
+
+        Returns:
+            {
+                "forecast": [predicted_cost, ...],
+                "lower_bound": [...],
+                "upper_bound": [...],
+                "months": [YYYY-MM, ...],
+                "confidence_level": 0.90,
+            }
+        """
+        if len(historical_costs) < 2:
+            return {
+                "forecast": [], "lower_bound": [], "upper_bound": [],
+                "months": [], "confidence_level": 0.90,
+            }
+
+        n = len(historical_costs)
+        costs = [c for _, c in historical_costs]
+        x_mean = (n - 1) / 2.0
+        y_mean = sum(costs) / n
+        ss_xx = sum((i - x_mean) ** 2 for i in range(n))
+        ss_xy = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(costs))
+        slope = ss_xy / ss_xx if ss_xx != 0 else 0.0
+        intercept = y_mean - slope * x_mean
+
+        fitted = [slope * i + intercept for i in range(n)]
+        residuals = [c - f for c, f in zip(costs, fitted)]
+        residual_std = (sum(r ** 2 for r in residuals) / max(n - 1, 1)) ** 0.5
+
+        z_90 = 1.645
+
+        forecast_values, lower_bounds, upper_bounds, months = [], [], [], []
+        last_year, last_mon = map(int, historical_costs[-1][0].split("-"))
+
+        for i in range(1, forecast_months + 1):
+            future_idx = n - 1 + i
+            pred = max(0.0, slope * future_idx + intercept)
+            uncertainty = residual_std * (1 + i * 0.1) * z_90
+
+            next_mon = last_mon + i
+            next_year = last_year + (next_mon - 1) // 12
+            next_mon = ((next_mon - 1) % 12) + 1
+
+            forecast_values.append(round(pred, 2))
+            lower_bounds.append(round(max(0.0, pred - uncertainty), 2))
+            upper_bounds.append(round(pred + uncertainty, 2))
+            months.append(f"{next_year}-{next_mon:02d}")
+
+        return {
+            "forecast": forecast_values,
+            "lower_bound": lower_bounds,
+            "upper_bound": upper_bounds,
+            "months": months,
+            "confidence_level": 0.90,
+        }
+
     # ----------------------------------------------------------
     # ヘルパー
     # ----------------------------------------------------------

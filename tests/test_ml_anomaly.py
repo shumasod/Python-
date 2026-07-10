@@ -95,3 +95,43 @@ class TestCostTrend:
         result = detector.calculate_cost_trend(history)
         assert result["trend"] == "increasing"
         assert result["monthly_change_rate_pct"] > 5.0
+
+
+class TestForecastCost:
+
+    @pytest.fixture
+    def detector(self):
+        from rds_analyzer.analyzers.ml_anomaly_detector import MLAnomalyDetector
+        return MLAnomalyDetector()
+
+    def test_returns_required_keys(self, detector):
+        history = [("2024-01", 400.0), ("2024-02", 420.0), ("2024-03", 440.0)]
+        result = detector.forecast_cost(history)
+        assert "forecast" in result
+        assert "lower_bound" in result
+        assert "upper_bound" in result
+        assert "confidence_level" in result
+        assert result["confidence_level"] == 0.90
+
+    def test_lengths_equal_forecast_months(self, detector):
+        history = [("2024-01", 400.0), ("2024-02", 420.0), ("2024-03", 440.0)]
+        result = detector.forecast_cost(history, forecast_months=4)
+        assert len(result["forecast"]) == 4
+        assert len(result["lower_bound"]) == 4
+        assert len(result["upper_bound"]) == 4
+
+    def test_lower_bound_nonnegative(self, detector):
+        history = [("2024-01", 10.0), ("2024-02", 8.0), ("2024-03", 6.0)]
+        result = detector.forecast_cost(history)
+        assert all(lb >= 0 for lb in result["lower_bound"])
+
+    def test_upper_ge_lower_for_all(self, detector):
+        history = [("2024-01", 400.0), ("2024-02", 450.0), ("2024-03", 500.0)]
+        result = detector.forecast_cost(history)
+        for lb, ub in zip(result["lower_bound"], result["upper_bound"]):
+            assert ub >= lb
+
+    def test_insufficient_history_returns_empty(self, detector):
+        result = detector.forecast_cost([("2024-01", 400.0)])
+        assert result["forecast"] == []
+        assert result["lower_bound"] == []

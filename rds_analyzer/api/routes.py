@@ -23,18 +23,21 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 
 from .schemas import (
     AlertThresholds,
     AnalysisResponse,
     BulkRegisterRequest,
     BulkRegisterResponse,
+    CompareInstancesRequest,
     CostSummaryResponse,
     CoveringIndexRecommendationResponse,
     ExistingIndexRequest,
     HealthCheckResponse,
     IndexAnalysisApiRequest,
     IndexAnalysisResponse,
+    InstanceCostDiff,
     InstanceSummaryItem,
     MetricsInputRequest,
     PerformanceSummaryResponse,
@@ -225,6 +228,56 @@ async def bulk_register_instances(body: BulkRegisterRequest) -> BulkRegisterResp
         failed=len(errors),
         instance_ids=registered_ids,
         errors=errors,
+    )
+
+
+@router.post(
+    "/rds/compare",
+    response_model=InstanceCostDiff,
+    tags=["analysis"],
+    summary="2つのインスタンスのコストを比較",
+)
+async def compare_instances(
+    body: CompareInstancesRequest,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> InstanceCostDiff:
+    """
+    2つの登録済み RDS インスタンスの月次コストを比較する
+
+    - cost_diff_usd = B のコスト - A のコスト（正 = B が高い）
+    - cost_diff_pct = (B - A) / A * 100
+    - cheaper_instance = "a" / "b" / "equal"
+    """
+    instance_a = get_instance_or_404(body.instance_id_a)
+    instance_b = get_instance_or_404(body.instance_id_b)
+
+    breakdown_a, _ = cost_analyzer.calculate_monthly_cost(instance_a)
+    breakdown_b, _ = cost_analyzer.calculate_monthly_cost(instance_b)
+
+    cost_a = breakdown_a.total_cost_usd
+    cost_b = breakdown_b.total_cost_usd
+    cost_diff_usd = cost_b - cost_a
+    cost_diff_pct = (cost_diff_usd / cost_a * 100) if cost_a != 0 else 0.0
+
+    if cost_a < cost_b:
+        cheaper_instance = "a"
+    elif cost_b < cost_a:
+        cheaper_instance = "b"
+    else:
+        cheaper_instance = "equal"
+
+    return InstanceCostDiff(
+        instance_id_a=body.instance_id_a,
+        instance_id_b=body.instance_id_b,
+        monthly_cost_a_usd=round(cost_a, 4),
+        monthly_cost_b_usd=round(cost_b, 4),
+        cost_diff_usd=round(cost_diff_usd, 4),
+        cost_diff_pct=round(cost_diff_pct, 4),
+        cheaper_instance=cheaper_instance,
+        instance_class_a=instance_a.instance_class,
+        instance_class_b=instance_b.instance_class,
+        engine_a=instance_a.engine.value,
+        engine_b=instance_b.engine.value,
     )
 
 

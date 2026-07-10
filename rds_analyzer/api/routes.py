@@ -25,6 +25,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from .schemas import (
+    AlertThresholds,
     AnalysisResponse,
     BulkRegisterRequest,
     BulkRegisterResponse,
@@ -76,6 +77,8 @@ _metrics_store: dict[str, MetricsHistory] = {}
 _cost_history_store: dict[str, list[tuple[str, float]]] = {}
 # インデックス分析結果キャッシュ {instance_id: IndexAnalysisResult}
 _index_analysis_store: dict[str, Any] = {}
+# アラートしきい値 {instance_id: AlertThresholds}
+_alert_thresholds_store: dict[str, AlertThresholds] = {}
 
 
 # ============================================================
@@ -856,3 +859,31 @@ async def notify_slack(
         "notifications_sent": sent,
         "total": len(sent),
     }
+
+
+@router.post(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を設定",
+)
+async def set_alert_thresholds(
+    instance_id: str,
+    thresholds: AlertThresholds,
+) -> AlertThresholds:
+    """CPU・ストレージ・レイテンシのアラートしきい値を登録する"""
+    get_instance_or_404(instance_id)
+    _alert_thresholds_store[instance_id] = thresholds
+    return thresholds
+
+
+@router.get(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を取得",
+)
+async def get_alert_thresholds(instance_id: str) -> AlertThresholds:
+    """設定済みのアラートしきい値を返す（未設定時はデフォルト値）"""
+    get_instance_or_404(instance_id)
+    return _alert_thresholds_store.get(instance_id, AlertThresholds())

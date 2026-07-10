@@ -279,3 +279,13 @@ class BulkRegisterResponse(BaseModel):
     failed: int = Field(description="失敗件数")
     instance_ids: list[str] = Field(description="登録成功したインスタンスID")
     errors: list[str] = Field(default_factory=list, description="失敗理由")
+
+
+class AlertThresholds(BaseModel):
+    """POST/GET /rds/{id}/alerts — アラートしきい値設定"""
+    cpu_warn_pct: float = Field(default=80.0, ge=0, le=100)
+    cpu_critical_pct: float = Field(default=95.0, ge=0, le=100)
+    free_storage_warn_gb: float = Field(default=10.0, ge=0)
+    free_storage_critical_gb: float = Field(default=2.0, ge=0)
+    read_latency_warn_ms: float = Field(default=20.0, ge=0)
+    read_latency_critical_ms: float = Field(default=100.0, ge=0)

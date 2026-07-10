@@ -279,3 +279,22 @@ class BulkRegisterResponse(BaseModel):
     failed: int = Field(description="失敗件数")
     instance_ids: list[str] = Field(description="登録成功したインスタンスID")
     errors: list[str] = Field(default_factory=list, description="失敗理由")
+
+
+class CompareInstancesRequest(BaseModel):
+    instance_id_a: str
+    instance_id_b: str
+
+
+class InstanceCostDiff(BaseModel):
+    instance_id_a: str
+    instance_id_b: str
+    monthly_cost_a_usd: float
+    monthly_cost_b_usd: float
+    cost_diff_usd: float          # B - A (positive = B is more expensive)
+    cost_diff_pct: float          # (B - A) / A * 100
+    cheaper_instance: str         # "a" or "b" or "equal"
+    instance_class_a: str
+    instance_class_b: str
+    engine_a: str
+    engine_b: str

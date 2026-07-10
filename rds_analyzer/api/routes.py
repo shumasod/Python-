@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
 from .schemas import (
+    AlertThresholds,
     AnalysisResponse,
     BulkRegisterRequest,
     BulkRegisterResponse,
@@ -79,6 +80,8 @@ _metrics_store: dict[str, MetricsHistory] = {}
 _cost_history_store: dict[str, list[tuple[str, float]]] = {}
 # インデックス分析結果キャッシュ {instance_id: IndexAnalysisResult}
 _index_analysis_store: dict[str, Any] = {}
+# アラートしきい値 {instance_id: AlertThresholds}
+_alert_thresholds_store: dict[str, AlertThresholds] = {}
 
 
 # ============================================================
@@ -911,25 +914,29 @@ async def notify_slack(
     }
 
 
-@router.get(
-    "/rds/{instance_id}/cost-history/csv",
-    tags=["analysis"],
-    summary="コスト履歴を CSV でエクスポート",
+@router.post(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を設定",
 )
-async def export_cost_history_csv(instance_id: str) -> Response:
-    """月次コスト履歴を CSV 形式でダウンロードする"""
+async def set_alert_thresholds(
+    instance_id: str,
+    thresholds: AlertThresholds,
+) -> AlertThresholds:
+    """CPU・ストレージ・レイテンシのアラートしきい値を登録する"""
     get_instance_or_404(instance_id)
+    _alert_thresholds_store[instance_id] = thresholds
+    return thresholds
 
-    history = _cost_history_store.get(instance_id, [])
-    lines = ["month,total_cost_usd"]
-    for month, cost in history:
-        lines.append(f"{month},{cost:.4f}")
 
-    csv_content = "\n".join(lines) + "\n"
-    return Response(
-        content=csv_content,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=cost_history_{instance_id}.csv"
-        },
-    )
+@router.get(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を取得",
+)
+async def get_alert_thresholds(instance_id: str) -> AlertThresholds:
+    """設定済みのアラートしきい値を返す（未設定時はデフォルト値）"""
+    get_instance_or_404(instance_id)
+    return _alert_thresholds_store.get(instance_id, AlertThresholds())

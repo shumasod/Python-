@@ -281,20 +281,11 @@ class BulkRegisterResponse(BaseModel):
     errors: list[str] = Field(default_factory=list, description="失敗理由")
 
 
-class CompareInstancesRequest(BaseModel):
-    instance_id_a: str
-    instance_id_b: str
-
-
-class InstanceCostDiff(BaseModel):
-    instance_id_a: str
-    instance_id_b: str
-    monthly_cost_a_usd: float
-    monthly_cost_b_usd: float
-    cost_diff_usd: float          # B - A (positive = B is more expensive)
-    cost_diff_pct: float          # (B - A) / A * 100
-    cheaper_instance: str         # "a" or "b" or "equal"
-    instance_class_a: str
-    instance_class_b: str
-    engine_a: str
-    engine_b: str
+class AlertThresholds(BaseModel):
+    """POST/GET /rds/{id}/alerts — アラートしきい値設定"""
+    cpu_warn_pct: float = Field(default=80.0, ge=0, le=100)
+    cpu_critical_pct: float = Field(default=95.0, ge=0, le=100)
+    free_storage_warn_gb: float = Field(default=10.0, ge=0)
+    free_storage_critical_gb: float = Field(default=2.0, ge=0)
+    read_latency_warn_ms: float = Field(default=20.0, ge=0)
+    read_latency_critical_ms: float = Field(default=100.0, ge=0)

@@ -593,23 +593,39 @@ class TestNotify:
         assert resp.status_code == 404
 
 
-class TestCostCsvExport:
-    def test_not_found(self, client):
-        resp = client.get("/api/v1/rds/no-such/cost-history/csv")
+class TestAlertThresholds:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_post_not_found(self, client):
+        resp = client.post("/api/v1/rds/no-such/alerts", json={"cpu_warn_pct": 80})
         assert resp.status_code == 404
 
-    def test_returns_csv_content_type(self, client, sample_instance_payload):
-        client.post("/api/v1/rds", json=sample_instance_payload)
-        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
+    def test_get_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such/alerts")
+        assert resp.status_code == 404
+
+    def test_post_stores_thresholds(self, client):
+        payload = {"cpu_warn_pct": 70.0, "cpu_critical_pct": 90.0}
+        resp = client.post("/api/v1/rds/test-api-mysql-001/alerts", json=payload)
         assert resp.status_code == 200
-        assert "text/csv" in resp.headers["content-type"]
+        data = resp.json()
+        assert data["cpu_warn_pct"] == 70.0
+        assert data["cpu_critical_pct"] == 90.0
 
-    def test_csv_has_header(self, client, sample_instance_payload):
-        client.post("/api/v1/rds", json=sample_instance_payload)
-        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
-        assert resp.text.startswith("month,total_cost_usd")
+    def test_get_returns_defaults_when_not_set(self, client, sample_instance_payload):
+        fresh = {**sample_instance_payload, "instance_id": "alerts-fresh-001"}
+        client.post("/api/v1/rds", json=fresh)
+        resp = client.get("/api/v1/rds/alerts-fresh-001/alerts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cpu_warn_pct"] == 80.0  # default
 
-    def test_content_disposition_has_instance_id(self, client, sample_instance_payload):
-        client.post("/api/v1/rds", json=sample_instance_payload)
-        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
-        assert "test-api-mysql-001" in resp.headers.get("content-disposition", "")
+    def test_get_after_post_returns_custom(self, client):
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/alerts",
+            json={"free_storage_warn_gb": 50.0},
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001/alerts")
+        assert resp.json()["free_storage_warn_gb"] == 50.0

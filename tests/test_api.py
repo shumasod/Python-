@@ -526,3 +526,25 @@ class TestNotify:
     def test_notify_not_found(self, client):
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
+
+
+class TestCostCsvExport:
+    def test_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such/cost-history/csv")
+        assert resp.status_code == 404
+
+    def test_returns_csv_content_type(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
+        assert resp.status_code == 200
+        assert "text/csv" in resp.headers["content-type"]
+
+    def test_csv_has_header(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
+        assert resp.text.startswith("month,total_cost_usd")
+
+    def test_content_disposition_has_instance_id(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/csv")
+        assert "test-api-mysql-001" in resp.headers.get("content-disposition", "")

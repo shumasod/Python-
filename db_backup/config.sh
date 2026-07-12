@@ -54,6 +54,9 @@ INCREMENTAL_RETENTION_DAYS=3
 # ─── 圧縮設定 ─────────────────────────────────────────────────
 COMPRESS=true
 COMPRESS_LEVEL=6
+# COMPRESS_FORMAT: gzip（デフォルト）または zstd
+# zstd は gzip より高速かつ高圧縮率だが、zstd コマンドが必要
+COMPRESS_FORMAT="${COMPRESS_FORMAT:-gzip}"
 
 # ─── Slack 通知 ───────────────────────────────────────────────
 SLACK_WEBHOOK_URL=""

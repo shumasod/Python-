@@ -483,6 +483,10 @@ async def get_recommendations(
     data_transfer_gb: float = Query(default=0.0, ge=0),
     limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
     offset: int = Query(default=0, ge=0, description="スキップする件数"),
+    priority: Optional[str] = Query(
+        default=None,
+        description="優先度フィルタ (critical/high/medium/low)。複数指定はカンマ区切り",
+    ),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -492,15 +496,36 @@ async def get_recommendations(
 
     優先度（CRITICAL > HIGH > MEDIUM > LOW）順に、
     コスト削減・パフォーマンス改善の提案を返す
+
+    `?priority=critical` または `?priority=critical,high` で絞り込み可能
     """
     instance = get_instance_or_404(instance_id)
     metrics = get_metrics_or_404(instance_id)
+
+    # 優先度フィルタのパース
+    priority_filter: Optional[set[str]] = None
+    if priority:
+        allowed = {"critical", "high", "medium", "low"}
+        values = {p.strip().lower() for p in priority.split(",")}
+        invalid = values - allowed
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"無効な priority 値: {', '.join(sorted(invalid))}。critical/high/medium/low から選択してください",
+            )
+        priority_filter = values
 
     breakdown, _ = cost_analyzer.calculate_monthly_cost(
         instance, data_transfer_gb=data_transfer_gb
     )
     perf_result = perf_analyzer.analyze(instance, metrics)
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
+
+    # 優先度フィルタを適用
+    if priority_filter:
+        recommendations = [
+            r for r in recommendations if r.priority.value.lower() in priority_filter
+        ]
 
     total_savings = sum(
         max(0, r.estimated_monthly_savings_usd) for r in recommendations

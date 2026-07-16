@@ -403,3 +403,84 @@ class TestAggregation:
         assert result.queries_already_covered == 1
         assert result.recommendations == []
         assert result.estimated_total_improvement_pct == 0.0
+
+
+# ──────────────────────────────────────────────
+# エッジケーステスト
+# ──────────────────────────────────────────────
+
+class TestEdgeCases:
+    """_merge_group / _is_covered / _is_filter_prefix のエッジケーステスト"""
+
+    def test_no_common_prefix_stays_separate(self):
+        # 同テーブルでもフィルタカラムが完全に異なる場合はマージしない
+        analyzer = CoveringIndexAnalyzer()
+        q1 = make_query(table="orders", query_id="qa", filter_cols=["status"],
+                        rows_examined=1000, rows_returned=5)
+        q2 = make_query(table="orders", query_id="qb", filter_cols=["user_id"],
+                        rows_examined=2000, rows_returned=10)
+        result = analyzer.analyze(make_request([q1, q2]))
+        # filter_cols が異なるので別々の推奨になる
+        assert result.queries_needing_index == 2
+        assert len(result.recommendations) == 2
+
+    def test_merge_adopts_highest_priority(self):
+        # マージ後は最高優先度を採用する
+        analyzer = CoveringIndexAnalyzer()
+        q1 = make_query(table="t", query_id="q1",
+                        filter_cols=["a", "b"],
+                        rows_examined=2000000, rows_returned=1,   # ratio=2e6 → critical
+                        exec_per_day=500)
+        q2 = make_query(table="t", query_id="q2",
+                        filter_cols=["a", "b"],
+                        select_cols=["extra"],
+                        rows_examined=100, rows_returned=5,       # ratio=20 → medium
+                        exec_per_day=20)
+        result = analyzer.analyze(make_request([q1, q2]))
+        rec = result.recommendations[0]
+        assert rec.priority == "critical"
+
+    def test_empty_all_columns_not_covered(self):
+        # filter/sort/select が全部空 → needed が空セット → カバー判定不能
+        analyzer = CoveringIndexAnalyzer()
+        query = QueryPattern(
+            table_name="t",
+            filter_columns=[],
+            sort_columns=[],
+            select_columns=[],
+            avg_rows_examined=0,
+            avg_rows_returned=1,
+        )
+        idx = make_index("t", "idx_t", ["a", "b"])
+        result = analyzer.analyze(make_request([query], indexes=[idx]))
+        assert result.queries_already_covered == 0
+
+    def test_empty_filter_prefix_always_matches(self):
+        # filter_cols が空なら _is_filter_prefix は常に True
+        analyzer = CoveringIndexAnalyzer()
+        # filter_cols=[], sort_cols=["x"], select_cols=["y"]  → needed = {x, y}
+        # インデックス (x, y) でカバー可能
+        query = QueryPattern(
+            table_name="orders",
+            filter_columns=[],
+            sort_columns=["x"],
+            select_columns=["y"],
+            avg_rows_examined=5000,
+            avg_rows_returned=50,
+        )
+        idx = make_index("orders", "idx_xy", ["x", "y"])
+        result = analyzer.analyze(make_request([query], indexes=[idx]))
+        assert result.queries_already_covered == 1
+
+    def test_pg_no_include_when_no_extra_select_cols(self):
+        # select_cols が全部 key に含まれる場合は INCLUDE なし
+        analyzer = CoveringIndexAnalyzer()
+        query = make_query(
+            filter_cols=["a"],
+            select_cols=["a"],   # a は既にキー → INCLUDE 不要
+            rows_examined=5000,
+            rows_returned=5,
+        )
+        result = analyzer.analyze(make_request([query], engine="postgresql"))
+        if result.recommendations:
+            assert result.recommendations[0].include_columns == []

@@ -269,7 +269,7 @@ async def promote_model(
         }
     except Exception as e:
         logger.error(f"モデル昇格エラー: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="モデル昇格中にエラーが発生しました") from e
 
 
 @router.get(
@@ -292,7 +292,8 @@ async def get_drift_report(
         with open(reports[-1], encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail=f"レポート読み込みエラー: {e}") from e
+        logger.error(f"ドリフトレポート読み込みエラー: {e}")
+        raise HTTPException(status_code=500, detail="ドリフトレポートの読み込みに失敗しました") from e
 
 
 @router.get(

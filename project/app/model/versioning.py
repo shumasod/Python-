@@ -27,6 +27,7 @@
 """
 import json
 import pickle
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -43,6 +44,8 @@ REGISTRY_FILE = MODEL_DIR / "registry.json"
 
 # 本番モデルのシンボリックファイル名（predict.py がこれを読む）
 PRODUCTION_MODEL = "boat_race_model"
+
+_SAFE_VERSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
 
 class ModelRegistry:
@@ -143,7 +146,10 @@ class ModelRegistry:
 
         Raises:
             FileNotFoundError: バージョンファイルが存在しない場合
+            ValueError: version 文字列が不正な場合
         """
+        if not _SAFE_VERSION_RE.match(version):
+            raise ValueError(f"version は英数字・アンダースコア・ハイフンのみ使用できます: {version!r}")
         src = MODEL_DIR / "versions" / f"{version}.pkl"
         if not src.exists():
             raise FileNotFoundError(f"バージョンが見つかりません: {src}")
@@ -195,7 +201,13 @@ class ModelRegistry:
 
         Returns:
             LGBMClassifier
+
+        Raises:
+            FileNotFoundError: バージョンファイルが存在しない場合
+            ValueError: version 文字列が不正な場合
         """
+        if not _SAFE_VERSION_RE.match(version):
+            raise ValueError(f"version は英数字・アンダースコア・ハイフンのみ使用できます: {version!r}")
         path = MODEL_DIR / "versions" / f"{version}.pkl"
         if not path.exists():
             raise FileNotFoundError(f"バージョンが見つかりません: {path}")

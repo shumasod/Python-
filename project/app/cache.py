@@ -199,4 +199,5 @@ async def get_cache_stats() -> dict[str, Any]:
             "used_memory_human": info.get("used_memory_human", "unknown"),
         }
     except Exception as e:
-        return {"enabled": True, "error": str(e)}
+        logger.warning(f"キャッシュ統計取得エラー: {e}")
+        return {"enabled": True, "error": "Redis接続エラー"}

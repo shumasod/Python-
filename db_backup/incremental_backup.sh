@@ -41,6 +41,8 @@ main() {
     init_dirs
     log_info "========== 差分バックアップ開始 [DB_TYPE=${DB_TYPE}] =========="
 
+    check_disk_space "${INCREMENTAL_BACKUP_DIR}" 2 \
+        || { notify_slack failure "ディスク容量不足のため差分バックアップ中止"; exit 1; }
     check_db_connection || { notify_slack failure "DB 接続失敗 (差分バックアップ)"; exit 1; }
 
     db_incremental_backup

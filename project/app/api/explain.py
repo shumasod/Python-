@@ -104,6 +104,12 @@ def explain_race(race_data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         ExplainResponse 相当の辞書
     """
+    boats = race_data.get("boats", [])
+    if len(boats) != N_BOATS:
+        raise ValueError(
+            f"boats には{N_BOATS}艇分のデータが必要です（受け取り: {len(boats)}艇）"
+        )
+
     model = get_model()
     feature_df = build_features(race_data)
     X = feature_df.to_numpy(dtype=float)            # (6, n_features) numpy for math ops

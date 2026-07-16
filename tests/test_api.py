@@ -506,6 +506,71 @@ class TestIndexAnalysis:
         assert data["estimated_total_improvement_pct"] > 0
 
 
+class TestInstanceComparison:
+    def _register(self, client, instance_id, instance_class):
+        client.post(
+            "/api/v1/rds",
+            json={
+                "instance_id": instance_id,
+                "engine": "mysql",
+                "engine_version": "8.0",
+                "instance_class": instance_class,
+                "storage_type": "gp2",
+                "allocated_storage_gb": 100,
+            },
+        )
+
+    def test_compare_both_not_found(self, client):
+        resp = client.post(
+            "/api/v1/rds/compare",
+            json={"instance_id_a": "no-a", "instance_id_b": "no-b"},
+        )
+        assert resp.status_code == 404
+
+    def test_compare_b_not_found(self, client):
+        self._register(client, "cmp-a", "db.m5.large")
+        resp = client.post(
+            "/api/v1/rds/compare",
+            json={"instance_id_a": "cmp-a", "instance_id_b": "no-b"},
+        )
+        assert resp.status_code == 404
+
+    def test_compare_returns_cost_diff(self, client):
+        self._register(client, "cmp-x", "db.m5.large")
+        self._register(client, "cmp-y", "db.m5.large")
+        resp = client.post(
+            "/api/v1/rds/compare",
+            json={"instance_id_a": "cmp-x", "instance_id_b": "cmp-y"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "cost_diff_usd" in data
+        assert data["cheaper_instance"] in ("a", "b", "equal")
+
+    def test_compare_small_vs_large_cheaper(self, client):
+        self._register(client, "cmp-small", "db.t3.micro")
+        self._register(client, "cmp-large", "db.m5.4xlarge")
+        resp = client.post(
+            "/api/v1/rds/compare",
+            json={"instance_id_a": "cmp-small", "instance_id_b": "cmp-large"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cheaper_instance"] == "a"
+        assert data["cost_diff_usd"] > 0
+
+    def test_compare_response_has_engine_fields(self, client):
+        self._register(client, "cmp-eng-a", "db.m5.large")
+        self._register(client, "cmp-eng-b", "db.m5.large")
+        resp = client.post(
+            "/api/v1/rds/compare",
+            json={"instance_id_a": "cmp-eng-a", "instance_id_b": "cmp-eng-b"},
+        )
+        data = resp.json()
+        assert data["engine_a"] == "mysql"
+        assert data["engine_b"] == "mysql"
+
+
 class TestNotify:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
@@ -526,3 +591,41 @@ class TestNotify:
     def test_notify_not_found(self, client):
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
+
+
+class TestAlertThresholds:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_post_not_found(self, client):
+        resp = client.post("/api/v1/rds/no-such/alerts", json={"cpu_warn_pct": 80})
+        assert resp.status_code == 404
+
+    def test_get_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such/alerts")
+        assert resp.status_code == 404
+
+    def test_post_stores_thresholds(self, client):
+        payload = {"cpu_warn_pct": 70.0, "cpu_critical_pct": 90.0}
+        resp = client.post("/api/v1/rds/test-api-mysql-001/alerts", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cpu_warn_pct"] == 70.0
+        assert data["cpu_critical_pct"] == 90.0
+
+    def test_get_returns_defaults_when_not_set(self, client, sample_instance_payload):
+        fresh = {**sample_instance_payload, "instance_id": "alerts-fresh-001"}
+        client.post("/api/v1/rds", json=fresh)
+        resp = client.get("/api/v1/rds/alerts-fresh-001/alerts")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cpu_warn_pct"] == 80.0  # default
+
+    def test_get_after_post_returns_custom(self, client):
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/alerts",
+            json={"free_storage_warn_gb": 50.0},
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001/alerts")
+        assert resp.json()["free_storage_warn_gb"] == 50.0

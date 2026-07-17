@@ -26,6 +26,7 @@ A/B テストモジュール
 """
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 
 import numpy as np
@@ -34,6 +35,8 @@ from app.config import AB_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 # 統計的検定の閾値
 _MIN_SAMPLES  = 30    # z 検定に必要な最低サンプル数
@@ -79,6 +82,10 @@ class ABTestRouter:
         Args:
             name: このA/Bテストの識別名
         """
+        if not _SAFE_NAME_RE.match(name):
+            raise ValueError(
+                f"name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）: {name!r}"
+            )
         self.name = name
         self._variants: list[VariantRecord] = []
         # race_id → (variant_name, true_winner) の記録

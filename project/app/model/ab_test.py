@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from app.config import AB_LOG_DIR
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
@@ -69,7 +69,7 @@ class ABTestRouter:
     トラフィックを複数モデルに分割するルーター
 
     決定論的振り分け:
-      race_id を MD5 ハッシュして 0〜1 に変換し、
+      race_id を SHA-256 ハッシュして 0〜1 に変換し、
       重み累積区間のどこに落ちるかでバリアントを選択する
       → 同じ race_id は常に同じバリアントに割り当てられる（一貫性保証）
     """
@@ -116,7 +116,7 @@ class ABTestRouter:
             選択された VariantRecord
         """
         # ハッシュ値を 0.0〜1.0 に変換
-        h = int(hashlib.md5(race_id.encode()).hexdigest(), 16)
+        h = int(hashlib.sha256(race_id.encode()).hexdigest(), 16)
         normalized = (h % 10000) / 10000.0
 
         # 重みを正規化して累積区間を作成
@@ -167,7 +167,7 @@ class ABTestRouter:
             "true_winner": None,
         }
 
-        logger.debug(f"A/B選択: {variant.name} (race_id={race_id})")
+        logger.debug(f"A/B選択: {variant.name} (race_id={sanitize_for_log(race_id)})")
         return variant.name, proba
 
     def record_result(self, race_id: str, true_winner: int) -> None:
@@ -179,7 +179,7 @@ class ABTestRouter:
             true_winner: 実際の1着艇番（1〜6）
         """
         if race_id not in self._race_log:
-            logger.warning(f"predict() が呼ばれていないレースです: {race_id}")
+            logger.warning(f"predict() が呼ばれていないレースです: {sanitize_for_log(race_id)}")
             return
 
         log = self._race_log[race_id]

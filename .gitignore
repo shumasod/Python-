@@ -167,3 +167,6 @@ project/.env
 .env
 output/
 *.png
+
+# Claude Code internal
+.claude/

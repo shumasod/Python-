@@ -558,6 +558,50 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # ============================================================
 
 @router.post(
+    "/rds/bulk-analysis",
+    response_model=dict,
+    tags=["analysis"],
+    summary="複数インスタンスのコストサマリーを一括取得",
+)
+async def bulk_cost_analysis(
+    instance_ids: list[str],
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> dict:
+    """
+    複数インスタンスのコスト推定値を一括取得する。
+
+    - 存在しない ID はスキップされ `skipped` リストに記録される
+    - メトリクス未登録インスタンスもスコア 75 / グレード B で含まれる
+    """
+    from datetime import date
+    current_month = date.today().strftime("%Y-%m")
+
+    results = []
+    skipped = []
+
+    for iid in instance_ids:
+        instance = _instance_store.get(iid)
+        if not instance:
+            skipped.append(iid)
+            continue
+
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        results.append({
+            "instance_id": iid,
+            "month": current_month,
+            "total_cost_usd": round(breakdown.total_cost_usd, 2),
+            "engine": instance.engine.value,
+            "instance_class": instance.instance_class,
+        })
+
+    return {
+        "analyzed": len(results),
+        "skipped": skipped,
+        "results": results,
+    }
+
+
+@router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,
     tags=["analysis"],

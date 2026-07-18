@@ -557,6 +557,69 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # 拡張エンドポイント（ML 異常検知 / コスト予測 / レポート / Slack）
 # ============================================================
 
+@router.get(
+    "/rds/{instance_id}/cost",
+    response_model=CostSummaryResponse,
+    tags=["analysis"],
+    summary="インスタンスのコスト内訳を取得",
+)
+async def get_instance_cost(
+    instance_id: str,
+    data_transfer_gb: float = Query(default=0.0, ge=0),
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> CostSummaryResponse:
+    """
+    特定インスタンスのコスト内訳のみを返す。
+
+    パフォーマンス分析が不要な場合に /analysis より軽量。
+    メトリクス登録不要で呼び出せる。
+    """
+    instance = get_instance_or_404(instance_id)
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(
+        instance, data_transfer_gb=data_transfer_gb
+    )
+
+    from datetime import date
+    current_month = date.today().strftime("%Y-%m")
+
+    metrics = _metrics_store.get(instance_id)
+    if metrics:
+        storage_used_gb = (
+            instance.allocated_storage_gb
+            - metrics.free_storage_bytes.avg / (1024 ** 3)
+        )
+        eff_score = cost_analyzer.calculate_efficiency_score(
+            instance=instance,
+            breakdown=breakdown,
+            avg_cpu_pct=metrics.cpu_utilization.avg,
+            avg_iops_used=metrics.avg_total_iops,
+            storage_used_gb=storage_used_gb,
+        )
+        score = eff_score.score
+        grade = eff_score.grade
+    else:
+        score = 75
+        grade = "B"
+
+    return CostSummaryResponse(
+        instance_id=instance_id,
+        month=current_month,
+        total_cost_usd=round(breakdown.total_cost_usd, 2),
+        breakdown={
+            "compute": round(breakdown.compute_cost_usd + breakdown.replica_compute_cost_usd, 2),
+            "storage": round(breakdown.storage_cost_usd, 2),
+            "iops": round(breakdown.iops_cost_usd, 2),
+            "transfer": round(breakdown.transfer_cost_usd, 2),
+            "backup": round(breakdown.backup_cost_usd, 2),
+        },
+        cost_efficiency_score=score,
+        grade=grade,
+        potential_savings_usd=round(
+            cost_analyzer.estimate_gp3_savings(instance), 2
+        ),
+    )
+
+
 @router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,

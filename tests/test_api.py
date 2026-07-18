@@ -185,6 +185,55 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestInstanceCostDetail:
+    """GET /rds/{id}/cost エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_cost_detail_success(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "total_cost_usd" in data
+        assert data["total_cost_usd"] > 0
+
+    def test_cost_detail_breakdown_keys(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost")
+        breakdown = resp.json()["breakdown"]
+        for key in ("compute", "storage", "iops", "transfer", "backup"):
+            assert key in breakdown
+
+    def test_cost_detail_has_grade(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost")
+        data = resp.json()
+        assert "grade" in data
+        assert data["grade"] in ("A", "B", "C", "D", "F")
+
+    def test_cost_detail_without_metrics(self, client, sample_instance_payload):
+        payload = {**sample_instance_payload, "instance_id": "no-metrics-inst"}
+        client.post("/api/v1/rds", json=payload)
+        resp = client.get("/api/v1/rds/no-metrics-inst/cost")
+        assert resp.status_code == 200
+        assert resp.json()["cost_efficiency_score"] == 75
+
+    def test_cost_detail_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/cost")
+        assert resp.status_code == 404
+
+    def test_cost_detail_has_potential_savings(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost")
+        data = resp.json()
+        assert "potential_savings_usd" in data
+        assert data["potential_savings_usd"] >= 0
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

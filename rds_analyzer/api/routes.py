@@ -557,6 +557,68 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # 拡張エンドポイント（ML 異常検知 / コスト予測 / レポート / Slack）
 # ============================================================
 
+@router.get(
+    "/rds/{instance_id}/warnings",
+    response_model=dict,
+    tags=["analysis"],
+    summary="インスタンスの設定警告一覧を取得",
+)
+async def get_instance_warnings(
+    instance_id: str,
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> dict:
+    """
+    インスタンス設定に対する警告（注意事項）一覧を返す。
+
+    メトリクスがある場合はストレージ使用率も確認。
+    全警告 + 重要度を返す。
+    """
+    instance = get_instance_or_404(instance_id)
+    warnings: list[dict] = []
+
+    if not instance.multi_az:
+        warnings.append({
+            "level": "warning",
+            "code": "NO_MULTI_AZ",
+            "message": "シングルAZ構成です。本番環境ではマルチAZを推奨します",
+        })
+
+    if instance.backup_retention_days == 0:
+        warnings.append({
+            "level": "critical",
+            "code": "NO_BACKUP",
+            "message": "自動バックアップが無効です",
+        })
+    elif instance.backup_retention_days < 3:
+        warnings.append({
+            "level": "warning",
+            "code": "SHORT_BACKUP_RETENTION",
+            "message": f"バックアップ保持期間が {instance.backup_retention_days} 日と短いです（推奨: 7 日以上）",
+        })
+
+    metrics = _metrics_store.get(instance_id)
+    if metrics:
+        perf = perf_analyzer.analyze(instance, metrics)
+        if perf.storage_utilization_pct >= 80:
+            warnings.append({
+                "level": "critical",
+                "code": "HIGH_STORAGE_USAGE",
+                "message": f"ストレージ使用率が {perf.storage_utilization_pct:.0f}% に達しています",
+            })
+        if perf.cpu_avg_pct >= 80:
+            warnings.append({
+                "level": "warning",
+                "code": "HIGH_CPU",
+                "message": f"平均CPU使用率が {perf.cpu_avg_pct:.1f}% と高い状態です",
+            })
+
+    return {
+        "instance_id": instance_id,
+        "total_warnings": len(warnings),
+        "warnings": warnings,
+    }
+
+
 @router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,

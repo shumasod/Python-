@@ -526,3 +526,42 @@ class TestNotify:
     def test_notify_not_found(self, client):
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
+
+from rds_analyzer.api.routes import _instance_store, _metrics_store
+
+
+class TestIopsFleetStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_iops_fleet_200(self):
+        assert self._client.get("/api/v1/rds/iops-fleet-stats").status_code == 200
+
+    def test_iops_fleet_structure(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
+        assert "instances_with_metrics" in data
+        assert "fleet_avg_total_iops" in data
+        assert "fleet_max_total_iops" in data
+
+    def test_iops_fleet_has_data(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
+        assert data["instances_with_metrics"] == 1
+        assert data["fleet_avg_total_iops"] > 0
+
+    def test_iops_max_gte_avg(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
+        assert data["fleet_max_total_iops"] >= data["fleet_avg_total_iops"]
+
+    def test_iops_fleet_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_avg_total_iops"] == 0.0

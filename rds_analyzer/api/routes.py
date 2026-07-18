@@ -558,6 +558,55 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # ============================================================
 
 @router.post(
+    "/rds/{instance_id}/clone",
+    response_model=dict,
+    status_code=status.HTTP_201_CREATED,
+    tags=["instances"],
+    summary="インスタンス設定をコピーして新規インスタンスを登録",
+)
+async def clone_instance(
+    instance_id: str,
+    new_instance_id: str = Query(description="新しいインスタンスID"),
+) -> dict:
+    """
+    既存インスタンスの設定をコピーして新規インスタンスを登録する。
+
+    - 新インスタンスIDが既存と重複する場合は 409
+    - メトリクスはコピーされない
+    """
+    source = get_instance_or_404(instance_id)
+    if new_instance_id in _instance_store:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"インスタンス '{new_instance_id}' は既に存在します",
+        )
+
+    cloned = RDSInstance(
+        instance_id=new_instance_id,
+        engine=source.engine,
+        engine_version=source.engine_version,
+        instance_class=source.instance_class,
+        region=source.region,
+        multi_az=source.multi_az,
+        storage_type=source.storage_type,
+        allocated_storage_gb=source.allocated_storage_gb,
+        provisioned_iops=source.provisioned_iops,
+        read_replica_count=source.read_replica_count,
+        backup_retention_days=source.backup_retention_days,
+        snapshot_storage_gb=source.snapshot_storage_gb,
+        tags=dict(source.tags),
+    )
+    _instance_store[new_instance_id] = cloned
+    logger.info("インスタンスをクローン: %s -> %s", instance_id, new_instance_id)
+
+    return {
+        "message": "クローンしました",
+        "source_instance_id": instance_id,
+        "new_instance_id": new_instance_id,
+    }
+
+
+@router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,
     tags=["analysis"],

@@ -294,6 +294,30 @@ async def submit_metrics(
 
 
 @router.get(
+    "/rds/count",
+    response_model=dict,
+    tags=["instances"],
+    summary="登録インスタンス数を取得",
+)
+async def get_instance_count() -> dict:
+    """
+    登録済みインスタンスの件数と内訳を返す。
+
+    /rds/summary よりも軽量（コスト計算なし）。
+    """
+    with_metrics = sum(1 for iid in _instance_store if iid in _metrics_store)
+    engines: dict[str, int] = {}
+    for inst in _instance_store.values():
+        engines[inst.engine.value] = engines.get(inst.engine.value, 0) + 1
+    return {
+        "total": len(_instance_store),
+        "with_metrics": with_metrics,
+        "without_metrics": len(_instance_store) - with_metrics,
+        "by_engine": engines,
+    }
+
+
+@router.get(
     "/rds/summary",
     response_model=RDSSummaryResponse,
     tags=["analysis"],

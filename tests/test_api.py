@@ -185,6 +185,50 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestRecommendationMinSavingsFilter:
+    """GET /rds/{id}/recommendations?min_savings= フィルタのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_no_filter_returns_all(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        assert resp.status_code == 200
+        assert isinstance(resp.json()["recommendations"], list)
+
+    def test_zero_min_savings_returns_all(self, client):
+        all_resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        filtered_resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?min_savings=0"
+        )
+        assert all_resp.json()["total_recommendations"] == filtered_resp.json()["total_recommendations"]
+
+    def test_high_min_savings_reduces_count(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?min_savings=99999"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total_recommendations"] == 0
+
+    def test_filtered_recs_meet_threshold(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?min_savings=1.0"
+        )
+        for rec in resp.json()["recommendations"]:
+            assert rec["estimated_monthly_savings_usd"] >= 1.0
+
+    def test_not_found_returns_404(self, client):
+        resp = client.get(
+            "/api/v1/rds/no-such/recommendations?min_savings=10"
+        )
+        assert resp.status_code == 404
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

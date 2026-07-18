@@ -483,6 +483,7 @@ async def get_recommendations(
     data_transfer_gb: float = Query(default=0.0, ge=0),
     limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
     offset: int = Query(default=0, ge=0, description="スキップする件数"),
+    min_savings: float = Query(default=0.0, ge=0, description="最低推定節約額フィルタ (USD/月)"),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -502,10 +503,6 @@ async def get_recommendations(
     perf_result = perf_analyzer.analyze(instance, metrics)
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
 
-    total_savings = sum(
-        max(0, r.estimated_monthly_savings_usd) for r in recommendations
-    )
-
     rec_items = [
         RecommendationItem(
             id=r.recommendation_id,
@@ -524,11 +521,16 @@ async def get_recommendations(
         for r in recommendations
     ]
 
+    # min_savings フィルタを適用
+    if min_savings > 0:
+        rec_items = [r for r in rec_items if r.estimated_monthly_savings_usd >= min_savings]
+
+    total_savings = sum(max(0, r.estimated_monthly_savings_usd) for r in rec_items)
     paginated_items = rec_items[offset: offset + limit]
     return RecommendationResponse(
         instance_id=instance_id,
         generated_at=datetime.utcnow(),
-        total_recommendations=len(recommendations),
+        total_recommendations=len(rec_items),
         total_potential_savings_usd=round(total_savings, 2),
         recommendations=paginated_items,
         limit=limit,

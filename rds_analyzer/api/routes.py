@@ -557,6 +557,39 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # 拡張エンドポイント（ML 異常検知 / コスト予測 / レポート / Slack）
 # ============================================================
 
+@router.get(
+    "/rds/{instance_id}/performance",
+    response_model=PerformanceSummaryResponse,
+    tags=["analysis"],
+    summary="インスタンスのパフォーマンスサマリーを取得",
+)
+async def get_instance_performance(
+    instance_id: str,
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> PerformanceSummaryResponse:
+    """
+    特定インスタンスのパフォーマンスサマリーのみを返す。
+
+    コスト分析が不要な場合に /analysis より軽量。
+    メトリクスの事前登録が必要。
+    """
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    perf_result = perf_analyzer.analyze(instance, metrics)
+
+    return PerformanceSummaryResponse(
+        instance_id=instance_id,
+        health_score=perf_result.health_score,
+        status_summary=_build_status_summary(perf_result),
+        bottlenecks=perf_result.critical_issues,
+        cpu_avg_pct=round(perf_result.cpu_avg_pct, 1),
+        memory_free_gb=round(perf_result.freeable_memory_avg_gb, 2),
+        avg_total_iops=round(perf_result.avg_total_iops, 0),
+        avg_connections=round(perf_result.avg_connections, 0),
+    )
+
+
 @router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,

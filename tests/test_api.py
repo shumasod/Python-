@@ -185,6 +185,53 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestInstancePerformance:
+    """GET /rds/{id}/performance エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_performance_success(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/performance")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "health_score" in data
+
+    def test_performance_health_score_range(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/performance")
+        data = resp.json()
+        assert 0 <= data["health_score"] <= 100
+
+    def test_performance_has_status_summary(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/performance")
+        data = resp.json()
+        assert "status_summary" in data
+        assert len(data["status_summary"]) > 0
+
+    def test_performance_has_cpu_and_memory(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/performance")
+        data = resp.json()
+        assert "cpu_avg_pct" in data
+        assert "memory_free_gb" in data
+        assert data["cpu_avg_pct"] >= 0
+
+    def test_performance_not_found_instance(self, client):
+        resp = client.get("/api/v1/rds/no-such-inst/performance")
+        assert resp.status_code == 404
+
+    def test_performance_no_metrics_returns_404(self, client, sample_instance_payload):
+        payload = {**sample_instance_payload, "instance_id": "no-metrics-perf"}
+        client.post("/api/v1/rds", json=payload)
+        resp = client.get("/api/v1/rds/no-metrics-perf/performance")
+        assert resp.status_code == 404
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

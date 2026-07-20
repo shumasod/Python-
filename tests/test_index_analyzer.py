@@ -484,3 +484,75 @@ class TestEdgeCases:
         result = analyzer.analyze(make_request([query], engine="postgresql"))
         if result.recommendations:
             assert result.recommendations[0].include_columns == []
+
+
+# ──────────────────────────────────────────────
+# 信頼スコアテスト
+# ──────────────────────────────────────────────
+
+class TestConfidenceScore:
+    def test_high_ratio_high_exec_high_latency_score_near_1(self):
+        """高スキャン比率 + 高実行頻度 + 高レイテンシ → スコアが 1.0 に近い"""
+        analyzer = CoveringIndexAnalyzer()
+        query = make_query(
+            filter_cols=["status"],
+            rows_examined=100000,
+            rows_returned=10,        # ratio = 10000 → +0.4
+            exec_per_day=5000,       # >= 1000      → +0.4
+            latency_ms=2000,         # >= 1000      → +0.2
+        )
+        result = analyzer.analyze(make_request([query]))
+        rec = result.recommendations[0]
+        assert rec.confidence_score >= 0.9
+
+    def test_low_ratio_low_exec_score_low(self):
+        """低スキャン比率 + 低実行頻度 → スコアが 0.3 以下"""
+        analyzer = CoveringIndexAnalyzer()
+        query = make_query(
+            filter_cols=["status"],
+            rows_examined=150,
+            rows_returned=10,        # ratio = 15 → +0.2
+            exec_per_day=5,          # >= 1       → +0.1
+            latency_ms=10,           # < 100      → +0.0
+        )
+        result = analyzer.analyze(make_request([query]))
+        rec = result.recommendations[0]
+        assert rec.confidence_score <= 0.3
+
+    def test_score_always_between_0_and_1(self):
+        """スコアは常に 0.0 以上 1.0 以下"""
+        analyzer = CoveringIndexAnalyzer()
+        cases = [
+            make_query(filter_cols=["a"], rows_examined=10, rows_returned=1,
+                       exec_per_day=0, latency_ms=0, query_id="q1"),
+            make_query(filter_cols=["b"], rows_examined=10000000, rows_returned=1,
+                       exec_per_day=999999, latency_ms=999999, query_id="q2"),
+        ]
+        for q in cases:
+            result = analyzer.analyze(make_request([q]))
+            if result.recommendations:
+                score = result.recommendations[0].confidence_score
+                assert 0.0 <= score <= 1.0, f"score={score} out of range for query {q.query_id}"
+
+    def test_score_increases_with_execution_count(self):
+        """実行回数が増えるほどスコアが上がる（または同じ）"""
+        analyzer = CoveringIndexAnalyzer()
+        base_kwargs = dict(
+            filter_cols=["status"],
+            rows_examined=500,
+            rows_returned=10,    # ratio = 50 → +0.2
+            latency_ms=50,       # < 100      → +0.0
+        )
+        q_low = make_query(**base_kwargs, exec_per_day=1, query_id="low")    # +0.1
+        q_mid = make_query(**base_kwargs, exec_per_day=50, query_id="mid")   # +0.2
+        q_high = make_query(**base_kwargs, exec_per_day=500, query_id="high") # +0.3
+
+        def get_score(q: QueryPattern) -> float:
+            res = analyzer.analyze(make_request([q]))
+            return res.recommendations[0].confidence_score if res.recommendations else 0.0
+
+        score_low = get_score(q_low)
+        score_mid = get_score(q_mid)
+        score_high = get_score(q_high)
+
+        assert score_low <= score_mid <= score_high

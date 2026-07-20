@@ -89,6 +89,7 @@ class CoveringIndexRecommendation(BaseModel):
     )
     estimated_latency_improvement_pct: float
     estimated_daily_rows_saved: float
+    confidence_score: float = 0.0
 
     create_statement_mysql: str = Field(description="MySQL/MariaDB 用 CREATE INDEX 文")
     create_statement_postgresql: str = Field(description="PostgreSQL 用 CREATE INDEX 文")

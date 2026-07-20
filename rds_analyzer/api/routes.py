@@ -861,6 +861,29 @@ async def notify_slack(
 
 
 @router.get(
+    "/rds/iops-fleet-stats",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のIOPS使用状況サマリーを取得",
+)
+async def iops_fleet_stats(
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> dict:
+    """メトリクスが存在するインスタンスのIOPS集計を返す。"""
+    total_avg_iops = 0.0
+    total_max_iops = 0.0
+    covered = 0
+    for iid, metrics in _metrics_store.items():
+        instance = _instance_store.get(iid)
+        if instance is None:
+            continue
+        total_avg_iops += metrics.read_iops.avg + metrics.write_iops.avg
+        total_max_iops += metrics.read_iops.max + metrics.write_iops.max
+        covered += 1
+    return {
+        "instances_with_metrics": covered,
+        "fleet_avg_total_iops": round(total_avg_iops, 2),
+        "fleet_max_total_iops": round(total_max_iops, 2),
     "/rds/cpu-fleet-stats",
     response_model=dict,
     tags=["metrics"],

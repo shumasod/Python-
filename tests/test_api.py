@@ -530,6 +530,7 @@ class TestNotify:
 from rds_analyzer.api.routes import _instance_store, _metrics_store
 
 
+class TestIopsFleetStats:
 class TestCpuFleetStats:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
@@ -542,27 +543,26 @@ class TestCpuFleetStats:
         _instance_store.clear()
         _metrics_store.clear()
 
-    def test_cpu_fleet_200(self):
-        assert self._client.get("/api/v1/rds/cpu-fleet-stats").status_code == 200
+    def test_iops_fleet_200(self):
+        assert self._client.get("/api/v1/rds/iops-fleet-stats").status_code == 200
 
-    def test_cpu_fleet_structure(self):
-        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+    def test_iops_fleet_structure(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
         assert "instances_with_metrics" in data
-        assert "fleet_avg_cpu_pct" in data
-        assert "fleet_max_cpu_pct" in data
-        assert "high_cpu_instances" in data
+        assert "fleet_avg_total_iops" in data
+        assert "fleet_max_total_iops" in data
 
-    def test_cpu_fleet_values(self):
-        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+    def test_iops_fleet_has_data(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
         assert data["instances_with_metrics"] == 1
-        assert 0 <= data["fleet_avg_cpu_pct"] <= 100
+        assert data["fleet_avg_total_iops"] > 0
 
-    def test_cpu_max_gte_avg(self):
-        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
-        assert data["fleet_max_cpu_pct"] >= data["fleet_avg_cpu_pct"]
+    def test_iops_max_gte_avg(self):
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
+        assert data["fleet_max_total_iops"] >= data["fleet_avg_total_iops"]
 
-    def test_cpu_fleet_no_metrics(self):
+    def test_iops_fleet_no_metrics(self):
         _metrics_store.clear()
-        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+        data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
         assert data["instances_with_metrics"] == 0
-        assert data["fleet_avg_cpu_pct"] == 0.0
+        assert data["fleet_avg_total_iops"] == 0.0

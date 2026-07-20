@@ -940,6 +940,10 @@ async def iops_fleet_stats(
         "instances_with_metrics": covered,
         "fleet_avg_total_iops": round(total_avg_iops, 2),
         "fleet_max_total_iops": round(total_max_iops, 2),
+    }
+
+
+@router.get(
     "/rds/cpu-fleet-stats",
     response_model=dict,
     tags=["metrics"],

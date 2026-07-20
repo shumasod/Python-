@@ -968,3 +968,15 @@ async def cpu_fleet_stats() -> dict:
         "fleet_max_cpu_pct": round(max(cpu_maxes), 2),
         "high_cpu_instances": high_cpu,
     }
+
+
+@router.get("/rds/snapshot-stats", response_model=dict, tags=["costs"], summary="フリート全体のスナップショット容量サマリーを取得")
+async def snapshot_stats() -> dict:
+    instances = list(_instance_store.values())
+    total = len(instances)
+    with_snapshots = [inst for inst in instances if inst.snapshot_storage_gb > 0]
+    total_snapshot_gb = sum(inst.snapshot_storage_gb for inst in instances)
+    return {"total_instances": total, "instances_with_snapshots": len(with_snapshots),
+            "instances_without_snapshots": total - len(with_snapshots),
+            "total_snapshot_storage_gb": round(total_snapshot_gb, 2),
+            "avg_snapshot_storage_gb": round(total_snapshot_gb / len(with_snapshots), 2) if with_snapshots else 0.0}

@@ -8,6 +8,7 @@
   GET /api/v1/scoring/race/{race_id} : 1レース分の予測 vs 結果
 """
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,17 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_race_id(race_id: str) -> None:
+    """race_id がパストラバーサルの危険がない形式か検証する"""
+    if not _RACE_ID_RE.match(race_id):
+        raise HTTPException(
+            status_code=422,
+            detail="race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
 
 
 # ============================================================
@@ -245,6 +257,7 @@ async def race_score(
     _api_key: str = Depends(verify_api_key),
 ) -> RaceScore:
     """指定レースの予測と結果を突き合わせて返す"""
+    _validate_race_id(race_id)
     pred_path   = PREDICTION_LOG_DIR / f"{race_id}.json"
     result_path = RESULT_LOG_DIR     / f"{race_id}.json"
 

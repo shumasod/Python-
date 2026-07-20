@@ -12,6 +12,8 @@
 """
 import json
 import os
+import re
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,9 +34,21 @@ router = APIRouter()
 _ADMIN_KEY = os.getenv("ADMIN_API_KEY", "")
 
 
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_safe_name(name: str) -> None:
+    """ファイルパスとして安全な名前か検証する（パストラバーサル対策）"""
+    if not _SAFE_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=422,
+            detail="name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
+
+
 def verify_admin_key(api_key: str = Depends(verify_api_key)) -> str:
     """管理者 API Key を検証する（ADMIN_API_KEY 未設定時は通常認証と同等）"""
-    if _ADMIN_KEY and api_key != _ADMIN_KEY:
+    if _ADMIN_KEY and not secrets.compare_digest(api_key, _ADMIN_KEY):
         raise HTTPException(status_code=403, detail="管理者権限が必要です")
     return api_key
 
@@ -301,6 +315,7 @@ async def get_shadow_stats(
     _api_key: str = Depends(verify_admin_key),
 ) -> dict[str, Any]:
     """シャドウモードの累積統計を返す"""
+    _validate_safe_name(name)
     return _read_shadow_stats(name)
 
 
@@ -313,6 +328,7 @@ async def clear_shadow_log(
     _api_key: str = Depends(verify_admin_key),
 ) -> dict[str, str]:
     """指定シャドウログファイルを削除する"""
+    _validate_safe_name(name)
     log_path = SHADOW_LOG_DIR / f"{name}.jsonl"
     if not log_path.exists():
         raise HTTPException(status_code=404, detail=f"ログ {name} が見つかりません")

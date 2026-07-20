@@ -531,6 +531,7 @@ from rds_analyzer.api.routes import _instance_store, _metrics_store
 
 
 class TestIopsFleetStats:
+class TestCpuFleetStats:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
         _instance_store.clear()

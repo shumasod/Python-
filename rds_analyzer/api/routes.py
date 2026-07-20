@@ -884,4 +884,27 @@ async def iops_fleet_stats(
         "instances_with_metrics": covered,
         "fleet_avg_total_iops": round(total_avg_iops, 2),
         "fleet_max_total_iops": round(total_max_iops, 2),
+    "/rds/cpu-fleet-stats",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のCPU使用率サマリーを取得",
+)
+async def cpu_fleet_stats() -> dict:
+    """メトリクスが存在するインスタンスのCPU使用率集計を返す。"""
+    cpu_avgs = []
+    cpu_maxes = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        cpu_avgs.append(metrics.cpu_utilization.avg)
+        cpu_maxes.append(metrics.cpu_utilization.max)
+    count = len(cpu_avgs)
+    if count == 0:
+        return {"instances_with_metrics": 0, "fleet_avg_cpu_pct": 0.0, "fleet_max_cpu_pct": 0.0, "high_cpu_instances": 0}
+    high_cpu = sum(1 for v in cpu_avgs if v >= 80)
+    return {
+        "instances_with_metrics": count,
+        "fleet_avg_cpu_pct": round(sum(cpu_avgs) / count, 2),
+        "fleet_max_cpu_pct": round(max(cpu_maxes), 2),
+        "high_cpu_instances": high_cpu,
     }

@@ -310,3 +310,27 @@ class InstanceCostDiff(BaseModel):
     instance_class_b: str
     engine_a: str
     engine_b: str
+
+
+class CostHistoryEntry(BaseModel):
+    """月次コスト履歴の1エントリ"""
+    month: str = Field(
+        description="対象月 (YYYY-MM 形式)",
+        pattern=r"^\d{4}-\d{2}$",
+    )
+    cost_usd: float = Field(description="月次コスト (USD)", ge=0)
+
+
+class CostHistoryRequest(BaseModel):
+    """POST /rds/{id}/cost-history リクエスト"""
+    entries: list[CostHistoryEntry] = Field(
+        description="月次コスト履歴リスト（古い順）",
+        min_length=1,
+    )
+
+
+class CostHistoryResponse(BaseModel):
+    """GET /rds/{id}/cost-history レスポンス"""
+    instance_id: str
+    total_months: int
+    entries: list[CostHistoryEntry]

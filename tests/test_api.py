@@ -668,3 +668,34 @@ class TestCpuFleetStats:
         data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
         assert data["instances_with_metrics"] == 0
         assert data["fleet_avg_cpu_pct"] == 0.0
+
+
+class TestTotalStorage:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_total_storage_200(self):
+        assert self._client.get("/api/v1/rds/total-storage").status_code == 200
+
+    def test_total_storage_structure(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        for k in ("total_instances","total_allocated_storage_gb","total_snapshot_storage_gb","avg_allocated_storage_gb"):
+            assert k in data
+
+    def test_total_storage_values(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["total_allocated_storage_gb"] >= 100
+
+    def test_avg_storage(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["avg_allocated_storage_gb"] == data["total_allocated_storage_gb"] / data["total_instances"]
+
+    def test_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0

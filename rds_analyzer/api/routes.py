@@ -968,3 +968,13 @@ async def cpu_fleet_stats() -> dict:
         "fleet_max_cpu_pct": round(max(cpu_maxes), 2),
         "high_cpu_instances": high_cpu,
     }
+
+
+@router.get("/rds/total-storage", response_model=dict, tags=["costs"], summary="フリート全体のストレージ使用量サマリーを取得")
+async def total_storage_summary() -> dict:
+    total_instances = len(_instance_store)
+    total_allocated_gb = sum(inst.allocated_storage_gb for inst in _instance_store.values())
+    total_snapshot_gb = sum(inst.snapshot_storage_gb for inst in _instance_store.values())
+    avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
+    return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
+            "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}

@@ -596,7 +596,6 @@ from rds_analyzer.api.routes import _instance_store, _metrics_store
 
 
 class TestIopsFleetStats:
-class TestCpuFleetStats:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
         _instance_store.clear()
@@ -631,3 +630,73 @@ class TestCpuFleetStats:
         data = self._client.get("/api/v1/rds/iops-fleet-stats").json()
         assert data["instances_with_metrics"] == 0
         assert data["fleet_avg_total_iops"] == 0.0
+
+
+class TestCpuFleetStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_cpu_fleet_200(self):
+        assert self._client.get("/api/v1/rds/cpu-fleet-stats").status_code == 200
+
+    def test_cpu_fleet_structure(self):
+        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+        assert "instances_with_metrics" in data
+        assert "fleet_avg_cpu_pct" in data
+        assert "fleet_max_cpu_pct" in data
+        assert "high_cpu_instances" in data
+
+    def test_cpu_fleet_values(self):
+        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+        assert data["instances_with_metrics"] == 1
+        assert 0 <= data["fleet_avg_cpu_pct"] <= 100
+
+    def test_cpu_max_gte_avg(self):
+        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+        assert data["fleet_max_cpu_pct"] >= data["fleet_avg_cpu_pct"]
+
+    def test_cpu_fleet_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/cpu-fleet-stats").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_avg_cpu_pct"] == 0.0
+
+
+class TestSnapshotStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_snapshot_stats_200(self):
+        assert self._client.get("/api/v1/rds/snapshot-stats").status_code == 200
+
+    def test_snapshot_stats_structure(self):
+        data = self._client.get("/api/v1/rds/snapshot-stats").json()
+        for k in ("total_instances","instances_with_snapshots","total_snapshot_storage_gb","avg_snapshot_storage_gb"):
+            assert k in data
+
+    def test_snapshot_gb_positive(self):
+        data = self._client.get("/api/v1/rds/snapshot-stats").json()
+        assert data["total_snapshot_storage_gb"] >= 80.0 and data["instances_with_snapshots"] >= 1
+
+    def test_no_snapshot_instance(self, sample_instance_payload):
+        no_snap = {**sample_instance_payload, "instance_id": "inst-no-snap", "snapshot_storage_gb": 0.0}
+        self._client.post("/api/v1/rds", json=no_snap)
+        assert self._client.get("/api/v1/rds/snapshot-stats").json()["instances_without_snapshots"] >= 1
+
+    def test_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/snapshot-stats").json()
+        assert data["total_instances"] == 0 and data["avg_snapshot_storage_gb"] == 0.0

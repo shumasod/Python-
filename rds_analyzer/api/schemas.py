@@ -289,3 +289,24 @@ class AlertThresholds(BaseModel):
     free_storage_critical_gb: float = Field(default=2.0, ge=0)
     read_latency_warn_ms: float = Field(default=20.0, ge=0)
     read_latency_critical_ms: float = Field(default=100.0, ge=0)
+
+
+class CompareInstancesRequest(BaseModel):
+    """POST /rds/compare リクエスト"""
+    instance_id_a: str = Field(description="比較元インスタンスID")
+    instance_id_b: str = Field(description="比較先インスタンスID")
+
+
+class InstanceCostDiff(BaseModel):
+    """POST /rds/compare レスポンス"""
+    instance_id_a: str
+    instance_id_b: str
+    monthly_cost_a_usd: float
+    monthly_cost_b_usd: float
+    cost_diff_usd: float = Field(description="B - A (正=Bが高い)")
+    cost_diff_pct: float = Field(description="(B-A)/A*100")
+    cheaper_instance: str = Field(description="a / b / equal")
+    instance_class_a: str
+    instance_class_b: str
+    engine_a: str
+    engine_b: str

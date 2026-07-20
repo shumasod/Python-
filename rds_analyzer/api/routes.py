@@ -970,13 +970,11 @@ async def cpu_fleet_stats() -> dict:
     }
 
 
-@router.get("/rds/snapshot-stats", response_model=dict, tags=["costs"], summary="フリート全体のスナップショット容量サマリーを取得")
-async def snapshot_stats() -> dict:
-    instances = list(_instance_store.values())
-    total = len(instances)
-    with_snapshots = [inst for inst in instances if inst.snapshot_storage_gb > 0]
-    total_snapshot_gb = sum(inst.snapshot_storage_gb for inst in instances)
-    return {"total_instances": total, "instances_with_snapshots": len(with_snapshots),
-            "instances_without_snapshots": total - len(with_snapshots),
-            "total_snapshot_storage_gb": round(total_snapshot_gb, 2),
-            "avg_snapshot_storage_gb": round(total_snapshot_gb / len(with_snapshots), 2) if with_snapshots else 0.0}
+@router.get("/rds/total-storage", response_model=dict, tags=["costs"], summary="フリート全体のストレージ使用量サマリーを取得")
+async def total_storage_summary() -> dict:
+    total_instances = len(_instance_store)
+    total_allocated_gb = sum(inst.allocated_storage_gb for inst in _instance_store.values())
+    total_snapshot_gb = sum(inst.snapshot_storage_gb for inst in _instance_store.values())
+    avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
+    return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
+            "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}

@@ -699,3 +699,49 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestInstanceStorage:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_storage_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/storage")
+        assert resp.status_code == 200
+
+    def test_storage_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/storage").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert data["storage_type"] == "gp2"
+        assert data["allocated_storage_gb"] == 100
+
+    def test_storage_includes_utilization_when_metrics_exist(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/storage").json()
+        assert data["free_storage_gb"] is not None
+        assert data["used_storage_gb"] is not None
+        assert data["utilization_pct"] is not None
+        assert 0 <= data["utilization_pct"] <= 100
+
+    def test_storage_null_utilization_without_metrics(self, client):
+        from rds_analyzer.api.routes import _metrics_store
+        _metrics_store.clear()
+        data = client.get("/api/v1/rds/test-api-mysql-001/storage").json()
+        assert data["free_storage_gb"] is None
+        assert data["used_storage_gb"] is None
+        assert data["utilization_pct"] is None
+
+    def test_storage_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/storage")
+        assert resp.status_code == 404

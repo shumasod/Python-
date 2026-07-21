@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestBackupStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_backup_stats_200(self):
+        assert self._client.get("/api/v1/rds/backup-stats").status_code == 200
+
+    def test_backup_stats_structure(self):
+        data = self._client.get("/api/v1/rds/backup-stats").json()
+        for k in ("total_instances","avg_retention_days","min_retention_days","max_retention_days","inadequate_backup_count"):
+            assert k in data
+
+    def test_backup_retention_values(self):
+        data = self._client.get("/api/v1/rds/backup-stats").json()
+        assert data["avg_retention_days"] == 7.0 and data["min_retention_days"] == 7
+
+    def test_inadequate_backup_detection(self, sample_instance_payload):
+        low = {**sample_instance_payload, "instance_id": "inst-low-bkp", "backup_retention_days": 3}
+        self._client.post("/api/v1/rds", json=low)
+        assert self._client.get("/api/v1/rds/backup-stats").json()["inadequate_backup_count"] >= 1
+
+    def test_backup_stats_empty(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/backup-stats").json()
+        assert data["total_instances"] == 0 and data["avg_retention_days"] == 0.0

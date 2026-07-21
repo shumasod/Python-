@@ -699,3 +699,77 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+MYSQL_SLOW_LOG_SAMPLE = """\
+# Time: 2024-01-15T12:00:00.000000Z
+# User@Host: app[app] @ localhost []
+# Query_time: 2.345678  Lock_time: 0.000150 Rows_sent: 10 Rows_examined: 5000
+SET timestamp=1705312800;
+SELECT id, name, email FROM users WHERE status = 'active' ORDER BY created_at;
+# Query_time: 0.876543  Lock_time: 0.000050 Rows_sent: 1 Rows_examined: 1200
+SET timestamp=1705312810;
+SELECT id, title FROM articles WHERE user_id = 42 AND published = 1;
+"""
+class TestSlowQueryApi:
+    """POST /rds/{id}/slow-queries エンドポイントテスト"""
+    @pytest.fixture(autouse=True)
+    def register_instance(self, client):
+        client.post("/api/v1/rds", json={
+            "instance_id": "slow-query-test-001",
+            "engine": "mysql",
+            "engine_version": "8.0.35",
+            "instance_class": "db.m5.large",
+            "storage_type": "gp2",
+            "allocated_storage_gb": 100,
+        })
+    def test_parse_mysql_slow_log(self, client):
+        """MySQL スロークエリログを正常に解析できる"""
+        resp = client.post(
+            "/api/v1/rds/slow-query-test-001/slow-queries",
+            json={"log_text": MYSQL_SLOW_LOG_SAMPLE, "source": "mysql"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["instance_id"] == "slow-query-test-001"
+        assert data["source"] == "mysql"
+        assert data["total_queries"] >= 2
+        assert len(data["queries"]) == data["total_queries"]
+    def test_parsed_query_has_required_fields(self, client):
+        """解析結果に必須フィールドが含まれる"""
+        resp = client.post(
+            "/api/v1/rds/slow-query-test-001/slow-queries",
+            json={"log_text": MYSQL_SLOW_LOG_SAMPLE, "source": "mysql"},
+        )
+        q = resp.json()["queries"][0]
+        assert "query_id" in q
+        assert "table_name" in q
+        assert q["avg_latency_ms"] > 0
+        assert q["avg_rows_examined"] > 0
+    def test_pg_stat_statements_source(self, client):
+        """pg_stat_statements 形式でも解析できる"""
+        pg_rows = [
+            {"query": "SELECT id FROM orders WHERE status = $1", "calls": 100,
+             "mean_exec_time": 12.5, "rows": 500},
+        ]
+        resp = client.post(
+            "/api/v1/rds/slow-query-test-001/slow-queries",
+            json={"log_text": "", "source": "pg_stat_statements", "pg_stat_rows": pg_rows},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source"] == "pg_stat_statements"
+        assert data["total_queries"] == 1
+    def test_empty_log_returns_zero_queries(self, client):
+        """空のログは 0 件を返す"""
+        resp = client.post(
+            "/api/v1/rds/slow-query-test-001/slow-queries",
+            json={"log_text": "", "source": "mysql"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["total_queries"] == 0
+    def test_unknown_instance_returns_404(self, client):
+        """存在しないインスタンスは 404"""
+        resp = client.post(
+            "/api/v1/rds/no-such-id/slow-queries",
+            json={"log_text": "", "source": "mysql"},
+        )
+        assert resp.status_code == 404

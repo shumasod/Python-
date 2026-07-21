@@ -978,3 +978,43 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# バックアップ設定エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/backup",
+    response_model=dict,
+    tags=["instance"],
+    summary="インスタンスのバックアップ設定を取得",
+)
+async def get_backup_config(instance_id: str) -> dict:
+    """
+    バックアップ保持期間・スナップショット容量・バックアップ推奨有無を返す。
+
+    保持期間 0 日はバックアップ無効を示す。
+    7 日未満は RDS のベストプラクティス上「短すぎる」と判定する。
+    """
+    instance = get_instance_or_404(instance_id)
+
+    enabled = instance.backup_retention_days > 0
+    adequate = instance.backup_retention_days >= 7
+
+    return {
+        "instance_id": instance_id,
+        "backup_retention_days": instance.backup_retention_days,
+        "snapshot_storage_gb": instance.snapshot_storage_gb,
+        "backup_enabled": enabled,
+        "retention_adequate": adequate,
+        "recommendation": (
+            "バックアップが無効です。有効化を推奨します。" if not enabled
+            else "保持期間が短すぎます。7日以上を推奨します。" if not adequate
+            else "バックアップ設定は適切です。"
+        ),
+    }

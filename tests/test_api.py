@@ -699,3 +699,53 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+from rds_analyzer.api.routes import _instance_store, _metrics_store
+
+
+class TestMetricsDelete:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        self._instance_payload = sample_instance_payload
+        self._metrics_payload = sample_metrics_payload
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_delete_metrics_returns_200(self):
+        self._client.post("/api/v1/rds", json=self._instance_payload)
+        self._client.post("/api/v1/rds/test-api-mysql-001/metrics", json=self._metrics_payload)
+        resp = self._client.delete("/api/v1/rds/test-api-mysql-001/metrics")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] is True
+        assert data["instance_id"] == "test-api-mysql-001"
+
+    def test_delete_metrics_removes_data(self):
+        self._client.post("/api/v1/rds", json=self._instance_payload)
+        self._client.post("/api/v1/rds/test-api-mysql-001/metrics", json=self._metrics_payload)
+        self._client.delete("/api/v1/rds/test-api-mysql-001/metrics")
+        resp = self._client.get("/api/v1/rds/test-api-mysql-001/analysis")
+        assert resp.status_code == 404
+
+    def test_delete_metrics_instance_survives(self):
+        self._client.post("/api/v1/rds", json=self._instance_payload)
+        self._client.post("/api/v1/rds/test-api-mysql-001/metrics", json=self._metrics_payload)
+        self._client.delete("/api/v1/rds/test-api-mysql-001/metrics")
+        resp = self._client.post("/api/v1/rds/test-api-mysql-001/metrics", json=self._metrics_payload)
+        assert resp.status_code == 200
+
+    def test_delete_metrics_no_metrics_returns_404(self):
+        self._client.post("/api/v1/rds", json=self._instance_payload)
+        resp = self._client.delete("/api/v1/rds/test-api-mysql-001/metrics")
+        assert resp.status_code == 404
+
+    def test_delete_metrics_not_found_instance(self):
+        resp = self._client.delete("/api/v1/rds/nonexistent/metrics")
+        assert resp.status_code == 404

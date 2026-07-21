@@ -978,3 +978,29 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+@router.delete(
+    "/rds/{instance_id}/metrics",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのメトリクスデータを削除",
+)
+async def delete_metrics(instance_id: str) -> dict:
+    """
+    指定インスタンスのメトリクスデータを削除する。
+
+    インスタンス登録自体は残る。メトリクスを再投入したい場合に使用。
+    """
+    get_instance_or_404(instance_id)
+    if instance_id not in _metrics_store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"インスタンス '{instance_id}' のメトリクスデータがありません",
+        )
+    del _metrics_store[instance_id]
+    return {"deleted": True, "instance_id": instance_id}

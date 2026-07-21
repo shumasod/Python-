@@ -699,3 +699,45 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestLatencyStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_latency_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/latency")
+        assert resp.status_code == 200
+
+    def test_latency_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/latency").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "read_latency_avg_ms" in data
+        assert "write_latency_avg_ms" in data
+
+    def test_latency_values_match_input(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/latency").json()
+        assert abs(data["read_latency_avg_ms"] - 5.0) < 0.01
+        assert abs(data["write_latency_avg_ms"] - 6.0) < 0.01
+
+    def test_latency_no_metrics_returns_404(self, client):
+        from rds_analyzer.api.routes import _metrics_store
+        _metrics_store.clear()
+        resp = client.get("/api/v1/rds/test-api-mysql-001/latency")
+        assert resp.status_code == 404
+
+    def test_latency_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/latency")
+        assert resp.status_code == 404

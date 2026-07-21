@@ -978,3 +978,36 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get(
+    "/rds/{instance_id}/status",
+    response_model=dict,
+    tags=["analysis"],
+    summary="インスタンスのクイックステータスを取得",
+)
+async def get_instance_status(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recs = rec_engine.generate_recommendations(instance, perf_result, breakdown)
+    score = perf_result.health_score
+    health_status = "healthy" if score >= 80 else "warning" if score >= 50 else "critical"
+    return {
+        "instance_id": instance_id,
+        "engine": instance.engine.value,
+        "instance_class": instance.instance_class,
+        "region": instance.region,
+        "health_score": score,
+        "health_status": health_status,
+        "monthly_cost_usd": round(breakdown.total_cost_usd, 2),
+        "recommendation_count": len(recs),
+    }

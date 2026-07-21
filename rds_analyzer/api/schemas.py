@@ -310,3 +310,27 @@ class InstanceCostDiff(BaseModel):
     instance_class_b: str
     engine_a: str
     engine_b: str
+
+
+
+
+class InstanceListItem(BaseModel):
+    """GET /rds の1エントリ（軽量な一覧用）"""
+    instance_id: str
+    engine: str
+    engine_version: str
+    instance_class: str
+    region: str
+    multi_az: bool
+    storage_type: str
+    allocated_storage_gb: int
+    has_metrics: bool = Field(description="メトリクスが投入済みか")
+    tags: dict[str, str] = Field(default_factory=dict)
+
+
+class InstanceListResponse(BaseModel):
+    """GET /rds レスポンス"""
+    total: int
+    instances: list[InstanceListItem]
+
+

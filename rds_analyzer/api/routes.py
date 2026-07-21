@@ -978,3 +978,47 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# CPU 統計エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/cpu",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスの CPU 使用率統計を取得",
+)
+async def get_cpu_stats(instance_id: str) -> dict:
+    """
+    メトリクスから CPU 使用率 (%) の平均・最大・p95 を返す。
+
+    CPU 効率判定: 理想は 20〜80%。
+    20% 未満はオーバープロビジョニング、80% 超はボトルネックリスク。
+    """
+    get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    cpu_avg = round(metrics.cpu_utilization.avg, 1)
+    cpu_max = round(metrics.cpu_utilization.max, 1)
+    cpu_p95 = round(metrics.cpu_utilization.p95, 1)
+
+    if cpu_avg < 20:
+        efficiency_status = "over_provisioned"
+    elif cpu_avg > 80:
+        efficiency_status = "bottleneck_risk"
+    else:
+        efficiency_status = "optimal"
+
+    return {
+        "instance_id": instance_id,
+        "cpu_avg_pct": cpu_avg,
+        "cpu_max_pct": cpu_max,
+        "cpu_p95_pct": cpu_p95,
+        "efficiency_status": efficiency_status,
+    }

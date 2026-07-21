@@ -978,3 +978,39 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get(
+    "/rds/{instance_id}/health-score",
+    response_model=dict,
+    tags=["analysis"],
+    summary="インスタンスのヘルススコアのみを取得",
+)
+async def get_health_score(
+    instance_id: str,
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> dict:
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    score = perf_result.health_score
+    if score >= 80:
+        status = "healthy"
+    elif score >= 50:
+        status = "warning"
+    else:
+        status = "critical"
+    bottleneck_count = sum([
+        perf_result.cpu_bottleneck_detected,
+        perf_result.memory_pressure_detected,
+        perf_result.io_bottleneck_detected,
+        perf_result.connection_bottleneck_detected,
+    ])
+    return {
+        "instance_id": instance_id,
+        "health_score": score,
+        "status": status,
+        "bottleneck_count": bottleneck_count,
+    }

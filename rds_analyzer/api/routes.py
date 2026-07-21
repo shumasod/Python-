@@ -978,3 +978,47 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# メモリ統計エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/memory",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのメモリ統計を取得",
+)
+async def get_memory_stats(instance_id: str) -> dict:
+    """
+    メトリクスから空きメモリ (GB) の平均・最小と推定使用率を返す。
+
+    インスタンスクラスのスペックから総メモリを算出し、使用率を計算する。
+    """
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    from ..analyzers.cost_analyzer import INSTANCE_SPECS
+    gb = 1024 ** 3
+    free_avg_gb = round(metrics.freeable_memory_bytes.avg / gb, 2)
+    free_min_gb = round(metrics.freeable_memory_bytes.min / gb, 2)
+
+    specs = INSTANCE_SPECS.get(instance.instance_class)
+    total_memory_gb = specs["memory_gb"] if specs else None
+    used_avg_gb = round(total_memory_gb - free_avg_gb, 2) if total_memory_gb else None
+    utilization_pct = round(used_avg_gb / total_memory_gb * 100, 1) if total_memory_gb else None
+
+    return {
+        "instance_id": instance_id,
+        "instance_class": instance.instance_class,
+        "total_memory_gb": total_memory_gb,
+        "freeable_memory_avg_gb": free_avg_gb,
+        "freeable_memory_min_gb": free_min_gb,
+        "used_memory_avg_gb": used_avg_gb,
+        "utilization_pct": utilization_pct,
+    }

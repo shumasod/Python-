@@ -699,3 +699,44 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestMemoryStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_memory_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/memory")
+        assert resp.status_code == 200
+
+    def test_memory_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/memory").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "freeable_memory_avg_gb" in data
+        assert "total_memory_gb" in data
+
+    def test_memory_total_from_instance_class(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/memory").json()
+        assert data["total_memory_gb"] == 8
+        assert data["freeable_memory_avg_gb"] == 3.5
+
+    def test_memory_utilization_calculated(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/memory").json()
+        assert data["utilization_pct"] is not None
+        assert 0 <= data["utilization_pct"] <= 100
+
+    def test_memory_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/memory")
+        assert resp.status_code == 404

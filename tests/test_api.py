@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestClassList:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_classes_200(self):
+        assert self._client.get("/api/v1/rds/classes").status_code == 200
+
+    def test_classes_structure(self):
+        data = self._client.get("/api/v1/rds/classes").json()
+        assert "classes" in data and "class_counts" in data and "total_classes" in data
+
+    def test_classes_has_m5_large(self):
+        assert "db.m5.large" in self._client.get("/api/v1/rds/classes").json()["classes"]
+
+    def test_classes_sorted(self, sample_instance_payload):
+        p2 = {**sample_instance_payload, "instance_id": "inst-t3", "instance_class": "db.t3.micro"}
+        self._client.post("/api/v1/rds", json=p2)
+        data = self._client.get("/api/v1/rds/classes").json()
+        assert data["classes"] == sorted(data["classes"])
+
+    def test_classes_empty(self):
+        _instance_store.clear()
+        assert self._client.get("/api/v1/rds/classes").json()["total_classes"] == 0

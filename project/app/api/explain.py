@@ -104,6 +104,12 @@ def explain_race(race_data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         ExplainResponse 相当の辞書
     """
+    boats = race_data.get("boats", [])
+    if len(boats) != N_BOATS:
+        raise ValueError(
+            f"boats には{N_BOATS}艇分のデータが必要です（受け取り: {len(boats)}艇）"
+        )
+
     model = get_model()
     feature_df = build_features(race_data)
     X = feature_df.to_numpy(dtype=float)            # (6, n_features) numpy for math ops
@@ -225,6 +231,9 @@ async def explain_endpoint(
             status_code=503,
             detail="モデルが未学習です。先にトレーニングを実行してください。",
         ) from e
+    except ValueError as e:
+        logger.error(f"入力値エラー: {e}")
+        raise HTTPException(status_code=422, detail="入力データに不正な値が含まれています") from e
     except Exception as e:
         logger.exception(f"説明生成中にエラー: {e}")
         raise HTTPException(status_code=500, detail="内部サーバーエラー") from e

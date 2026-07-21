@@ -978,3 +978,19 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/backup-stats", response_model=dict, tags=["instances"], summary="バックアップ設定のフリート全体サマリーを取得")
+async def backup_stats() -> dict:
+    retention_days = [inst.backup_retention_days for inst in _instance_store.values()]
+    total = len(retention_days)
+    if total == 0:
+        return {"total_instances": 0, "avg_retention_days": 0.0, "min_retention_days": 0,
+                "max_retention_days": 0, "inadequate_backup_count": 0}
+    avg = round(sum(retention_days) / total, 1)
+    inadequate = sum(1 for d in retention_days if d < 7)
+    return {"total_instances": total, "avg_retention_days": avg,
+            "min_retention_days": min(retention_days), "max_retention_days": max(retention_days),
+            "inadequate_backup_count": inadequate}

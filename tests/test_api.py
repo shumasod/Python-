@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestInstanceStatus:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear(); _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear(); _metrics_store.clear()
+
+    def test_status_returns_200(self):
+        assert self._client.get("/api/v1/rds/test-api-mysql-001/status").status_code == 200
+
+    def test_status_has_required_fields(self):
+        data = self._client.get("/api/v1/rds/test-api-mysql-001/status").json()
+        for k in ("instance_id","health_score","health_status","monthly_cost_usd","recommendation_count"):
+            assert k in data
+
+    def test_status_health_score_in_range(self):
+        data = self._client.get("/api/v1/rds/test-api-mysql-001/status").json()
+        assert 0 <= data["health_score"] <= 100
+
+    def test_status_health_status_valid(self):
+        data = self._client.get("/api/v1/rds/test-api-mysql-001/status").json()
+        assert data["health_status"] in ("healthy", "warning", "critical")
+
+    def test_status_not_found(self):
+        assert self._client.get("/api/v1/rds/nonexistent/status").status_code == 404

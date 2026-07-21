@@ -699,3 +699,79 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestInstanceList:
+    """GET /rds インスタンス一覧のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def clear_stores(self):
+        from rds_analyzer.api import routes as _r
+        _r._instance_store.clear()
+        _r._metrics_store.clear()
+
+    def test_list_empty(self, client):
+        resp = client.get("/api/v1/rds")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 0
+        assert data["instances"] == []
+
+    def test_list_after_register(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+        ids = [i["instance_id"] for i in data["instances"]]
+        assert "test-api-mysql-001" in ids
+
+    def test_list_has_metrics_flag(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp_before = client.get("/api/v1/rds")
+        item_before = next(
+            i for i in resp_before.json()["instances"]
+            if i["instance_id"] == "test-api-mysql-001"
+        )
+        assert item_before["has_metrics"] is False
+
+        client.post("/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload)
+        resp_after = client.get("/api/v1/rds")
+        item_after = next(
+            i for i in resp_after.json()["instances"]
+            if i["instance_id"] == "test-api-mysql-001"
+        )
+        assert item_after["has_metrics"] is True
+
+    def test_filter_by_engine(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds?engine=mysql")
+        assert resp.status_code == 200
+        for item in resp.json()["instances"]:
+            assert item["engine"] == "mysql"
+
+    def test_filter_by_engine_no_match(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds?engine=postgresql")
+        assert resp.status_code == 200
+        # mysql インスタンスしか登録していないので 0 件
+        assert resp.json()["total"] == 0
+
+    def test_filter_by_region(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds?region=ap-northeast-1")
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1
+
+    def test_list_includes_tags(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds")
+        item = next(
+            i for i in resp.json()["instances"]
+            if i["instance_id"] == "test-api-mysql-001"
+        )
+        assert item["tags"].get("Environment") == "test"
+
+

@@ -978,3 +978,48 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+    InstanceListItem,
+    InstanceListResponse,
+@router.get(
+    "/rds",
+    response_model=InstanceListResponse,
+    tags=["instances"],
+    summary="登録済み RDS インスタンス一覧を取得",
+)
+async def list_instances(
+    engine: Optional[str] = Query(default=None, description="エンジン種別フィルタ (例: mysql)"),
+    region: Optional[str] = Query(default=None, description="リージョンフィルタ"),
+) -> InstanceListResponse:
+    """
+    登録済み RDS インスタンスの一覧を返す。
+
+    `?engine=mysql` や `?region=ap-northeast-1` で絞り込み可能。
+    """
+    instances = list(_instance_store.values())
+    if engine:
+        instances = [i for i in instances if i.engine.value == engine]
+    if region:
+        instances = [i for i in instances if i.region == region]
+
+    items = [
+        InstanceListItem(
+            instance_id=i.instance_id,
+            engine=i.engine.value,
+            engine_version=i.engine_version,
+            instance_class=i.instance_class,
+            region=i.region,
+            multi_az=i.multi_az,
+            storage_type=i.storage_type.value,
+            allocated_storage_gb=i.allocated_storage_gb,
+            has_metrics=i.instance_id in _metrics_store,
+            tags=i.tags,
+        )
+        for i in instances
+    ]
+    return InstanceListResponse(total=len(items), instances=items)
+
+

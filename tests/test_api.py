@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestTagSearch:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_search_by_key_found(self):
+        data = self._client.get("/api/v1/rds/search/by-tag?key=Environment").json()
+        assert data["matched_count"] >= 1
+
+    def test_search_by_key_and_value_found(self):
+        data = self._client.get("/api/v1/rds/search/by-tag?key=Environment&value=test").json()
+        assert data["matched_count"] >= 1
+
+    def test_search_by_value_not_matched(self):
+        data = self._client.get("/api/v1/rds/search/by-tag?key=Environment&value=production").json()
+        assert data["matched_count"] == 0
+
+    def test_search_missing_key(self):
+        data = self._client.get("/api/v1/rds/search/by-tag?key=NonExistentTag").json()
+        assert data["matched_count"] == 0
+
+    def test_search_structure(self):
+        data = self._client.get("/api/v1/rds/search/by-tag?key=Environment").json()
+        assert "search_key" in data and "matched_count" in data and "instances" in data

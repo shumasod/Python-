@@ -978,3 +978,22 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/search/by-tag", response_model=dict, tags=["instances"], summary="タグでインスタンスを検索")
+async def search_by_tag(
+    key: str = Query(description="タグキー"),
+    value: Optional[str] = Query(default=None, description="タグ値"),
+) -> dict:
+    matched = []
+    for instance in _instance_store.values():
+        tag_val = instance.tags.get(key)
+        if tag_val is None:
+            continue
+        if value is not None and tag_val != value:
+            continue
+        matched.append({"instance_id": instance.instance_id, "engine": instance.engine.value,
+                        "instance_class": instance.instance_class, "region": instance.region, "tag_value": tag_val})
+    return {"search_key": key, "search_value": value, "matched_count": len(matched), "instances": matched}

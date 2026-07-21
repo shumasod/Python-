@@ -978,3 +978,38 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# コネクション統計エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/connections",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのコネクション統計を取得",
+)
+async def get_connection_stats(instance_id: str) -> dict:
+    """
+    メトリクスからコネクション統計（平均・最大・推奨上限）を返す。
+
+    メトリクス未投入の場合は 404 を返す。
+    """
+    get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    avg_conn = round(metrics.database_connections.avg, 1)
+    max_conn = round(metrics.database_connections.max, 1)
+
+    return {
+        "instance_id": instance_id,
+        "connections_avg": avg_conn,
+        "connections_max": max_conn,
+        "utilization_pct": round(avg_conn / max_conn * 100, 1) if max_conn > 0 else 0.0,
+        "disk_queue_depth_avg": round(metrics.disk_queue_depth.avg, 3),
+    }

@@ -978,3 +978,18 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/storage-types", response_model=dict, tags=["instances"], summary="使用中のストレージタイプ一覧を取得")
+async def list_storage_types() -> dict:
+    type_counts: dict[str, int] = {}
+    type_total_gb: dict[str, int] = {}
+    for instance in _instance_store.values():
+        stype = instance.storage_type.value
+        type_counts[stype] = type_counts.get(stype, 0) + 1
+        type_total_gb[stype] = type_total_gb.get(stype, 0) + instance.allocated_storage_gb
+    summary = [{"storage_type": s, "instance_count": type_counts[s], "total_allocated_gb": type_total_gb[s]}
+               for s in sorted(type_counts.keys())]
+    return {"storage_types": sorted(type_counts.keys()), "total_storage_types": len(type_counts), "by_storage_type": summary}

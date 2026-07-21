@@ -699,3 +699,34 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestStorageTypeSummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_storage_types_200(self):
+        assert self._client.get("/api/v1/rds/storage-types").status_code == 200
+
+    def test_storage_types_structure(self):
+        data = self._client.get("/api/v1/rds/storage-types").json()
+        assert "storage_types" in data and "total_storage_types" in data and "by_storage_type" in data
+
+    def test_storage_types_has_gp2(self):
+        assert "gp2" in self._client.get("/api/v1/rds/storage-types").json()["storage_types"]
+
+    def test_storage_type_gb(self):
+        data = self._client.get("/api/v1/rds/storage-types").json()
+        gp2 = next(s for s in data["by_storage_type"] if s["storage_type"] == "gp2")
+        assert gp2["total_allocated_gb"] >= 100
+
+    def test_storage_types_empty(self):
+        _instance_store.clear()
+        assert self._client.get("/api/v1/rds/storage-types").json()["total_storage_types"] == 0

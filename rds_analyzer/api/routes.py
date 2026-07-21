@@ -978,3 +978,20 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/top-cost", response_model=dict, tags=["costs"], summary="コストが高い上位インスタンスを取得")
+async def top_cost_instances(
+    limit: int = Query(default=5, ge=1, le=50),
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> dict:
+    ranked = []
+    for instance in _instance_store.values():
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        ranked.append({"instance_id": instance.instance_id, "engine": instance.engine.value,
+                       "instance_class": instance.instance_class, "region": instance.region,
+                       "monthly_cost_usd": round(breakdown.total_cost_usd, 2)})
+    ranked.sort(key=lambda x: x["monthly_cost_usd"], reverse=True)
+    return {"limit": limit, "total_instances": len(ranked), "instances": ranked[:limit]}

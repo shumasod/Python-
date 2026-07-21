@@ -310,3 +310,32 @@ class InstanceCostDiff(BaseModel):
     instance_class_b: str
     engine_a: str
     engine_b: str
+class SlowQueryLogRequest(BaseModel):
+    """POST /rds/{id}/slow-queries リクエスト"""
+    log_text: str = Field(description="MySQL slow query log テキスト")
+    source: str = Field(
+        default="mysql",
+        description="ログ形式 (mysql | pg_stat_statements)",
+    )
+    pg_stat_rows: list[dict] = Field(
+        default_factory=list,
+        description="source=pg_stat_statements 時の pg_stat_statements 行リスト",
+    )
+class ParsedSlowQuery(BaseModel):
+    """解析された個別スロークエリ"""
+    query_id: str
+    table_name: str
+    filter_columns: list[str]
+    sort_columns: list[str]
+    select_columns: list[str]
+    avg_latency_ms: float
+    avg_rows_examined: float
+    avg_rows_returned: float
+    execution_count_per_day: float
+    query_text: str
+class SlowQueryParseResponse(BaseModel):
+    """POST /rds/{id}/slow-queries レスポンス"""
+    instance_id: str
+    source: str
+    total_queries: int
+    queries: list[ParsedSlowQuery]

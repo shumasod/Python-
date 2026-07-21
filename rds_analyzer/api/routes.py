@@ -978,3 +978,39 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# インスタンスクラス スペックエンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/specs",
+    response_model=dict,
+    tags=["instance"],
+    summary="インスタンスクラスのスペックを取得",
+)
+async def get_instance_specs(instance_id: str) -> dict:
+    """
+    インスタンスクラスの vCPU 数・メモリ容量 (GB) を返す。
+
+    INSTANCE_SPECS に登録されていないクラスの場合は vcpu/memory_gb が null になる。
+    """
+    instance = get_instance_or_404(instance_id)
+    from ..analyzers.cost_analyzer import INSTANCE_SPECS, INSTANCE_HOURLY_RATES
+
+    specs = INSTANCE_SPECS.get(instance.instance_class)
+    hourly_rate = INSTANCE_HOURLY_RATES.get(instance.instance_class)
+
+    return {
+        "instance_id": instance_id,
+        "instance_class": instance.instance_class,
+        "vcpu": specs["vcpu"] if specs else None,
+        "memory_gb": specs["memory_gb"] if specs else None,
+        "hourly_rate_usd": hourly_rate,
+        "monthly_compute_estimate_usd": round(hourly_rate * 24 * 30, 2) if hourly_rate else None,
+    }

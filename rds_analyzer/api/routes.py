@@ -978,3 +978,20 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/cost-by-engine", response_model=dict, tags=["costs"], summary="エンジン別の推定月次コスト集計を取得")
+async def cost_by_engine(cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer)) -> dict:
+    engine_costs: dict[str, float] = {}
+    engine_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        engine = instance.engine.value
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        engine_costs[engine] = engine_costs.get(engine, 0.0) + breakdown.total_cost_usd
+        engine_counts[engine] = engine_counts.get(engine, 0) + 1
+    total_cost = sum(engine_costs.values())
+    summary = [{"engine": e, "instance_count": engine_counts[e], "total_monthly_cost_usd": round(engine_costs[e], 2)}
+               for e in sorted(engine_costs.keys())]
+    return {"total_monthly_cost_usd": round(total_cost, 2), "by_engine": summary}

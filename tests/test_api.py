@@ -699,3 +699,45 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestNetworkStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_network_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/network")
+        assert resp.status_code == 200
+
+    def test_network_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/network").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "network_receive_avg_mbps" in data
+        assert "network_transmit_avg_mbps" in data
+
+    def test_network_values_non_negative(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/network").json()
+        assert data["network_receive_avg_mbps"] >= 0
+        assert data["network_transmit_avg_mbps"] >= 0
+
+    def test_network_no_metrics_returns_404(self, client):
+        from rds_analyzer.api.routes import _metrics_store
+        _metrics_store.clear()
+        resp = client.get("/api/v1/rds/test-api-mysql-001/network")
+        assert resp.status_code == 404
+
+    def test_network_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/network")
+        assert resp.status_code == 404

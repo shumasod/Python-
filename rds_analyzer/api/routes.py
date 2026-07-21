@@ -978,3 +978,37 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# ネットワークスループット統計エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/network",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのネットワークスループット統計を取得",
+)
+async def get_network_stats(instance_id: str) -> dict:
+    """
+    メトリクスからネットワーク受信・送信スループット (MB/s) の平均・最大を返す。
+
+    メトリクス未投入の場合は 404 を返す。
+    """
+    get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    bps_to_mbps = 1 / (1024 * 1024)
+
+    return {
+        "instance_id": instance_id,
+        "network_receive_avg_mbps": round(metrics.network_receive_bps.avg * bps_to_mbps, 3),
+        "network_receive_max_mbps": round(metrics.network_receive_bps.max * bps_to_mbps, 3),
+        "network_transmit_avg_mbps": round(metrics.network_transmit_bps.avg * bps_to_mbps, 3),
+        "network_transmit_max_mbps": round(metrics.network_transmit_bps.max * bps_to_mbps, 3),
+    }

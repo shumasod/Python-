@@ -699,3 +699,62 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestRecommendationTypeFilter:
+    """GET /rds/{id}/recommendations?type= フィルタのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_no_type_filter_returns_all(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data["recommendations"], list)
+
+    def test_single_type_filter(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?type=storage_type_change"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        for rec in data["recommendations"]:
+            assert rec["type"] == "storage_type_change"
+
+    def test_multiple_type_filter_comma_separated(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?type=scale_down,storage_type_change"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        for rec in data["recommendations"]:
+            assert rec["type"] in ("scale_down", "storage_type_change")
+
+    def test_invalid_type_returns_422(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?type=invalid_type"
+        )
+        assert resp.status_code == 422
+
+    def test_type_filter_reduces_count(self, client):
+        all_resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        total = all_resp.json()["total_recommendations"]
+        filtered_resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?type=aurora_migration"
+        )
+        filtered = filtered_resp.json()["total_recommendations"]
+        assert filtered <= total
+
+    def test_nonexistent_instance_returns_404(self, client):
+        resp = client.get("/api/v1/rds/no-such/recommendations?type=scale_down")
+        assert resp.status_code == 404

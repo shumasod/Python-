@@ -699,3 +699,39 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestInstanceSpecs:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api.routes import _instance_store
+        _instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_specs_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/specs")
+        assert resp.status_code == 200
+
+    def test_specs_vcpu_and_memory(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/specs").json()
+        assert data["instance_class"] == "db.m5.large"
+        assert data["vcpu"] == 2
+        assert data["memory_gb"] == 8
+
+    def test_specs_hourly_rate_present(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/specs").json()
+        assert data["hourly_rate_usd"] is not None
+        assert data["hourly_rate_usd"] > 0
+
+    def test_specs_monthly_estimate_calculated(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/specs").json()
+        assert data["monthly_compute_estimate_usd"] is not None
+        assert data["monthly_compute_estimate_usd"] > 0
+
+    def test_specs_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/specs")
+        assert resp.status_code == 404

@@ -978,3 +978,15 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/multi-az-stats", response_model=dict, tags=["instances"], summary="Multi-AZ配置状況のサマリーを取得")
+async def multi_az_stats() -> dict:
+    total = len(_instance_store)
+    multi_az_count = sum(1 for inst in _instance_store.values() if inst.multi_az)
+    single_az_count = total - multi_az_count
+    multi_az_pct = round(multi_az_count / total * 100, 1) if total > 0 else 0.0
+    return {"total_instances": total, "multi_az_count": multi_az_count,
+            "single_az_count": single_az_count, "multi_az_pct": multi_az_pct}

@@ -978,3 +978,13 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/classes", response_model=dict, tags=["instances"], summary="使用中のインスタンスクラス一覧を取得")
+async def list_instance_classes() -> dict:
+    class_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        class_counts[instance.instance_class] = class_counts.get(instance.instance_class, 0) + 1
+    return {"classes": sorted(class_counts.keys()), "class_counts": class_counts, "total_classes": len(class_counts)}

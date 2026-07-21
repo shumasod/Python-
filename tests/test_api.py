@@ -699,3 +699,36 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestBackupConfig:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api.routes import _instance_store
+        _instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_backup_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/backup")
+        assert resp.status_code == 200
+
+    def test_backup_retention_days_matches(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/backup").json()
+        assert data["backup_retention_days"] == 7
+        assert data["backup_enabled"] is True
+
+    def test_backup_adequate_for_7_days(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/backup").json()
+        assert data["retention_adequate"] is True
+
+    def test_backup_snapshot_storage_present(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/backup").json()
+        assert data["snapshot_storage_gb"] == 80.0
+
+    def test_backup_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/backup")
+        assert resp.status_code == 404

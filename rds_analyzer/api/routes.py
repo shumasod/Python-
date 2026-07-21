@@ -978,3 +978,14 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/engines", response_model=dict, tags=["instances"], summary="登録インスタンスのエンジン一覧を取得")
+async def list_engines() -> dict:
+    engine_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        engine = instance.engine.value
+        engine_counts[engine] = engine_counts.get(engine, 0) + 1
+    return {"engines": sorted(engine_counts.keys()), "engine_counts": engine_counts, "total_engines": len(engine_counts)}

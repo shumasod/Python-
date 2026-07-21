@@ -978,3 +978,39 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# エンジン情報エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/engine",
+    response_model=dict,
+    tags=["instance"],
+    summary="インスタンスのエンジン情報を取得",
+)
+async def get_instance_engine(instance_id: str) -> dict:
+    """
+    DBエンジン種別・バージョン・マルチAZ設定・リージョンなど
+    エンジン関連のメタ情報を返す。
+    """
+    instance = get_instance_or_404(instance_id)
+
+    engine_family = instance.engine.value.split("-")[0]  # "aurora-mysql" → "aurora"
+
+    return {
+        "instance_id": instance_id,
+        "engine": instance.engine.value,
+        "engine_family": engine_family,
+        "engine_version": instance.engine_version,
+        "instance_class": instance.instance_class,
+        "region": instance.region,
+        "multi_az": instance.multi_az,
+        "read_replica_count": instance.read_replica_count,
+        "backup_retention_days": instance.backup_retention_days,
+    }

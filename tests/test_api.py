@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestInstanceEngine:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api.routes import _instance_store
+        _instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_engine_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/engine")
+        assert resp.status_code == 200
+
+    def test_engine_contains_engine_field(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/engine").json()
+        assert data["engine"] == "mysql"
+        assert data["engine_version"] == "8.0.35"
+
+    def test_engine_family_extracted(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/engine").json()
+        assert data["engine_family"] == "mysql"
+
+    def test_engine_multi_az_field(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/engine").json()
+        assert data["multi_az"] is False
+        assert data["region"] == "ap-northeast-1"
+
+    def test_engine_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/engine")
+        assert resp.status_code == 404

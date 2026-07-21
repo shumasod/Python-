@@ -43,17 +43,7 @@ _FREQ_MEDIUM = 100.0
 class CoveringIndexAnalyzer:
     """カバリングインデックス分析エンジン（純粋計算クラス、I/O なし）"""
 
-    def __init__(
-        self,
-        ratio_critical: float = 1000.0,
-        ratio_high: float = 100.0,
-        ratio_medium: float = 10.0,
-        min_exec_count_per_day: float = 0.0,
-    ) -> None:
-        self._ratio_critical = ratio_critical
-        self._ratio_high = ratio_high
-        self._ratio_medium = ratio_medium
-        self._min_exec_count_per_day = min_exec_count_per_day
+    def __init__(self) -> None:
         self._counter = 0
 
     # ----------------------------------------------------------
@@ -76,15 +66,6 @@ class CoveringIndexAnalyzer:
         needing_count = 0
 
         for query in request.queries:
-            if query.execution_count_per_day < self._min_exec_count_per_day:
-                logger.debug(
-                    "クエリ '%s' は実行頻度 %.1f/日 が最小閾値 %.1f/日 未満のためスキップ",
-                    query.query_id or query.table_name,
-                    query.execution_count_per_day,
-                    self._min_exec_count_per_day,
-                )
-                continue
-
             if self._is_covered(query, request.existing_indexes):
                 covered_count += 1
                 logger.debug("クエリ '%s' は既存インデックスでカバー済み", query.query_id or query.table_name)
@@ -156,7 +137,7 @@ class CoveringIndexAnalyzer:
             return None  # WHERE 句なし: インデックスでフルスキャンを解消できない
 
         ratio = query.avg_rows_examined / max(query.avg_rows_returned, 1.0)
-        if ratio < self._ratio_medium:
+        if ratio < _RATIO_MEDIUM:
             return None  # スキャン比率が小さく改善余地が少ない
 
         # キーカラム: filter → sort → group (重複除去・順序維持)
@@ -186,7 +167,7 @@ class CoveringIndexAnalyzer:
             estimated_scan_ratio=round(ratio, 1),
             estimated_latency_improvement_pct=round(improvement_pct, 1),
             estimated_daily_rows_saved=round(daily_saved, 0),
-            confidence_score=self._confidence_score(query),
+            estimated_index_size_mb=self._estimate_index_size_mb(query, key_cols),
             create_statement_mysql=self._mysql_create(
                 query.table_name, idx_name, mysql_key_cols
             ),
@@ -283,53 +264,15 @@ class CoveringIndexAnalyzer:
         )
 
     # ----------------------------------------------------------
-    # 信頼スコア
-    # ----------------------------------------------------------
-
-    def _confidence_score(self, pattern: QueryPattern) -> float:
-        """
-        0.0–1.0 の信頼スコアを算出する。
-        実行回数・スキャン比率・レイテンシが高いほど信頼度が高い。
-        """
-        score = 0.0
-        ratio = pattern.avg_rows_examined / max(pattern.avg_rows_returned, 1)
-
-        # スキャン比率 (最大0.4)
-        if ratio >= 1000:
-            score += 0.4
-        elif ratio >= 100:
-            score += 0.3
-        elif ratio >= 10:
-            score += 0.2
-
-        # 実行頻度 (最大0.4)
-        if pattern.execution_count_per_day >= 1000:
-            score += 0.4
-        elif pattern.execution_count_per_day >= 100:
-            score += 0.3
-        elif pattern.execution_count_per_day >= 10:
-            score += 0.2
-        elif pattern.execution_count_per_day >= 1:
-            score += 0.1
-
-        # レイテンシ (最大0.2)
-        if pattern.avg_latency_ms >= 1000:
-            score += 0.2
-        elif pattern.avg_latency_ms >= 100:
-            score += 0.1
-
-        return round(min(score, 1.0), 2)
-
-    # ----------------------------------------------------------
     # 優先度・理由文
     # ----------------------------------------------------------
 
     def _priority(self, ratio: float, daily_exec: float) -> str:
-        if ratio >= self._ratio_critical and daily_exec >= _FREQ_MEDIUM:
+        if ratio >= _RATIO_CRITICAL and daily_exec >= _FREQ_MEDIUM:
             return "critical"
-        if ratio >= self._ratio_high or (ratio >= self._ratio_medium and daily_exec >= _FREQ_HIGH):
+        if ratio >= _RATIO_HIGH or (ratio >= _RATIO_MEDIUM and daily_exec >= _FREQ_HIGH):
             return "high"
-        if ratio >= self._ratio_medium or daily_exec >= _FREQ_MEDIUM:
+        if ratio >= _RATIO_MEDIUM or daily_exec >= _FREQ_MEDIUM:
             return "medium"
         return "low"
 
@@ -347,6 +290,20 @@ class CoveringIndexAnalyzer:
     # ----------------------------------------------------------
     # CREATE INDEX 文生成
     # ----------------------------------------------------------
+
+    def _estimate_index_size_mb(
+        self, query: QueryPattern, key_cols: list[str]
+    ) -> Optional[float]:
+        """インデックスサイズ (MB) を概算する。
+
+        テーブル行数が不明な場合は None を返す。
+        概算式: rows * key_columns * 平均カラムバイト(16B) / 1024 / 1024
+        """
+        if query.table_row_count is None:
+            return None
+        avg_bytes_per_col = 16
+        size_bytes = query.table_row_count * len(key_cols) * avg_bytes_per_col
+        return round(size_bytes / (1024 * 1024), 2)
 
     def _mysql_create(self, table: str, name: str, columns: list[str]) -> str:
         cols = ", ".join(f"`{c}`" for c in columns)

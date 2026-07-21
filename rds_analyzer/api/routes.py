@@ -978,3 +978,45 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get(
+    "/rds/{instance_id}/storage",
+    response_model=dict,
+    tags=["analysis"],
+    summary="インスタンスのストレージ情報を取得",
+)
+async def get_instance_storage(instance_id: str) -> dict:
+    """
+    インスタンスのストレージ設定と使用状況を返す。
+
+    メトリクスがある場合は空き容量・使用率も含む。
+    """
+    instance = get_instance_or_404(instance_id)
+    from ..analyzers.cost_analyzer import STORAGE_RATES, IOPS_RATES
+
+    info: dict = {
+        "instance_id": instance_id,
+        "storage_type": instance.storage_type.value,
+        "allocated_storage_gb": instance.allocated_storage_gb,
+        "snapshot_storage_gb": instance.snapshot_storage_gb,
+        "provisioned_iops": instance.provisioned_iops,
+        "free_storage_gb": None,
+        "used_storage_gb": None,
+        "utilization_pct": None,
+    }
+
+    metrics = _metrics_store.get(instance_id)
+    if metrics:
+        free_gb = round(metrics.free_storage_bytes.avg / (1024 ** 3), 2)
+        used_gb = round(instance.allocated_storage_gb - free_gb, 2)
+        utilization = round(used_gb / instance.allocated_storage_gb * 100, 1)
+        info["free_storage_gb"] = free_gb
+        info["used_storage_gb"] = used_gb
+        info["utilization_pct"] = utilization
+
+    return info
+
+

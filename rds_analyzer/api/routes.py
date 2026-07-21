@@ -978,3 +978,25 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+    type: Optional[str] = Query(default=None, description="種別フィルタ (scale_up/scale_down/storage_type_change等、カンマ区切りで複数指定可)"),
+    # type フィルタのバリデーション
+    from ..analyzers.recommendation_engine import RecommendationType
+    type_filter: Optional[set[str]] = None
+    if type:
+        allowed_types = {t.value for t in RecommendationType}
+        values = {t.strip().lower() for t in type.split(",")}
+        invalid = values - allowed_types
+        if invalid:
+            raise HTTPException(
+                status_code=422,
+                detail=f"無効な type 値: {', '.join(sorted(invalid))}。有効値: {', '.join(sorted(allowed_types))}",
+            )
+        type_filter = values
+
+    if type_filter:
+        recommendations = [r for r in recommendations if r.type.value.lower() in type_filter]
+

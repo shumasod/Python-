@@ -978,3 +978,55 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# IOPS 詳細エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/iops",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスの IOPS 詳細を取得",
+)
+async def get_iops_details(instance_id: str) -> dict:
+    """
+    メトリクスから読み書き IOPS・合計・上限を返す。
+
+    IOPS 上限の算出ルール:
+    - gp2: max(100, allocated_gb × 3)、上限 16000
+    - gp3: provisioned_iops または 3000
+    - io1: provisioned_iops
+    """
+    instance = get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    from ..analyzers.performance_analyzer import PerformanceAnalyzer
+    pa = PerformanceAnalyzer()
+    iops_limit = pa.get_iops_limit(instance)
+
+    read_avg = round(metrics.read_iops.avg, 1)
+    write_avg = round(metrics.write_iops.avg, 1)
+    read_max = round(metrics.read_iops.max, 1)
+    write_max = round(metrics.write_iops.max, 1)
+    total_avg = round(read_avg + write_avg, 1)
+    total_max = round(read_max + write_max, 1)
+    utilization_pct = round(total_avg / iops_limit * 100, 1) if iops_limit > 0 else 0.0
+
+    return {
+        "instance_id": instance_id,
+        "storage_type": instance.storage_type.value,
+        "iops_limit": iops_limit,
+        "read_iops_avg": read_avg,
+        "write_iops_avg": write_avg,
+        "total_iops_avg": total_avg,
+        "read_iops_max": read_max,
+        "write_iops_max": write_max,
+        "total_iops_max": total_max,
+        "utilization_pct": utilization_pct,
+    }

@@ -699,3 +699,45 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestIopsDetails:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_iops_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/iops")
+        assert resp.status_code == 200
+
+    def test_iops_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/iops").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "iops_limit" in data
+        assert "total_iops_avg" in data
+        assert "utilization_pct" in data
+
+    def test_iops_limit_positive(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/iops").json()
+        assert data["iops_limit"] > 0
+        assert data["read_iops_avg"] >= 0
+        assert data["write_iops_avg"] >= 0
+
+    def test_iops_total_equals_read_plus_write(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/iops").json()
+        assert abs(data["total_iops_avg"] - (data["read_iops_avg"] + data["write_iops_avg"])) < 0.01
+
+    def test_iops_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/iops")
+        assert resp.status_code == 404

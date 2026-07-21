@@ -978,3 +978,13 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/regions", response_model=dict, tags=["instances"], summary="登録インスタンスのリージョン一覧を取得")
+async def list_regions() -> dict:
+    region_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        region_counts[instance.region] = region_counts.get(instance.region, 0) + 1
+    return {"regions": sorted(region_counts.keys()), "region_counts": region_counts, "total_regions": len(region_counts)}

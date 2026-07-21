@@ -699,3 +699,39 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestRegionList:
+    @pytest.fixture(autouse=True)
+    def setup(self, client):
+        _instance_store.clear()
+        self._client = client
+        yield
+        _instance_store.clear()
+
+    def test_empty_regions(self):
+        data = self._client.get("/api/v1/rds/regions").json()
+        assert data["total_regions"] == 0
+
+    def test_regions_with_instances(self, sample_instance_payload):
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        data = self._client.get("/api/v1/rds/regions").json()
+        assert "ap-northeast-1" in data["regions"]
+
+    def test_region_counts(self, sample_instance_payload):
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        data = self._client.get("/api/v1/rds/regions").json()
+        assert data["region_counts"]["ap-northeast-1"] >= 1
+
+    def test_regions_sorted(self, sample_instance_payload):
+        p2 = {**sample_instance_payload, "instance_id": "inst-us", "region": "us-east-1"}
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        self._client.post("/api/v1/rds", json=p2)
+        data = self._client.get("/api/v1/rds/regions").json()
+        assert data["regions"] == sorted(data["regions"])
+
+    def test_regions_structure(self):
+        data = self._client.get("/api/v1/rds/regions").json()
+        assert "regions" in data and "region_counts" in data and "total_regions" in data

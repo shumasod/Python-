@@ -978,3 +978,36 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# レイテンシ統計エンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/latency",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのレイテンシ統計を取得",
+)
+async def get_latency_stats(instance_id: str) -> dict:
+    """
+    メトリクスから読み書きレイテンシ (ms) の平均・最大を返す。
+
+    メトリクス未投入の場合は 404 を返す。
+    """
+    get_instance_or_404(instance_id)
+    metrics = get_metrics_or_404(instance_id)
+
+    return {
+        "instance_id": instance_id,
+        "read_latency_avg_ms": round(metrics.read_latency_ms.avg, 3),
+        "read_latency_max_ms": round(metrics.read_latency_ms.max, 3),
+        "write_latency_avg_ms": round(metrics.write_latency_ms.avg, 3),
+        "write_latency_max_ms": round(metrics.write_latency_ms.max, 3),
+        "disk_queue_depth_avg": round(metrics.disk_queue_depth.avg, 3),
+    }

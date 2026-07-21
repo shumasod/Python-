@@ -699,3 +699,34 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestCostByEngine:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_cost_by_engine_200(self):
+        assert self._client.get("/api/v1/rds/cost-by-engine").status_code == 200
+
+    def test_cost_by_engine_structure(self):
+        data = self._client.get("/api/v1/rds/cost-by-engine").json()
+        assert "total_monthly_cost_usd" in data and "by_engine" in data
+
+    def test_cost_by_engine_has_mysql(self):
+        data = self._client.get("/api/v1/rds/cost-by-engine").json()
+        assert "mysql" in [e["engine"] for e in data["by_engine"]]
+
+    def test_cost_total_positive(self):
+        assert self._client.get("/api/v1/rds/cost-by-engine").json()["total_monthly_cost_usd"] > 0
+
+    def test_cost_by_engine_empty(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/cost-by-engine").json()
+        assert data["total_monthly_cost_usd"] == 0 and data["by_engine"] == []

@@ -43,6 +43,18 @@ class QueryPattern(BaseModel):
     avg_rows_returned: float = Field(default=1, ge=1, description="平均返却行数")
     avg_latency_ms: float = Field(default=0, ge=0, description="平均実行時間 (ms)")
 
+    # テーブル統計（INFORMATION_SCHEMA から取得可能な情報）
+    table_row_count: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="テーブルの推定行数（INFORMATION_SCHEMA.TABLES.TABLE_ROWS）",
+    )
+    table_data_size_mb: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="テーブルデータサイズ (MB)（DATA_LENGTH / 1024 / 1024）",
+    )
+
     query_text: Optional[str] = Field(default=None, description="クエリ文字列 (参考情報)")
 
 
@@ -89,7 +101,11 @@ class CoveringIndexRecommendation(BaseModel):
     )
     estimated_latency_improvement_pct: float
     estimated_daily_rows_saved: float
-    confidence_score: float = 0.0
+    estimated_index_size_mb: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="インデックスの推定サイズ (MB)。key_columns * table_row_count から概算。",
+    )
 
     create_statement_mysql: str = Field(description="MySQL/MariaDB 用 CREATE INDEX 文")
     create_statement_postgresql: str = Field(description="PostgreSQL 用 CREATE INDEX 文")

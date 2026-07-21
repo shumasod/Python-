@@ -699,3 +699,54 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+class TestIndexTableStats:
+    """QueryPattern.table_row_count / table_data_size_mb + estimated_index_size_mb テスト"""
+    @pytest.fixture(autouse=True)
+    def register_instance(self, client):
+        client.post("/api/v1/rds", json={
+            "instance_id": "idx-stats-test-001",
+            "engine": "mysql",
+            "engine_version": "8.0.35",
+            "instance_class": "db.m5.large",
+            "storage_type": "gp2",
+            "allocated_storage_gb": 100,
+        })
+    def _post_analysis(self, client, table_row_count=None, table_data_size_mb=None):
+        query = {
+            "query_id": "q_stats_001",
+            "table_name": "orders",
+            "filter_columns": ["status"],
+            "sort_columns": ["created_at"],
+            "select_columns": ["id", "amount"],
+            "avg_rows_examined": 5000.0,
+            "avg_rows_returned": 10.0,
+            "execution_count_per_day": 50.0,
+        }
+        if table_row_count is not None:
+            query["table_row_count"] = table_row_count
+        if table_data_size_mb is not None:
+            query["table_data_size_mb"] = table_data_size_mb
+        return client.post("/api/v1/rds/idx-stats-test-001/index-analysis", json={
+            "queries": [query],
+        })
+    def test_table_row_count_accepted_in_query(self, client):
+        """table_row_count を含む QueryPattern が受け付けられる"""
+        resp = self._post_analysis(client, table_row_count=100000)
+        assert resp.status_code == 200
+    def test_table_data_size_mb_accepted_in_query(self, client):
+        """table_data_size_mb を含む QueryPattern が受け付けられる"""
+        resp = self._post_analysis(client, table_data_size_mb=256.5)
+        assert resp.status_code == 200
+    def test_estimated_index_size_present_when_row_count_provided(self, client):
+        """table_row_count を渡すと estimated_index_size_mb が返る"""
+        resp = self._post_analysis(client, table_row_count=1_000_000)
+        data = resp.json()
+        rec = data["recommendations"][0]
+        assert rec["estimated_index_size_mb"] is not None
+        assert rec["estimated_index_size_mb"] > 0
+    def test_estimated_index_size_none_when_no_row_count(self, client):
+        """table_row_count がない場合は estimated_index_size_mb が null"""
+        resp = self._post_analysis(client)
+        data = resp.json()
+        rec = data["recommendations"][0]
+        assert rec["estimated_index_size_mb"] is None

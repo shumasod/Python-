@@ -209,6 +209,14 @@ class QueryPatternRequest(BaseModel):
     avg_rows_examined: float = Field(default=0, ge=0, description="平均スキャン行数")
     avg_rows_returned: float = Field(default=1, ge=1, description="平均返却行数")
     avg_latency_ms: float = Field(default=0, ge=0, description="平均実行時間 (ms)")
+    table_row_count: Optional[int] = Field(
+        default=None, ge=0,
+        description="テーブルの推定行数 (INFORMATION_SCHEMA.TABLES.TABLE_ROWS)",
+    )
+    table_data_size_mb: Optional[float] = Field(
+        default=None, ge=0,
+        description="テーブルデータサイズ (MB)",
+    )
     query_text: Optional[str] = Field(default=None, description="クエリ文字列（参考）")
 
 
@@ -247,6 +255,10 @@ class CoveringIndexRecommendationResponse(BaseModel):
     estimated_scan_ratio: float = Field(description="rows_examined / rows_returned 比率")
     estimated_latency_improvement_pct: float
     estimated_daily_rows_saved: float
+    estimated_index_size_mb: Optional[float] = Field(
+        default=None,
+        description="インデックス推定サイズ (MB)。table_row_count 未指定時は null。",
+    )
     affected_query_count: int
     create_statement_mysql: str
     create_statement_postgresql: str

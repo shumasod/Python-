@@ -699,3 +699,43 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestCpuStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_cpu_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cpu")
+        assert resp.status_code == 200
+
+    def test_cpu_contains_required_fields(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/cpu").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert "cpu_avg_pct" in data
+        assert "cpu_max_pct" in data
+        assert "efficiency_status" in data
+
+    def test_cpu_avg_matches_input(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/cpu").json()
+        assert abs(data["cpu_avg_pct"] - 45.0) < 0.1
+
+    def test_cpu_optimal_efficiency_status(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/cpu").json()
+        assert data["efficiency_status"] == "optimal"
+
+    def test_cpu_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/cpu")
+        assert resp.status_code == 404

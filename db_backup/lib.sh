@@ -71,11 +71,66 @@ compress_file() {
     log_info "圧縮完了: ${f}.gz"
 }
 
+# ─── バックアップ整合性検証 ───────────────────────────────────
+verify_backup_files() {
+    local dir="$1"
+    local pattern="${2:-*.sql.gz}"
+    local failed=0
+    local checked=0
+
+    log_info "バックアップ整合性検証: ${dir}/${pattern}"
+
+    while IFS= read -r f; do
+        if gzip -t "${f}" 2>/dev/null; then
+            log_info "  OK: $(basename "${f}")"
+        else
+            log_error "  NG (破損): $(basename "${f}")"
+            (( failed++ ))
+        fi
+        (( checked++ ))
+    done < <(find "${dir}" -maxdepth 1 -name "${pattern}" -newer "${dir}/.last_verified" 2>/dev/null \
+              || find "${dir}" -maxdepth 1 -name "${pattern}" | sort | tail -5)
+
+    if [[ ${failed} -gt 0 ]]; then
+        log_error "整合性検証失敗: ${failed}/${checked} ファイルが破損しています"
+        return 1
+    fi
+
+    log_info "整合性検証完了: ${checked} ファイル全て正常"
+    touch "${dir}/.last_verified" 2>/dev/null || true
+    return 0
+}
+
 # ─── 世代管理 ─────────────────────────────────────────────────
 purge_old_files() {
     local dir="$1" days="$2" pattern="$3"
     find "${dir}" -maxdepth 1 -name "${pattern}" -mtime "+${days}" -exec rm -rf {} \; 2>/dev/null || true
     log_info "古いファイル削除: ${dir}/${pattern} (${days}日以前)"
+}
+
+# ─── ディスク空き容量チェック ──────────────────────────────────
+check_disk_space() {
+    local dir="$1"
+    local min_gb="${2:-5}"   # デフォルト最低 5GB
+    local available_kb
+    available_kb=$(df -k "${dir}" 2>/dev/null | awk 'NR==2 {print $4}')
+
+    if [[ -z "${available_kb}" ]]; then
+        log_warn "ディスク容量を取得できません: ${dir}"
+        return 0
+    fi
+
+    local available_gb
+    available_gb=$(echo "${available_kb} / 1048576" | bc 2>/dev/null || echo "0")
+
+    log_info "ディスク空き容量: ${available_gb}GB (最低必要: ${min_gb}GB) [${dir}]"
+
+    if (( available_kb < min_gb * 1048576 )); then
+        log_error "ディスク容量不足: ${available_gb}GB < ${min_gb}GB [${dir}]"
+        log_error "バックアップを中止します。不要なファイルを削除してください。"
+        return 1
+    fi
+    return 0
 }
 
 # ─── Slack 通知 ───────────────────────────────────────────────

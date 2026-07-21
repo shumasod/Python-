@@ -20,18 +20,24 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 
 from .schemas import (
+    AlertThresholds,
     AnalysisResponse,
+    BulkRegisterRequest,
+    BulkRegisterResponse,
+    CompareInstancesRequest,
     CostSummaryResponse,
     CoveringIndexRecommendationResponse,
     ExistingIndexRequest,
     HealthCheckResponse,
     IndexAnalysisApiRequest,
     IndexAnalysisResponse,
+    InstanceCostDiff,
     InstanceSummaryItem,
     MetricsInputRequest,
     PerformanceSummaryResponse,
@@ -72,6 +78,10 @@ _instance_store: dict[str, RDSInstance] = {}
 _metrics_store: dict[str, MetricsHistory] = {}
 # 月次コスト履歴 {instance_id: [(YYYY-MM, cost_usd), ...]}
 _cost_history_store: dict[str, list[tuple[str, float]]] = {}
+# インデックス分析結果キャッシュ {instance_id: IndexAnalysisResult}
+_index_analysis_store: dict[str, Any] = {}
+# アラートしきい値 {instance_id: AlertThresholds}
+_alert_thresholds_store: dict[str, AlertThresholds] = {}
 
 
 # ============================================================
@@ -172,6 +182,103 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
     logger.info("インスタンス登録: %s (%s)", instance.instance_id, instance.engine)
 
     return {"message": "登録しました", "instance_id": instance.instance_id}
+
+
+@router.post(
+    "/rds/bulk",
+    response_model=BulkRegisterResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["instances"],
+    summary="複数インスタンスを一括登録",
+)
+async def bulk_register_instances(body: BulkRegisterRequest) -> BulkRegisterResponse:
+    """
+    複数の RDS インスタンスを一度に登録する。
+
+    - 一部失敗しても他は登録される（部分成功）
+    - `registered` + `failed` == len(instances)
+    """
+    registered_ids: list[str] = []
+    errors: list[str] = []
+
+    for req in body.instances:
+        try:
+            instance = RDSInstance(
+                instance_id=req.instance_id,
+                engine=EngineType(req.engine),
+                engine_version=req.engine_version,
+                instance_class=req.instance_class,
+                region=req.region,
+                multi_az=req.multi_az,
+                storage_type=StorageType(req.storage_type),
+                allocated_storage_gb=req.allocated_storage_gb,
+                provisioned_iops=req.provisioned_iops,
+                read_replica_count=req.read_replica_count,
+                backup_retention_days=req.backup_retention_days,
+                snapshot_storage_gb=req.snapshot_storage_gb,
+                tags=req.tags,
+            )
+            _instance_store[instance.instance_id] = instance
+            registered_ids.append(instance.instance_id)
+        except Exception as e:
+            errors.append(f"{req.instance_id}: {e}")
+
+    return BulkRegisterResponse(
+        registered=len(registered_ids),
+        failed=len(errors),
+        instance_ids=registered_ids,
+        errors=errors,
+    )
+
+
+@router.post(
+    "/rds/compare",
+    response_model=InstanceCostDiff,
+    tags=["analysis"],
+    summary="2つのインスタンスのコストを比較",
+)
+async def compare_instances(
+    body: CompareInstancesRequest,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> InstanceCostDiff:
+    """
+    2つの登録済み RDS インスタンスの月次コストを比較する
+
+    - cost_diff_usd = B のコスト - A のコスト（正 = B が高い）
+    - cost_diff_pct = (B - A) / A * 100
+    - cheaper_instance = "a" / "b" / "equal"
+    """
+    instance_a = get_instance_or_404(body.instance_id_a)
+    instance_b = get_instance_or_404(body.instance_id_b)
+
+    breakdown_a, _ = cost_analyzer.calculate_monthly_cost(instance_a)
+    breakdown_b, _ = cost_analyzer.calculate_monthly_cost(instance_b)
+
+    cost_a = breakdown_a.total_cost_usd
+    cost_b = breakdown_b.total_cost_usd
+    cost_diff_usd = cost_b - cost_a
+    cost_diff_pct = (cost_diff_usd / cost_a * 100) if cost_a != 0 else 0.0
+
+    if cost_a < cost_b:
+        cheaper_instance = "a"
+    elif cost_b < cost_a:
+        cheaper_instance = "b"
+    else:
+        cheaper_instance = "equal"
+
+    return InstanceCostDiff(
+        instance_id_a=body.instance_id_a,
+        instance_id_b=body.instance_id_b,
+        monthly_cost_a_usd=round(cost_a, 4),
+        monthly_cost_b_usd=round(cost_b, 4),
+        cost_diff_usd=round(cost_diff_usd, 4),
+        cost_diff_pct=round(cost_diff_pct, 4),
+        cheaper_instance=cheaper_instance,
+        instance_class_a=instance_a.instance_class,
+        instance_class_b=instance_b.instance_class,
+        engine_a=instance_a.engine.value,
+        engine_b=instance_b.engine.value,
+    )
 
 
 @router.post(
@@ -430,6 +537,8 @@ async def get_instance_analysis(
 async def get_recommendations(
     instance_id: str,
     data_transfer_gb: float = Query(default=0.0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
+    offset: int = Query(default=0, ge=0, description="スキップする件数"),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -471,12 +580,16 @@ async def get_recommendations(
         for r in recommendations
     ]
 
+    paginated_items = rec_items[offset: offset + limit]
     return RecommendationResponse(
         instance_id=instance_id,
         generated_at=datetime.utcnow(),
         total_recommendations=len(recommendations),
         total_potential_savings_usd=round(total_savings, 2),
-        recommendations=rec_items,
+        recommendations=paginated_items,
+        limit=limit,
+        offset=offset,
+        has_more=(offset + limit) < len(rec_items),
     )
 
 
@@ -602,14 +715,30 @@ async def generate_report(
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
 
     from ..report_generator import ReportGenerator
-    gen = ReportGenerator()
-    markdown = gen.generate(instance, breakdown, cost_score, perf_result, recommendations)
+    from ..models.index import CoveringIndexRecommendation as IndexRec
 
-    return {
+    gen = ReportGenerator()
+
+    # キャッシュされたインデックス分析結果を取得
+    cached_index = _index_analysis_store.get(instance_id)
+    index_recs = cached_index.recommendations if cached_index else None
+
+    markdown = gen.generate(
+        instance, breakdown, cost_score, perf_result, recommendations,
+        index_recommendations=index_recs,
+    )
+
+    report_meta = {
         "instance_id": instance_id,
         "generated_at": datetime.utcnow().isoformat(),
         "markdown": markdown,
+        "index_analysis_included": index_recs is not None,
     }
+    if cached_index:
+        report_meta["index_recommendations_count"] = len(cached_index.recommendations)
+        report_meta["index_analysis_at"] = cached_index.analyzed_at.isoformat()
+
+    return report_meta
 
 
 @router.post(
@@ -656,6 +785,56 @@ async def analyze_covering_indexes(
     analyzer = CoveringIndexAnalyzer()
     result = analyzer.analyze(request)
 
+    # 分析結果をキャッシュ
+    _index_analysis_store[instance_id] = result
+
+    return IndexAnalysisResponse(
+        instance_id=result.instance_id,
+        analyzed_at=result.analyzed_at,
+        engine=result.engine,
+        total_queries_analyzed=result.total_queries_analyzed,
+        queries_already_covered=result.queries_already_covered,
+        queries_needing_index=result.queries_needing_index,
+        estimated_total_improvement_pct=result.estimated_total_improvement_pct,
+        recommendations=[
+            CoveringIndexRecommendationResponse(
+                recommendation_id=r.recommendation_id,
+                table_name=r.table_name,
+                priority=r.priority,
+                reason=r.reason,
+                key_columns=r.key_columns,
+                include_columns=r.include_columns,
+                estimated_scan_ratio=r.estimated_scan_ratio,
+                estimated_latency_improvement_pct=r.estimated_latency_improvement_pct,
+                estimated_daily_rows_saved=r.estimated_daily_rows_saved,
+                affected_query_count=len(r.affected_query_ids),
+                create_statement_mysql=r.create_statement_mysql,
+                create_statement_postgresql=r.create_statement_postgresql,
+            )
+            for r in result.recommendations
+        ],
+    )
+
+
+@router.get(
+    "/rds/{instance_id}/index-analysis",
+    response_model=IndexAnalysisResponse,
+    tags=["analysis"],
+    summary="キャッシュされたカバリングインデックス分析結果を取得",
+)
+async def get_index_analysis(instance_id: str) -> IndexAnalysisResponse:
+    """
+    直近の POST /rds/{id}/index-analysis の結果を返す。
+
+    先に POST で分析を実行してください。
+    """
+    get_instance_or_404(instance_id)
+    result = _index_analysis_store.get(instance_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"インスタンス '{instance_id}' のインデックス分析結果が見つかりません。先に POST /rds/{instance_id}/index-analysis を実行してください。",
+        )
     return IndexAnalysisResponse(
         instance_id=result.instance_id,
         analyzed_at=result.analyzed_at,
@@ -733,3 +912,31 @@ async def notify_slack(
         "notifications_sent": sent,
         "total": len(sent),
     }
+
+
+@router.post(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を設定",
+)
+async def set_alert_thresholds(
+    instance_id: str,
+    thresholds: AlertThresholds,
+) -> AlertThresholds:
+    """CPU・ストレージ・レイテンシのアラートしきい値を登録する"""
+    get_instance_or_404(instance_id)
+    _alert_thresholds_store[instance_id] = thresholds
+    return thresholds
+
+
+@router.get(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="アラートしきい値を取得",
+)
+async def get_alert_thresholds(instance_id: str) -> AlertThresholds:
+    """設定済みのアラートしきい値を返す（未設定時はデフォルト値）"""
+    get_instance_or_404(instance_id)
+    return _alert_thresholds_store.get(instance_id, AlertThresholds())

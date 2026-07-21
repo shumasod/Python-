@@ -269,7 +269,7 @@ async def promote_model(
         }
     except Exception as e:
         logger.error(f"モデル昇格エラー: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="モデル昇格中にエラーが発生しました") from e
 
 
 @router.get(

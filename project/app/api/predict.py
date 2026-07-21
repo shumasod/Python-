@@ -203,7 +203,7 @@ async def predict_endpoint(
         ) from e
     except ValueError as e:
         logger.error(f"入力値エラー: {e}")
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(status_code=422, detail="入力データに不正な値が含まれています") from e
     except Exception as e:
         latency = time.monotonic() - start
         if _METRICS_AVAILABLE:

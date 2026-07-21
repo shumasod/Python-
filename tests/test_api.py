@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestEngineList:
+    @pytest.fixture(autouse=True)
+    def setup(self, client):
+        _instance_store.clear()
+        self._client = client
+        yield
+        _instance_store.clear()
+
+    def test_empty_engines(self):
+        assert self._client.get("/api/v1/rds/engines").json()["total_engines"] == 0
+
+    def test_engines_with_instance(self, sample_instance_payload):
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        assert "mysql" in self._client.get("/api/v1/rds/engines").json()["engines"]
+
+    def test_engine_counts(self, sample_instance_payload):
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        data = self._client.get("/api/v1/rds/engines").json()
+        assert data["engine_counts"]["mysql"] >= 1
+
+    def test_engines_sorted(self, sample_instance_payload):
+        pg = {**sample_instance_payload, "instance_id": "inst-pg", "engine": "postgresql"}
+        self._client.post("/api/v1/rds", json=sample_instance_payload)
+        self._client.post("/api/v1/rds", json=pg)
+        data = self._client.get("/api/v1/rds/engines").json()
+        assert data["engines"] == sorted(data["engines"])
+
+    def test_engines_structure(self):
+        data = self._client.get("/api/v1/rds/engines").json()
+        assert "engines" in data and "engine_counts" in data and "total_engines" in data

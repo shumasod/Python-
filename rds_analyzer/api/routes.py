@@ -978,3 +978,20 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+@router.get("/rds/read-replicas", response_model=dict, tags=["instances"], summary="リードレプリカ設定のサマリーを取得")
+async def read_replica_summary() -> dict:
+    total_instances = len(_instance_store)
+    total_replicas = sum(inst.read_replica_count for inst in _instance_store.values())
+    instances_with_replicas = sum(1 for inst in _instance_store.values() if inst.read_replica_count > 0)
+    replica_distribution: dict[str, int] = {}
+    for inst in _instance_store.values():
+        key = str(inst.read_replica_count)
+        replica_distribution[key] = replica_distribution.get(key, 0) + 1
+    return {"total_instances": total_instances, "total_read_replicas": total_replicas,
+            "instances_with_replicas": instances_with_replicas,
+            "instances_without_replicas": total_instances - instances_with_replicas,
+            "replica_distribution": replica_distribution}

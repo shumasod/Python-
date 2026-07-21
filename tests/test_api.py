@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestReadReplicaSummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_read_replicas_200(self):
+        assert self._client.get("/api/v1/rds/read-replicas").status_code == 200
+
+    def test_read_replicas_structure(self):
+        data = self._client.get("/api/v1/rds/read-replicas").json()
+        assert "total_instances" in data and "total_read_replicas" in data and "replica_distribution" in data
+
+    def test_no_replicas_by_default(self):
+        data = self._client.get("/api/v1/rds/read-replicas").json()
+        assert data["instances_without_replicas"] >= 1 and data["total_read_replicas"] == 0
+
+    def test_with_replicas(self, sample_instance_payload):
+        rep = {**sample_instance_payload, "instance_id": "inst-rep", "read_replica_count": 2}
+        self._client.post("/api/v1/rds", json=rep)
+        data = self._client.get("/api/v1/rds/read-replicas").json()
+        assert data["total_read_replicas"] >= 2 and data["instances_with_replicas"] >= 1
+
+    def test_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/read-replicas").json()
+        assert data["total_instances"] == 0 and data["total_read_replicas"] == 0

@@ -699,3 +699,36 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestInstanceTagsRead:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api.routes import _instance_store
+        _instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_tags_returns_200(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/tags")
+        assert resp.status_code == 200
+
+    def test_tags_contains_correct_tags(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/tags").json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert data["tags"] == {"Environment": "test"}
+
+    def test_tags_count_is_correct(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/tags").json()
+        assert data["tag_count"] == 1
+
+    def test_tags_is_dict(self, client):
+        data = client.get("/api/v1/rds/test-api-mysql-001/tags").json()
+        assert isinstance(data["tags"], dict)
+
+    def test_tags_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/tags")
+        assert resp.status_code == 404

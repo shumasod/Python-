@@ -978,3 +978,30 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# タグ読み取りエンドポイント
+# ============================================================
+
+@router.get(
+    "/rds/{instance_id}/tags",
+    response_model=dict,
+    tags=["instance"],
+    summary="インスタンスのタグを取得",
+)
+async def get_instance_tags(instance_id: str) -> dict:
+    """
+    インスタンスに設定されたタグ (key-value) の一覧を返す。
+    """
+    instance = get_instance_or_404(instance_id)
+
+    return {
+        "instance_id": instance_id,
+        "tags": instance.tags,
+        "tag_count": len(instance.tags),
+    }

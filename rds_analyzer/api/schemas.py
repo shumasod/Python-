@@ -310,3 +310,25 @@ class InstanceCostDiff(BaseModel):
     instance_class_b: str
     engine_a: str
     engine_b: str
+
+
+
+
+class InstanceDetailResponse(BaseModel):
+    """GET /rds/{id} — 単一インスタンスの詳細設定"""
+    instance_id: str
+    engine: str
+    engine_version: str
+    instance_class: str
+    region: str
+    multi_az: bool
+    storage_type: str
+    allocated_storage_gb: int
+    provisioned_iops: Optional[int] = None
+    read_replica_count: int
+    backup_retention_days: int
+    snapshot_storage_gb: float
+    tags: dict[str, str]
+    has_metrics: bool
+
+

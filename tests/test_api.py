@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestTopCost:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_top_cost_returns_200(self):
+        assert self._client.get("/api/v1/rds/top-cost").status_code == 200
+
+    def test_top_cost_structure(self):
+        data = self._client.get("/api/v1/rds/top-cost").json()
+        assert "limit" in data and "total_instances" in data and "instances" in data
+
+    def test_top_cost_default_limit(self):
+        data = self._client.get("/api/v1/rds/top-cost").json()
+        assert data["limit"] == 5 and len(data["instances"]) <= 5
+
+    def test_top_cost_custom_limit(self):
+        data = self._client.get("/api/v1/rds/top-cost?limit=1").json()
+        assert data["limit"] == 1 and len(data["instances"]) <= 1
+
+    def test_top_cost_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/top-cost").json()
+        assert data["total_instances"] == 0 and data["instances"] == []

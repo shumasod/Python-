@@ -978,3 +978,39 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+
+
+# ============================================================
+# インスタンス削除エンドポイント
+# ============================================================
+
+@router.delete(
+    "/rds/{instance_id}",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスをストアから削除",
+)
+async def delete_instance(instance_id: str) -> dict:
+    """
+    インスタンスとその関連データ（メトリクス・コスト履歴）をストアから削除する。
+
+    存在しないインスタンスを指定した場合は 404 を返す。
+    """
+    get_instance_or_404(instance_id)
+
+    del _instance_store[instance_id]
+    _metrics_store.pop(instance_id, None)
+    _cost_history_store.pop(instance_id, None)
+    _index_analysis_store.pop(instance_id, None)
+
+    logger.info("インスタンス削除: %s", instance_id)
+
+    return {
+        "instance_id": instance_id,
+        "deleted": True,
+        "message": f"インスタンス '{instance_id}' を削除しました",
+    }

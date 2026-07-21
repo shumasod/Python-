@@ -699,3 +699,50 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestInstanceGet:
+    """GET /rds/{id} 単一インスタンス取得のテスト"""
+
+    def test_get_instance_success(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert data["engine"] == "mysql"
+        assert data["engine_version"] == "8.0.35"
+        assert data["instance_class"] == "db.m5.large"
+        assert data["storage_type"] == "gp2"
+        assert data["allocated_storage_gb"] == 100
+        assert data["multi_az"] is False
+
+    def test_get_instance_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance")
+        assert resp.status_code == 404
+
+    def test_get_instance_has_metrics_false_before_submit(
+        self, client, sample_instance_payload
+    ):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001")
+        assert resp.json()["has_metrics"] is False
+
+    def test_get_instance_has_metrics_true_after_submit(
+        self, client, sample_instance_payload, sample_metrics_payload
+    ):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001")
+        assert resp.json()["has_metrics"] is True
+
+    def test_get_instance_includes_tags(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/test-api-mysql-001")
+        assert resp.json()["tags"].get("Environment") == "test"
+
+

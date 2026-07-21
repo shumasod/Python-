@@ -978,3 +978,35 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+
+
+
+    InstanceDetailResponse,
+@router.get(
+    "/rds/{instance_id}",
+    response_model=InstanceDetailResponse,
+    tags=["instances"],
+    summary="RDS インスタンスの詳細設定を取得",
+)
+async def get_instance(instance_id: str) -> InstanceDetailResponse:
+    """登録済み RDS インスタンスの設定情報を返す"""
+    instance = get_instance_or_404(instance_id)
+    return InstanceDetailResponse(
+        instance_id=instance.instance_id,
+        engine=instance.engine.value,
+        engine_version=instance.engine_version,
+        instance_class=instance.instance_class,
+        region=instance.region,
+        multi_az=instance.multi_az,
+        storage_type=instance.storage_type.value,
+        allocated_storage_gb=instance.allocated_storage_gb,
+        provisioned_iops=instance.provisioned_iops,
+        read_replica_count=instance.read_replica_count,
+        backup_retention_days=instance.backup_retention_days,
+        snapshot_storage_gb=instance.snapshot_storage_gb,
+        tags=instance.tags,
+        has_metrics=instance_id in _metrics_store,
+    )
+
+

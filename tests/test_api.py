@@ -699,3 +699,36 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+class TestMultiAzStats:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_multi_az_stats_200(self):
+        assert self._client.get("/api/v1/rds/multi-az-stats").status_code == 200
+
+    def test_multi_az_stats_structure(self):
+        data = self._client.get("/api/v1/rds/multi-az-stats").json()
+        assert "total_instances" in data and "multi_az_count" in data and "multi_az_pct" in data
+
+    def test_single_az_instance(self):
+        data = self._client.get("/api/v1/rds/multi-az-stats").json()
+        assert data["single_az_count"] >= 1 and data["multi_az_count"] == 0
+
+    def test_multi_az_enabled(self, sample_instance_payload):
+        maz = {**sample_instance_payload, "instance_id": "inst-maz", "multi_az": True}
+        self._client.post("/api/v1/rds", json=maz)
+        assert self._client.get("/api/v1/rds/multi-az-stats").json()["multi_az_count"] >= 1
+
+    def test_empty_stats(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/multi-az-stats").json()
+        assert data["total_instances"] == 0 and data["multi_az_pct"] == 0.0

@@ -699,3 +699,43 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+
+
+
+
+
+class TestInstanceDelete:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        from rds_analyzer.api.routes import _instance_store, _metrics_store
+        _instance_store.clear()
+        _metrics_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_delete_returns_200(self, client):
+        resp = client.delete("/api/v1/rds/test-api-mysql-001")
+        assert resp.status_code == 200
+
+    def test_delete_response_contains_deleted_true(self, client):
+        data = client.delete("/api/v1/rds/test-api-mysql-001").json()
+        assert data["deleted"] is True
+        assert data["instance_id"] == "test-api-mysql-001"
+
+    def test_deleted_instance_no_longer_accessible(self, client):
+        client.delete("/api/v1/rds/test-api-mysql-001")
+        resp = client.get("/api/v1/rds/test-api-mysql-001/analysis")
+        assert resp.status_code == 404
+
+    def test_delete_clears_metrics(self, client):
+        from rds_analyzer.api.routes import _metrics_store
+        client.delete("/api/v1/rds/test-api-mysql-001")
+        assert "test-api-mysql-001" not in _metrics_store
+
+    def test_delete_not_found(self, client):
+        resp = client.delete("/api/v1/rds/no-such-instance")
+        assert resp.status_code == 404

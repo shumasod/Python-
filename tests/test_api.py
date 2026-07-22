@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestRecommendationsCount:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_count_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/count").status_code == 200
+
+    def test_count_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/count").json()
+        for k in ("instance_id", "total", "critical", "high", "medium", "low"):
+            assert k in data
+
+    def test_count_total_equals_sum(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/count").json()
+        assert data["total"] == data["critical"] + data["high"] + data["medium"] + data["low"]
+
+    def test_count_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/recommendations/count").status_code == 404
+
+    def test_count_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/count").json()
+        assert data["total"] == 0

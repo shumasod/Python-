@@ -613,6 +613,31 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 # 拡張エンドポイント（ML 異常検知 / コスト予測 / レポート / Slack）
 # ============================================================
 
+@router.patch(
+    "/rds/{instance_id}/tags",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスのタグを部分更新",
+)
+async def update_instance_tags(
+    instance_id: str,
+    tags: dict[str, str],
+) -> dict:
+    """
+    インスタンスのタグを部分更新（マージ）する。
+
+    - 既存タグはそのまま保持され、送信したキーのみ追加/上書きされる
+    - タグを削除したい場合は値を空文字列 "" にする
+    """
+    instance = get_instance_or_404(instance_id)
+    merged = {**instance.tags, **tags}
+    _instance_store[instance_id] = instance.model_copy(update={"tags": merged})
+    return {
+        "instance_id": instance_id,
+        "tags": merged,
+    }
+
+
 @router.post(
     "/rds/{instance_id}/cost-history",
     response_model=dict,

@@ -185,6 +185,60 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestInstanceTagsUpdate:
+    """PATCH /rds/{id}/tags エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api import routes as _routes
+        _routes._instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_tags_update_success(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001/tags",
+            json={"Team": "backend", "CostCenter": "dev"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tags"]["Team"] == "backend"
+        assert data["tags"]["CostCenter"] == "dev"
+
+    def test_tags_merges_existing(self, client):
+        client.patch(
+            "/api/v1/rds/test-api-mysql-001/tags",
+            json={"NewKey": "new-value"},
+        )
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001/tags",
+            json={"AnotherKey": "another"},
+        )
+        tags = resp.json()["tags"]
+        assert "NewKey" in tags
+        assert "AnotherKey" in tags
+
+    def test_tags_overwrites_existing_key(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001/tags",
+            json={"Environment": "production"},
+        )
+        assert resp.json()["tags"]["Environment"] == "production"
+
+    def test_tags_not_found_returns_404(self, client):
+        resp = client.patch(
+            "/api/v1/rds/no-such-instance/tags",
+            json={"Key": "val"},
+        )
+        assert resp.status_code == 404
+
+    def test_tags_response_has_instance_id(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001/tags",
+            json={"X": "y"},
+        )
+        assert resp.json()["instance_id"] == "test-api-mysql-001"
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

@@ -978,3 +978,33 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet/cost-breakdown",
+    response_model=dict,
+    tags=["costs"],
+    summary="フリート全体のコスト内訳を取得",
+)
+async def fleet_cost_breakdown(
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> dict:
+    """全インスタンスのコストをカテゴリ別に集計して返す。"""
+    total = 0.0
+    breakdown: dict[str, float] = {
+        "compute": 0.0, "storage": 0.0, "iops": 0.0,
+        "backup": 0.0, "replica": 0.0, "transfer": 0.0,
+    }
+    for instance in _instance_store.values():
+        bd, _ = cost_analyzer.calculate_monthly_cost(instance)
+        total += bd.total_cost_usd
+        breakdown["compute"] += bd.compute_cost_usd
+        breakdown["storage"] += bd.storage_cost_usd
+        breakdown["iops"] += bd.iops_cost_usd
+        breakdown["backup"] += bd.backup_cost_usd
+        breakdown["replica"] += bd.replica_compute_cost_usd
+        breakdown["transfer"] += bd.transfer_cost_usd
+    return {
+        "total_instances": len(_instance_store),
+        "total_monthly_cost_usd": round(total, 2),
+        "breakdown": {k: round(v, 2) for k, v in breakdown.items()},
+    }

@@ -980,29 +980,33 @@ async def total_storage_summary() -> dict:
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
 
 @router.get(
-    "/rds/{instance_id}/recommendations/by-type",
+    "/rds/fleet/latency",
     response_model=dict,
-    tags=["recommendations"],
-    summary="推奨事項をタイプ別に取得",
+    tags=["metrics"],
+    summary="フリート全体のレイテンシ統計を取得",
 )
-async def recommendations_by_type(
-    instance_id: str,
-    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
-    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
-    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
-) -> dict:
-    """推奨事項をタイプ（rightsizing/storage_type_change等）でグループ化して返す。"""
-    instance = _instance_store.get(instance_id)
-    if instance is None:
-        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
-    metrics = _metrics_store.get(instance_id)
-    if metrics is None:
-        return {"instance_id": instance_id, "total": 0, "by_type": {}}
-    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
-    perf_result = perf_analyzer.analyze(instance, metrics)
-    recs = rec_engine.generate(instance, breakdown, perf_result)
-    by_type: dict[str, int] = {}
-    for r in recs:
-        t = r.type.value if hasattr(r.type, "value") else str(r.type)
-        by_type[t] = by_type.get(t, 0) + 1
-    return {"instance_id": instance_id, "total": len(recs), "by_type": by_type}
+async def fleet_latency_stats() -> dict:
+    """全インスタンスの読み書きレイテンシを集計して返す。"""
+    read_lats = []
+    write_lats = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        read_lats.append(metrics.read_latency_ms.avg)
+        write_lats.append(metrics.write_latency_ms.avg)
+    count = len(read_lats)
+    if count == 0:
+        return {
+            "instances_with_metrics": 0,
+            "fleet_avg_read_latency_ms": 0.0,
+            "fleet_avg_write_latency_ms": 0.0,
+            "fleet_max_read_latency_ms": 0.0,
+            "fleet_max_write_latency_ms": 0.0,
+        }
+    return {
+        "instances_with_metrics": count,
+        "fleet_avg_read_latency_ms": round(sum(read_lats) / count, 3),
+        "fleet_avg_write_latency_ms": round(sum(write_lats) / count, 3),
+        "fleet_max_read_latency_ms": round(max(read_lats), 3),
+        "fleet_max_write_latency_ms": round(max(write_lats), 3),
+    }

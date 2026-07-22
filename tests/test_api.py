@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestReplaceInstanceTags:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_replace_tags_200(self):
+        resp = self._client.put("/api/v1/rds/test-instance-001/tags", json={"env": "prod"})
+        assert resp.status_code == 200
+
+    def test_replace_tags_content(self):
+        resp = self._client.put("/api/v1/rds/test-instance-001/tags", json={"env": "prod", "team": "db"})
+        data = resp.json()
+        assert data["tags"] == {"env": "prod", "team": "db"}
+        assert data["tag_count"] == 2
+
+    def test_replace_tags_clears_old(self):
+        self._client.put("/api/v1/rds/test-instance-001/tags", json={"env": "prod"})
+        resp = self._client.put("/api/v1/rds/test-instance-001/tags", json={"team": "db"})
+        data = resp.json()
+        assert "env" not in data["tags"]
+        assert data["tag_count"] == 1
+
+    def test_replace_tags_empty(self):
+        resp = self._client.put("/api/v1/rds/test-instance-001/tags", json={})
+        assert resp.json()["tag_count"] == 0
+
+    def test_replace_tags_404(self):
+        resp = self._client.put("/api/v1/rds/nonexistent/tags", json={"k": "v"})
+        assert resp.status_code == 404

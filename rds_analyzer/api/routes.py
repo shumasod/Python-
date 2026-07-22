@@ -978,3 +978,17 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.put(
+    "/rds/{instance_id}/tags",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスのタグを全置換",
+)
+async def replace_instance_tags(instance_id: str, tags: dict[str, str]) -> dict:
+    """タグを指定した内容で完全に置き換える（既存タグはすべて削除）。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    _instance_store[instance_id] = instance.model_copy(update={"tags": tags})
+    return {"instance_id": instance_id, "tags": tags, "tag_count": len(tags)}

@@ -185,6 +185,52 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestRecommendationsSort:
+    """GET /rds/{id}/recommendations?sort= ソートのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_sort_by_savings(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?sort=savings"
+        )
+        assert resp.status_code == 200
+        recs = resp.json()["recommendations"]
+        savings = [r["estimated_monthly_savings_usd"] for r in recs]
+        assert savings == sorted(savings, reverse=True)
+
+    def test_sort_by_complexity(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?sort=complexity"
+        )
+        assert resp.status_code == 200
+        recs = resp.json()["recommendations"]
+        complexities = [r["implementation_complexity"] for r in recs]
+        assert complexities == sorted(complexities)
+
+    def test_sort_default_priority(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        assert resp.status_code == 200
+
+    def test_invalid_sort_returns_422(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?sort=invalid"
+        )
+        assert resp.status_code == 422
+
+    def test_sort_not_found_returns_404(self, client):
+        resp = client.get(
+            "/api/v1/rds/no-such/recommendations?sort=savings"
+        )
+        assert resp.status_code == 404
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

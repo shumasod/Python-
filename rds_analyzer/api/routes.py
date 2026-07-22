@@ -978,3 +978,31 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/recommendations/by-type",
+    response_model=dict,
+    tags=["recommendations"],
+    summary="推奨事項をタイプ別に取得",
+)
+async def recommendations_by_type(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    """推奨事項をタイプ（rightsizing/storage_type_change等）でグループ化して返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        return {"instance_id": instance_id, "total": 0, "by_type": {}}
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recs = rec_engine.generate(instance, breakdown, perf_result)
+    by_type: dict[str, int] = {}
+    for r in recs:
+        t = r.type.value if hasattr(r.type, "value") else str(r.type)
+        by_type[t] = by_type.get(t, 0) + 1
+    return {"instance_id": instance_id, "total": len(recs), "by_type": by_type}

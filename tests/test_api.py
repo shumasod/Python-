@@ -699,3 +699,37 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestRecommendationsByType:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_by_type_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").status_code == 200
+
+    def test_by_type_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert "instance_id" in data
+        assert "total" in data
+        assert "by_type" in data
+
+    def test_by_type_totals_match(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert data["total"] == sum(data["by_type"].values())
+
+    def test_by_type_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/recommendations/by-type").status_code == 404
+
+    def test_by_type_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert data["total"] == 0
+        assert data["by_type"] == {}

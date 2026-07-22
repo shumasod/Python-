@@ -978,3 +978,24 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/alerts/high-cpu",
+    response_model=dict,
+    tags=["alerts"],
+    summary="CPU使用率が高いインスタンス一覧を取得",
+)
+async def high_cpu_instances(threshold_pct: float = 80.0) -> dict:
+    """指定しきい値を超えるCPU使用率のインスタンスを返す。"""
+    flagged = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        if metrics.cpu_utilization.avg >= threshold_pct:
+            flagged.append({
+                "instance_id": iid,
+                "cpu_avg_pct": round(metrics.cpu_utilization.avg, 2),
+                "cpu_max_pct": round(metrics.cpu_utilization.max, 2),
+            })
+    flagged.sort(key=lambda x: x["cpu_avg_pct"], reverse=True)
+    return {"threshold_pct": threshold_pct, "count": len(flagged), "instances": flagged}

@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestStorageEfficiency:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_storage_efficiency_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/storage-efficiency").status_code == 200
+
+    def test_storage_efficiency_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/storage-efficiency").json()
+        for k in ("instance_id", "allocated_storage_gb", "used_storage_gb",
+                  "free_storage_gb", "storage_usage_pct", "storage_type"):
+            assert k in data
+
+    def test_storage_usage_pct_range(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/storage-efficiency").json()
+        assert 0.0 <= data["storage_usage_pct"] <= 100.0
+
+    def test_storage_instance_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/storage-efficiency").status_code == 404
+
+    def test_storage_metrics_404(self):
+        _metrics_store.clear()
+        assert self._client.get("/api/v1/rds/test-instance-001/storage-efficiency").status_code == 404

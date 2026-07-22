@@ -978,3 +978,31 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/storage-efficiency",
+    response_model=dict,
+    tags=["metrics"],
+    summary="ストレージ使用効率を取得",
+)
+async def storage_efficiency(instance_id: str) -> dict:
+    """ストレージの使用率と空き容量を分析して返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail=f"Metrics for {instance_id!r} not found")
+    free_bytes = metrics.free_storage_bytes.avg
+    free_gb = free_bytes / (1024 ** 3)
+    allocated_gb = instance.allocated_storage_gb
+    used_gb = max(0.0, allocated_gb - free_gb)
+    usage_pct = round(used_gb / allocated_gb * 100, 1) if allocated_gb > 0 else 0.0
+    return {
+        "instance_id": instance_id,
+        "allocated_storage_gb": allocated_gb,
+        "used_storage_gb": round(used_gb, 2),
+        "free_storage_gb": round(free_gb, 2),
+        "storage_usage_pct": usage_pct,
+        "storage_type": instance.storage_type,
+    }

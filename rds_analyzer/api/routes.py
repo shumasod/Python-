@@ -978,3 +978,26 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/alerts/low-usage",
+    response_model=dict,
+    tags=["alerts"],
+    summary="使用率が低いインスタンス一覧を取得",
+)
+async def low_usage_instances(cpu_threshold_pct: float = 10.0) -> dict:
+    """CPU使用率が低くリソース過剰なインスタンスを返す。"""
+    flagged = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        if metrics.cpu_utilization.avg <= cpu_threshold_pct:
+            instance = _instance_store[iid]
+            flagged.append({
+                "instance_id": iid,
+                "instance_class": instance.instance_class,
+                "cpu_avg_pct": round(metrics.cpu_utilization.avg, 2),
+                "connections_avg": round(metrics.database_connections.avg, 2),
+            })
+    flagged.sort(key=lambda x: x["cpu_avg_pct"])
+    return {"threshold_pct": cpu_threshold_pct, "count": len(flagged), "instances": flagged}

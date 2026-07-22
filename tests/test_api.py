@@ -699,3 +699,34 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetConnections:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_fleet_connections_200(self):
+        assert self._client.get("/api/v1/rds/fleet/connections").status_code == 200
+
+    def test_fleet_connections_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/connections").json()
+        for k in ("instances_with_metrics", "fleet_total_avg_connections",
+                  "fleet_total_max_connections", "fleet_avg_connections_per_instance"):
+            assert k in data
+
+    def test_fleet_connections_max_gte_avg(self):
+        data = self._client.get("/api/v1/rds/fleet/connections").json()
+        assert data["fleet_total_max_connections"] >= data["fleet_total_avg_connections"]
+
+    def test_fleet_connections_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/connections").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_avg_connections_per_instance"] == 0.0

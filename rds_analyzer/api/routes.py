@@ -978,3 +978,33 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet/connections",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のコネクション統計を取得",
+)
+async def fleet_connection_stats() -> dict:
+    """全インスタンスのDB接続数を集計して返す。"""
+    avgs = []
+    maxes = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        avgs.append(metrics.database_connections.avg)
+        maxes.append(metrics.database_connections.max)
+    count = len(avgs)
+    if count == 0:
+        return {
+            "instances_with_metrics": 0,
+            "fleet_total_avg_connections": 0.0,
+            "fleet_total_max_connections": 0.0,
+            "fleet_avg_connections_per_instance": 0.0,
+        }
+    return {
+        "instances_with_metrics": count,
+        "fleet_total_avg_connections": round(sum(avgs), 2),
+        "fleet_total_max_connections": round(sum(maxes), 2),
+        "fleet_avg_connections_per_instance": round(sum(avgs) / count, 2),
+    }

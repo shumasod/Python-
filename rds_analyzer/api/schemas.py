@@ -118,6 +118,19 @@ class InstanceSummaryItem(BaseModel):
     top_recommendation: Optional[str] = None
 
 
+class InstanceUpdateRequest(BaseModel):
+    """PATCH /rds/{id} — 部分更新リクエスト（指定したフィールドのみ更新）"""
+    instance_class: Optional[str] = Field(default=None, description="変更後のインスタンスクラス")
+    engine_version: Optional[str] = Field(default=None, description="変更後のエンジンバージョン")
+    multi_az: Optional[bool] = Field(default=None, description="Multi-AZ 設定")
+    storage_type: Optional[str] = Field(default=None, description="ストレージタイプ (gp2/gp3/io1)")
+    allocated_storage_gb: Optional[int] = Field(default=None, ge=20, description="ストレージサイズ (GB)")
+    provisioned_iops: Optional[int] = Field(default=None, ge=1000, description="プロビジョニング IOPS (io1/gp3)")
+    backup_retention_days: Optional[int] = Field(default=None, ge=0, le=35)
+    read_replica_count: Optional[int] = Field(default=None, ge=0, le=5)
+    tags: Optional[dict[str, str]] = Field(default=None, description="タグ（完全置換）")
+
+
 class AnalysisResponse(BaseModel):
     """
     GET /rds/{id}/analysis レスポンス

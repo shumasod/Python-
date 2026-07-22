@@ -90,6 +90,58 @@ class TestInstanceRegistration:
         assert response.status_code == 422
 
 
+class TestInstanceUpdate:
+    """PATCH /rds/{id} 部分更新のテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_patch_instance_class(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001",
+            json={"instance_class": "db.m5.xlarge"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "instance_class" in data["updated_fields"]
+
+    def test_patch_multi_az(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001",
+            json={"multi_az": True},
+        )
+        assert resp.status_code == 200
+        assert "multi_az" in resp.json()["updated_fields"]
+
+    def test_patch_tags(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001",
+            json={"tags": {"env": "prod", "team": "db"}},
+        )
+        assert resp.status_code == 200
+        assert "tags" in resp.json()["updated_fields"]
+
+    def test_patch_invalid_storage_type_returns_422(self, client):
+        resp = client.patch(
+            "/api/v1/rds/test-api-mysql-001",
+            json={"storage_type": "nvme"},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_nonexistent_instance(self, client):
+        resp = client.patch(
+            "/api/v1/rds/no-such-instance",
+            json={"instance_class": "db.m5.xlarge"},
+        )
+        assert resp.status_code == 404
+
+    def test_patch_empty_body_is_noop(self, client):
+        resp = client.patch("/api/v1/rds/test-api-mysql-001", json={})
+        assert resp.status_code == 200
+        assert resp.json()["updated_fields"] == []
+
+
 class TestMetricsSubmission:
     def test_submit_metrics_success(
         self, client, sample_instance_payload, sample_metrics_payload

@@ -978,3 +978,40 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet-health",
+    response_model=dict,
+    tags=["instances"],
+    summary="フリート全体の健全性サマリーを取得",
+)
+async def fleet_health_summary(
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> dict:
+    """全インスタンスの健全性スコアを集計して返す。"""
+    scores = []
+    for iid, instance in _instance_store.items():
+        metrics = _metrics_store.get(iid)
+        if metrics is None:
+            continue
+        result = perf_analyzer.analyze(instance, metrics)
+        scores.append(result.health_score)
+    count = len(scores)
+    if count == 0:
+        return {
+            "total_instances": len(_instance_store),
+            "instances_with_metrics": 0,
+            "avg_health_score": 0,
+            "min_health_score": 0,
+            "max_health_score": 0,
+            "critical_instances": 0,
+        }
+    critical = sum(1 for s in scores if s < 50)
+    return {
+        "total_instances": len(_instance_store),
+        "instances_with_metrics": count,
+        "avg_health_score": round(sum(scores) / count),
+        "min_health_score": min(scores),
+        "max_health_score": max(scores),
+        "critical_instances": critical,
+    }

@@ -592,7 +592,7 @@ class TestNotify:
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
 
-from rds_analyzer.api.routes import _instance_store, _metrics_store
+from rds_analyzer.api.routes import _instance_store, _metrics_store, _cost_history_store
 
 
 class TestIopsFleetStats:
@@ -699,3 +699,36 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestResetInstanceData:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        _cost_history_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+        _cost_history_store.clear()
+
+    def test_reset_data_200(self):
+        assert self._client.delete("/api/v1/rds/test-instance-001/data").status_code == 200
+
+    def test_reset_data_clears_metrics(self):
+        self._client.delete("/api/v1/rds/test-instance-001/data")
+        assert "test-instance-001" not in _metrics_store
+
+    def test_reset_data_keeps_instance(self):
+        self._client.delete("/api/v1/rds/test-instance-001/data")
+        assert "test-instance-001" in _instance_store
+
+    def test_reset_data_response_fields(self):
+        data = self._client.delete("/api/v1/rds/test-instance-001/data").json()
+        assert "metrics_cleared" in data
+        assert "cost_history_cleared" in data
+
+    def test_reset_data_404(self):
+        assert self._client.delete("/api/v1/rds/nonexistent/data").status_code == 404

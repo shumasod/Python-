@@ -978,3 +978,23 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.delete(
+    "/rds/{instance_id}/data",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスの計測データをリセット",
+)
+async def reset_instance_data(instance_id: str) -> dict:
+    """メトリクス・コスト履歴をクリアしてインスタンス設定のみ保持する。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    had_metrics = instance_id in _metrics_store
+    had_cost_history = instance_id in _cost_history_store
+    _metrics_store.pop(instance_id, None)
+    _cost_history_store.pop(instance_id, None)
+    return {
+        "instance_id": instance_id,
+        "metrics_cleared": had_metrics,
+        "cost_history_cleared": had_cost_history,
+    }

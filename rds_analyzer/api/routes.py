@@ -978,3 +978,32 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/recommendations/count",
+    response_model=dict,
+    tags=["recommendations"],
+    summary="推奨事項の件数を優先度別に取得",
+)
+async def recommendations_count(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    """優先度別（critical/high/medium/low）の推奨事項件数を返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        return {"instance_id": instance_id, "total": 0, "critical": 0, "high": 0, "medium": 0, "low": 0}
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recs = rec_engine.generate(instance, breakdown, perf_result)
+    counts: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for r in recs:
+        p = r.priority.value if hasattr(r.priority, "value") else str(r.priority)
+        if p in counts:
+            counts[p] += 1
+    return {"instance_id": instance_id, "total": len(recs), **counts}

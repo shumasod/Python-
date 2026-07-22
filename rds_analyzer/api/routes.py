@@ -978,3 +978,15 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/alerts",
+    response_model=AlertThresholds,
+    tags=["alerts"],
+    summary="インスタンスのアラートしきい値を取得",
+)
+async def get_alert_thresholds(instance_id: str) -> AlertThresholds:
+    """登録済みアラートしきい値を返す。未設定の場合はデフォルト値を返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    return _alert_thresholds_store.get(instance_id, AlertThresholds())

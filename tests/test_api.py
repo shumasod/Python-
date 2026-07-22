@@ -670,7 +670,7 @@ class TestCpuFleetStats:
         assert data["fleet_avg_cpu_pct"] == 0.0
 
 
-class TestSnapshotStats:
+class TestTotalStorage:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
         _instance_store.clear()
@@ -679,24 +679,57 @@ class TestSnapshotStats:
         yield
         _instance_store.clear()
 
-    def test_snapshot_stats_200(self):
-        assert self._client.get("/api/v1/rds/snapshot-stats").status_code == 200
+    def test_total_storage_200(self):
+        assert self._client.get("/api/v1/rds/total-storage").status_code == 200
 
-    def test_snapshot_stats_structure(self):
-        data = self._client.get("/api/v1/rds/snapshot-stats").json()
-        for k in ("total_instances","instances_with_snapshots","total_snapshot_storage_gb","avg_snapshot_storage_gb"):
+    def test_total_storage_structure(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        for k in ("total_instances","total_allocated_storage_gb","total_snapshot_storage_gb","avg_allocated_storage_gb"):
             assert k in data
 
-    def test_snapshot_gb_positive(self):
-        data = self._client.get("/api/v1/rds/snapshot-stats").json()
-        assert data["total_snapshot_storage_gb"] >= 80.0 and data["instances_with_snapshots"] >= 1
+    def test_total_storage_values(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["total_allocated_storage_gb"] >= 100
 
-    def test_no_snapshot_instance(self, sample_instance_payload):
-        no_snap = {**sample_instance_payload, "instance_id": "inst-no-snap", "snapshot_storage_gb": 0.0}
-        self._client.post("/api/v1/rds", json=no_snap)
-        assert self._client.get("/api/v1/rds/snapshot-stats").json()["instances_without_snapshots"] >= 1
+    def test_avg_storage(self):
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["avg_allocated_storage_gb"] == data["total_allocated_storage_gb"] / data["total_instances"]
 
     def test_empty_store(self):
         _instance_store.clear()
-        data = self._client.get("/api/v1/rds/snapshot-stats").json()
-        assert data["total_instances"] == 0 and data["avg_snapshot_storage_gb"] == 0.0
+        data = self._client.get("/api/v1/rds/total-storage").json()
+        assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestRecommendationsByType:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_by_type_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").status_code == 200
+
+    def test_by_type_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert "instance_id" in data
+        assert "total" in data
+        assert "by_type" in data
+
+    def test_by_type_totals_match(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert data["total"] == sum(data["by_type"].values())
+
+    def test_by_type_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/recommendations/by-type").status_code == 404
+
+    def test_by_type_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
+        assert data["total"] == 0
+        assert data["by_type"] == {}

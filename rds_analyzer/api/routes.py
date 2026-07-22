@@ -978,3 +978,35 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet/latency",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のレイテンシ統計を取得",
+)
+async def fleet_latency_stats() -> dict:
+    """全インスタンスの読み書きレイテンシを集計して返す。"""
+    read_lats = []
+    write_lats = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        read_lats.append(metrics.read_latency_ms.avg)
+        write_lats.append(metrics.write_latency_ms.avg)
+    count = len(read_lats)
+    if count == 0:
+        return {
+            "instances_with_metrics": 0,
+            "fleet_avg_read_latency_ms": 0.0,
+            "fleet_avg_write_latency_ms": 0.0,
+            "fleet_max_read_latency_ms": 0.0,
+            "fleet_max_write_latency_ms": 0.0,
+        }
+    return {
+        "instances_with_metrics": count,
+        "fleet_avg_read_latency_ms": round(sum(read_lats) / count, 3),
+        "fleet_avg_write_latency_ms": round(sum(write_lats) / count, 3),
+        "fleet_max_read_latency_ms": round(max(read_lats), 3),
+        "fleet_max_write_latency_ms": round(max(write_lats), 3),
+    }

@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetLatency:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_fleet_latency_200(self):
+        assert self._client.get("/api/v1/rds/fleet/latency").status_code == 200
+
+    def test_fleet_latency_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/latency").json()
+        for k in ("instances_with_metrics", "fleet_avg_read_latency_ms",
+                  "fleet_avg_write_latency_ms", "fleet_max_read_latency_ms",
+                  "fleet_max_write_latency_ms"):
+            assert k in data
+
+    def test_fleet_latency_max_gte_avg_read(self):
+        data = self._client.get("/api/v1/rds/fleet/latency").json()
+        assert data["fleet_max_read_latency_ms"] >= data["fleet_avg_read_latency_ms"]
+
+    def test_fleet_latency_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/latency").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_avg_read_latency_ms"] == 0.0

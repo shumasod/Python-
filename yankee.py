@@ -7,7 +7,42 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+
+# ─── バトルログ ───────────────────────────────────────────
+@dataclass
+class BattleRecord:
+    timestamp: str
+    opponent: str
+    result: str          # "win" | "loss"
+    rounds: int
+    damage_dealt: int
+    damage_received: int
+
+    def __str__(self) -> str:
+        mark = "○" if self.result == "win" else "×"
+        return (f"[{self.timestamp}] {mark} vs {self.opponent} "
+                f"({self.rounds}R | 与:{self.damage_dealt} 受:{self.damage_received})")
+
+
+def get_battle_log_summary(records: list[BattleRecord]) -> str:
+    """バトル履歴のサマリーを返す"""
+    if not records:
+        return "  （戦歴なし）"
+    wins   = sum(1 for r in records if r.result == "win")
+    losses = len(records) - wins
+    total_dealt    = sum(r.damage_dealt    for r in records)
+    total_received = sum(r.damage_received for r in records)
+    lines = [
+        f"  戦歴: {len(records)}戦 {wins}勝 {losses}敗",
+        f"  総与ダメージ: {total_dealt}  総受ダメージ: {total_received}",
+        "  --- 直近5件 ---",
+    ]
+    for r in records[-5:]:
+        lines.append(f"    {r}")
+    return "\n".join(lines)
 
 
 # ─── アイテム定義 ─────────────────────────────────────────
@@ -54,6 +89,34 @@ def get_rank(respect: int) -> tuple[str, str]:
         if respect >= threshold:
             return title, icon
     return "チンピラ", "…"
+
+
+# ─── 天気システム ─────────────────────────────────────────
+# (天気名, アイコン, ATK補正, HP補正, 説明)
+_WEATHER_TABLE: list[tuple[str, str, float, float, str]] = [
+    ("晴れ",   "☀",  1.0,  1.0,  "普通の状態。補正なし"),
+    ("雨",     "🌧", 0.9,  1.1,  "雨で足元が悪い。ATK-10% / HP+10%"),
+    ("嵐",     "⛈", 1.3,  0.8,  "荒天で気合が入る。ATK+30% / HP-20%"),
+    ("霧",     "🌫", 0.8,  1.0,  "視界不良。ATK-20%"),
+    ("猛暑",   "🔆", 1.2,  0.9,  "熱くなる。ATK+20% / HP-10%"),
+    ("深夜",   "🌙", 1.1,  1.0,  "夜は集中力が増す。ATK+10%"),
+]
+
+
+def get_weather() -> tuple[str, str, float, float, str]:
+    """ランダムに天気を選んで返す"""
+    return random.choice(_WEATHER_TABLE)
+
+
+def announce_weather(weather: tuple) -> None:
+    name, icon, atk_mod, hp_mod, desc = weather
+    print(f"\n  {icon} 天気: {name}  ── {desc}")
+
+
+def apply_weather_to_fight(atk: int, weather: tuple) -> int:
+    """天気のATK補正を適用したダメージを返す"""
+    _, _, atk_mod, _, _ = weather
+    return max(1, int(atk * atk_mod))
 
 
 # ─── Yankee クラス ────────────────────────────────────────
@@ -130,6 +193,7 @@ class Yankee:
         self.rivals: list["Yankee"] = []
         self.items: list[Item] = []           # 所持アイテム
         self.territories_owned: list[str] = [territory]  # 支配縄張り
+        self.battle_log: list[BattleRecord] = []
 
     def __repr__(self) -> str:
         rank, icon = get_rank(self.respect)
@@ -318,6 +382,16 @@ class Yankee:
         loser.hp           = 1       # 死なせない（仁義）
         loser.win_streak   = 0
         print(f"  {winner.name} は {prize} 円を手に入れた！")
+
+        # バトルログ記録
+        now = datetime.now().strftime("%H:%M:%S")
+        self.battle_log.append(BattleRecord(
+            timestamp=now, opponent=opponent.name,
+            result="win" if winner is self else "loss",
+            rounds=round_num,
+            damage_dealt=opponent.effective_max_hp - opponent.hp,
+            damage_received=self.effective_max_hp - self.hp,
+        ))
 
         # ランクアップ通知
         rank, icon = get_rank(winner.respect)
@@ -736,6 +810,56 @@ def _create_player() -> Yankee:
     return Yankee(name, territory)
 
 
+# ─── 複数エンディング ─────────────────────────────────────
+def get_ending(player: "Yankee") -> tuple[str, str]:
+    """プレイヤーの状態から最も適切なエンディングを選んで返す (タイトル, 本文)"""
+    r = player.respect
+    t = len(player.territories_owned)
+    g = player.gold
+
+    if r >= 200 and t >= 4:
+        title = "👑 TRUE ENDING ─ 伝説の番長"
+        body  = (f"  {player.name}は全ての縄張りを制覇し、街の伝説となった。\n"
+                 f"  誰も彼の名を知らぬ者はいない。\n"
+                 f"  「俺の物語はまだ終わらない。」")
+    elif r >= 150:
+        title = "🔥 ENDING A ─ 最強への道"
+        body  = (f"  {player.name}はその名を轟かせた。\n"
+                 f"  まだ頂上はある。だが今日のところは——\n"
+                 f"  「悪くない旅だった。」")
+    elif r >= 100 and g >= 300:
+        title = "💰 ENDING B ─ 義理と金"
+        body  = (f"  {player.name}は戦いながらも懐を温めた。\n"
+                 f"  仁義と金、両方手に入れた男の話。\n"
+                 f"  「これが俺の生き様だ。」")
+    elif t >= 3:
+        title = "🗺 ENDING C ─ 縄張りの王"
+        body  = (f"  {player.name}は広大な縄張りを手にした。\n"
+                 f"  戦いよりも、守ることを覚えた。\n"
+                 f"  「俺が守る。それだけだ。」")
+    elif player.win_streak >= 5:
+        title = "⚡ ENDING D ─ 連戦連勝"
+        body  = (f"  {player.name}は倒れることなく戦い続けた。\n"
+                 f"  {player.win_streak}連勝。その記録は語り継がれる。\n"
+                 f"  「負ける気がしなかった。」")
+    else:
+        title = "… ENDING E ─ まだ途中"
+        body  = (f"  {player.name}の旅は終わっていない。\n"
+                 f"  仁義{r}pt。これからだ。\n"
+                 f"  「いつかまた来る。」")
+
+    return title, body
+
+
+def show_ending(player: "Yankee") -> None:
+    title, body = get_ending(player)
+    print(f"\n{'★'*50}")
+    print(f"  {title}")
+    print(f"{'─'*50}")
+    print(body)
+    print(f"{'★'*50}")
+
+
 # ─── main ─────────────────────────────────────────────────
 def main() -> None:
     print("=" * 50)
@@ -797,5 +921,47 @@ def main() -> None:
         play_interactive()
 
 
+# ─── CLIエントリポイント ──────────────────────────────────
+def parse_args() -> "argparse.Namespace":
+    import argparse
+    p = argparse.ArgumentParser(
+        description="不良ヤンキーシミュレーター",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  python yankee.py
+  python yankee.py --rpg --name タロウ --territory 北区
+  python yankee.py --demo
+  python yankee.py --status --name テスト
+""",
+    )
+    p.add_argument("--name",      default="タケシ",   help="ヤンキーの名前")
+    p.add_argument("--territory", default="東側",     help="縄張りの名前")
+    p.add_argument("--rpg",       action="store_true", help="インタラクティブRPGを直接起動")
+    p.add_argument("--demo",      action="store_true", help="デモ（ノンインタラクティブ）を実行")
+    p.add_argument("--status",    action="store_true", help="キャラクターのステータスのみ表示")
+    p.add_argument("--no-sleep",  action="store_true", help="time.sleep をスキップして高速実行")
+    return p.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+    _args = parse_args()
+
+    if _args.no_sleep:
+        time.sleep = lambda _: None  # type: ignore[assignment]
+
+    if _args.rpg:
+        play_interactive()
+    elif _args.status:
+        y = Yankee(_args.name, _args.territory)
+        y.show_face()
+    elif _args.demo:
+        a = Yankee(_args.name, _args.territory)
+        b = Yankee("対戦相手", "向こう側")
+        a.show_face()
+        a.fight(b)
+        import json as _json
+        print(_json.dumps(a.status(), ensure_ascii=False, indent=2))
+    else:
+        main()

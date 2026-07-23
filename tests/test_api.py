@@ -699,3 +699,27 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestCostPerVcpu:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_cost_per_vcpu_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/cost-per-vcpu").status_code == 200
+
+    def test_cost_per_vcpu_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/cost-per-vcpu").json()
+        for k in ("instance_id", "instance_class", "vcpu_count", "total_monthly_cost_usd", "cost_per_vcpu_usd"):
+            assert k in data
+
+    def test_cost_per_vcpu_positive(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/cost-per-vcpu").json()
+        assert data["total_monthly_cost_usd"] > 0
+
+    def test_cost_per_vcpu_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/cost-per-vcpu").status_code == 404

@@ -978,3 +978,30 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/cost-per-vcpu",
+    response_model=dict,
+    tags=["costs"],
+    summary="vCPU当たりのコストを取得",
+)
+async def cost_per_vcpu(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> dict:
+    """月額コストをvCPU数で割ったコスト効率指標を返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    specs = cost_analyzer.get_instance_specs(instance.instance_class)
+    vcpu = specs.get("vcpu", 0)
+    total = breakdown.total_cost_usd
+    cost_per_cpu = round(total / vcpu, 4) if vcpu > 0 else 0.0
+    return {
+        "instance_id": instance_id,
+        "instance_class": instance.instance_class,
+        "vcpu_count": vcpu,
+        "total_monthly_cost_usd": round(total, 2),
+        "cost_per_vcpu_usd": cost_per_cpu,
+    }

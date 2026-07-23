@@ -699,3 +699,28 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetClassDistribution:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_classes_200(self):
+        assert self._client.get("/api/v1/rds/fleet/classes").status_code == 200
+
+    def test_classes_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/classes").json()
+        assert "total_instances" in data
+        assert "by_class" in data
+
+    def test_classes_count_matches(self):
+        data = self._client.get("/api/v1/rds/fleet/classes").json()
+        assert data["total_instances"] == sum(data["by_class"].values())
+
+    def test_classes_nonempty(self):
+        data = self._client.get("/api/v1/rds/fleet/classes").json()
+        assert data["total_instances"] >= 1

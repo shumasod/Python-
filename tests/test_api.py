@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestMemoryPressure:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_memory_pressure_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 200
+
+    def test_memory_pressure_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        for k in ("instance_id", "total_memory_gb", "free_memory_avg_gb",
+                  "used_memory_gb", "memory_pressure_pct", "pressure_level"):
+            assert k in data
+
+    def test_memory_pressure_level_valid(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        assert data["pressure_level"] in ("normal", "high", "critical")
+
+    def test_memory_pressure_instance_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/memory-pressure").status_code == 404
+
+    def test_memory_pressure_metrics_404(self):
+        _metrics_store.clear()
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404

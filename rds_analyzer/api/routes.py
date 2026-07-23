@@ -978,3 +978,23 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet/storage-types",
+    response_model=dict,
+    tags=["instances"],
+    summary="ストレージタイプ別インスタンス数を取得",
+)
+async def fleet_storage_type_distribution() -> dict:
+    """登録済みインスタンスをストレージタイプごとに集計して返す。"""
+    counts: dict[str, int] = {}
+    total_gb: dict[str, float] = {}
+    for instance in _instance_store.values():
+        st = instance.storage_type.value if hasattr(instance.storage_type, "value") else str(instance.storage_type)
+        counts[st] = counts.get(st, 0) + 1
+        total_gb[st] = total_gb.get(st, 0.0) + instance.allocated_storage_gb
+    return {
+        "total_instances": len(_instance_store),
+        "by_storage_type": counts,
+        "total_gb_by_type": {k: round(v, 1) for k, v in total_gb.items()},
+    }

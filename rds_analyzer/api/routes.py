@@ -978,3 +978,31 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/uptime-estimate",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスの可用性推定を取得",
+)
+async def uptime_estimate(instance_id: str) -> dict:
+    """Multi-AZ構成・バックアップ設定から可用性をスコアリングして返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    score = 70
+    if instance.multi_az:
+        score += 20
+    if instance.backup_retention_days >= 7:
+        score += 5
+    if instance.backup_retention_days >= 14:
+        score += 5
+    score = min(score, 100)
+    tier = "high" if score >= 90 else ("medium" if score >= 75 else "low")
+    return {
+        "instance_id": instance_id,
+        "availability_score": score,
+        "availability_tier": tier,
+        "multi_az": instance.multi_az,
+        "backup_retention_days": instance.backup_retention_days,
+    }

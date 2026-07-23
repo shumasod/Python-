@@ -699,3 +699,31 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestUptimeEstimate:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_uptime_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/uptime-estimate").status_code == 200
+
+    def test_uptime_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/uptime-estimate").json()
+        for k in ("instance_id", "availability_score", "availability_tier", "multi_az", "backup_retention_days"):
+            assert k in data
+
+    def test_uptime_score_range(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/uptime-estimate").json()
+        assert 0 <= data["availability_score"] <= 100
+
+    def test_uptime_tier_valid(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/uptime-estimate").json()
+        assert data["availability_tier"] in ("high", "medium", "low")
+
+    def test_uptime_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/uptime-estimate").status_code == 404

@@ -699,3 +699,35 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestIopsUtilization:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_iops_util_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/iops-utilization").status_code == 200
+
+    def test_iops_util_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/iops-utilization").json()
+        for k in ("instance_id", "iops_limit", "avg_total_iops",
+                  "max_total_iops", "avg_iops_utilization_pct", "storage_type"):
+            assert k in data
+
+    def test_iops_util_limit_positive(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/iops-utilization").json()
+        assert data["iops_limit"] > 0
+
+    def test_iops_util_instance_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/iops-utilization").status_code == 404
+
+    def test_iops_util_metrics_404(self):
+        _metrics_store.clear()
+        assert self._client.get("/api/v1/rds/test-instance-001/iops-utilization").status_code == 404

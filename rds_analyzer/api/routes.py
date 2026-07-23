@@ -978,3 +978,33 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/{instance_id}/iops-utilization",
+    response_model=dict,
+    tags=["metrics"],
+    summary="インスタンスのIOPS利用率を取得",
+)
+async def iops_utilization(
+    instance_id: str,
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+) -> dict:
+    """プロビジョニングIOPSに対する実際の使用率を返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail=f"Metrics for {instance_id!r} not found")
+    iops_limit = perf_analyzer.get_iops_limit(instance)
+    avg_total_iops = metrics.read_iops.avg + metrics.write_iops.avg
+    max_total_iops = metrics.read_iops.max + metrics.write_iops.max
+    utilization_pct = round(avg_total_iops / iops_limit * 100, 1) if iops_limit > 0 else 0.0
+    return {
+        "instance_id": instance_id,
+        "iops_limit": iops_limit,
+        "avg_total_iops": round(avg_total_iops, 2),
+        "max_total_iops": round(max_total_iops, 2),
+        "avg_iops_utilization_pct": utilization_pct,
+        "storage_type": instance.storage_type,
+    }

@@ -699,3 +699,28 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetRegionDistribution:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_regions_200(self):
+        assert self._client.get("/api/v1/rds/fleet/regions").status_code == 200
+
+    def test_regions_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/regions").json()
+        assert "total_instances" in data
+        assert "by_region" in data
+
+    def test_regions_count_matches(self):
+        data = self._client.get("/api/v1/rds/fleet/regions").json()
+        assert data["total_instances"] == sum(data["by_region"].values())
+
+    def test_regions_default_region_present(self):
+        data = self._client.get("/api/v1/rds/fleet/regions").json()
+        assert "ap-northeast-1" in data["by_region"]

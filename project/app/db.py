@@ -14,7 +14,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
@@ -123,7 +123,7 @@ async def log_prediction(
                 json.dumps(response_body, ensure_ascii=False),
                 latency_ms,
             )
-        logger.debug(f"予測ログを保存しました: race_id={race_id}, latency={latency_ms}ms")
+        logger.debug(f"予測ログを保存しました: race_id={sanitize_for_log(race_id)}, latency={latency_ms}ms")
 
     except Exception as e:
         # ログ保存の失敗はサイレントに処理（APIレスポンスには影響させない）

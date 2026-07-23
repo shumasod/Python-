@@ -25,7 +25,7 @@ from app.config import (
     DRIFT_REPORT_DIR,
     SHADOW_LOG_DIR,
 )
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -261,7 +261,7 @@ async def promote_model(
     try:
         old_version = registry.get_production_version()
         registry.promote(body.version)
-        logger.info(f"モデル昇格: {old_version} → {body.version}")
+        logger.info(f"モデル昇格: {sanitize_for_log(old_version)} → {sanitize_for_log(body.version)}")
         return {
             "message": f"昇格完了: {body.version}",
             "previous_version": old_version or "なし",

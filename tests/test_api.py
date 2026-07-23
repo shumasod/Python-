@@ -699,3 +699,33 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetMultiAzRatio:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_multi_az_ratio_200(self):
+        assert self._client.get("/api/v1/rds/fleet/multi-az-ratio").status_code == 200
+
+    def test_multi_az_ratio_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/multi-az-ratio").json()
+        for k in ("total_instances", "multi_az_count", "single_az_count", "multi_az_ratio_pct"):
+            assert k in data
+
+    def test_multi_az_counts_sum(self):
+        data = self._client.get("/api/v1/rds/fleet/multi-az-ratio").json()
+        assert data["multi_az_count"] + data["single_az_count"] == data["total_instances"]
+
+    def test_multi_az_ratio_range(self):
+        data = self._client.get("/api/v1/rds/fleet/multi-az-ratio").json()
+        assert 0.0 <= data["multi_az_ratio_pct"] <= 100.0
+
+    def test_multi_az_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/multi-az-ratio").json()
+        assert data["multi_az_ratio_pct"] == 0.0

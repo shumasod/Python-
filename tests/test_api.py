@@ -699,3 +699,30 @@ class TestTotalStorage:
         _instance_store.clear()
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
+
+class TestFleetEngineDistribution:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_engines_200(self):
+        assert self._client.get("/api/v1/rds/fleet/engines").status_code == 200
+
+    def test_engines_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/engines").json()
+        assert "total_instances" in data
+        assert "by_engine" in data
+
+    def test_engines_count_matches(self):
+        data = self._client.get("/api/v1/rds/fleet/engines").json()
+        assert data["total_instances"] == sum(data["by_engine"].values())
+
+    def test_engines_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/engines").json()
+        assert data["total_instances"] == 0
+        assert data["by_engine"] == {}

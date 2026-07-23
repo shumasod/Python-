@@ -978,3 +978,27 @@ async def total_storage_summary() -> dict:
     avg_allocated_gb = round(total_allocated_gb / total_instances, 1) if total_instances > 0 else 0.0
     return {"total_instances": total_instances, "total_allocated_storage_gb": total_allocated_gb,
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
+
+@router.get(
+    "/rds/fleet/read-replicas",
+    response_model=dict,
+    tags=["instances"],
+    summary="フリート全体のリードレプリカ統計を取得",
+)
+async def fleet_read_replica_summary() -> dict:
+    """全インスタンスのリードレプリカ数を集計して返す。"""
+    total = len(_instance_store)
+    instances_with_replicas = 0
+    total_replicas = 0
+    for instance in _instance_store.values():
+        rc = instance.read_replica_count
+        total_replicas += rc
+        if rc > 0:
+            instances_with_replicas += 1
+    avg_replicas = round(total_replicas / total, 2) if total > 0 else 0.0
+    return {
+        "total_instances": total,
+        "instances_with_replicas": instances_with_replicas,
+        "total_read_replicas": total_replicas,
+        "avg_replicas_per_instance": avg_replicas,
+    }

@@ -980,33 +980,24 @@ async def total_storage_summary() -> dict:
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
 
 @router.get(
-    "/rds/fleet/latency",
+    "/rds/{instance_id}/connection-ratio",
     response_model=dict,
     tags=["metrics"],
-    summary="フリート全体のレイテンシ統計を取得",
+    summary="インスタンスの接続数比率を取得",
 )
-async def fleet_latency_stats() -> dict:
-    """全インスタンスの読み書きレイテンシを集計して返す。"""
-    read_lats = []
-    write_lats = []
-    for iid, metrics in _metrics_store.items():
-        if iid not in _instance_store:
-            continue
-        read_lats.append(metrics.read_latency_ms.avg)
-        write_lats.append(metrics.write_latency_ms.avg)
-    count = len(read_lats)
-    if count == 0:
-        return {
-            "instances_with_metrics": 0,
-            "fleet_avg_read_latency_ms": 0.0,
-            "fleet_avg_write_latency_ms": 0.0,
-            "fleet_max_read_latency_ms": 0.0,
-            "fleet_max_write_latency_ms": 0.0,
-        }
+async def connection_ratio(instance_id: str) -> dict:
+    """現在の接続数を最大接続数上限で割った比率を返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        raise HTTPException(status_code=404, detail=f"Metrics for {instance_id!r} not found")
+    avg_conn = metrics.database_connections.avg
+    max_conn = metrics.database_connections.max
     return {
-        "instances_with_metrics": count,
-        "fleet_avg_read_latency_ms": round(sum(read_lats) / count, 3),
-        "fleet_avg_write_latency_ms": round(sum(write_lats) / count, 3),
-        "fleet_max_read_latency_ms": round(max(read_lats), 3),
-        "fleet_max_write_latency_ms": round(max(write_lats), 3),
+        "instance_id": instance_id,
+        "avg_connections": round(avg_conn, 2),
+        "max_connections_observed": round(max_conn, 2),
+        "peak_ratio": round(max_conn / avg_conn, 3) if avg_conn > 0 else 0.0,
     }

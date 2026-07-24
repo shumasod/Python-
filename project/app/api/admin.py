@@ -33,6 +33,17 @@ router = APIRouter()
 # 管理者権限確認（通常の API Key 認証に加え ADMIN_KEY 環境変数で絞り込み可）
 _ADMIN_KEY = os.getenv("ADMIN_API_KEY", "")
 
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_safe_name(name: str) -> None:
+    """シャドウログ名を検証してパストラバーサルを防ぐ"""
+    if not _SAFE_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=422,
+            detail="name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
+
 
 _SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
@@ -269,7 +280,7 @@ async def promote_model(
         }
     except Exception as e:
         logger.error(f"モデル昇格エラー: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="モデル昇格中にエラーが発生しました") from e
 
 
 @router.get(
@@ -292,7 +303,8 @@ async def get_drift_report(
         with open(reports[-1], encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
-        raise HTTPException(status_code=500, detail=f"レポート読み込みエラー: {e}") from e
+        logger.error(f"ドリフトレポート読み込みエラー: {e}")
+        raise HTTPException(status_code=500, detail="ドリフトレポートの読み込みに失敗しました") from e
 
 
 @router.get(

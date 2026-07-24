@@ -288,11 +288,20 @@ class MLAnomalyDetector:
         else:
             trend = "stable"
 
+        # 直近2ヶ月の前月比変化率
+        mom_change_pct = 0.0
+        if len(costs) >= 2:
+            prev = costs[-2]
+            last = costs[-1]
+            if prev != 0:
+                mom_change_pct = round((last - prev) / abs(prev) * 100, 1)
+
         return {
             "trend": trend,
             "monthly_change_rate_pct": round(monthly_change_rate, 2),
             "avg_monthly_cost_usd": round(avg_cost, 2),
             "volatility_pct": round(volatility, 2),
+            "mom_change_pct": mom_change_pct,
         }
 
     # ----------------------------------------------------------

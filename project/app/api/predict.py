@@ -65,7 +65,7 @@ class BoatInfo(BaseModel):
     racer_name: str | None = Field(None, description="選手名")
     racer_rank: Literal["A1", "A2", "B1", "B2"] = Field("B1", description="選手ランク (A1/A2/B1/B2)")
     win_rate: float = Field(0.0, ge=0.0, le=100.0, description="全体勝率 (%)")
-    motor_score: float = Field(50.0, ge=0.0, le=100.0, description="モーター性能スコア")
+    motor_score: float = Field(50.0, le=100.0, description="モーター性能スコア")
     course_win_rate: float = Field(0.0, ge=0.0, le=100.0, description="コース別勝率 (%)")
     start_timing: float = Field(0.18, ge=0.0, le=1.0, description="スタートタイミング (秒)")
     motor_2rate: float = Field(30.0, ge=0.0, le=100.0, description="モーター2連対率 (%)")
@@ -78,9 +78,6 @@ class WeatherInfo(BaseModel):
     condition: Literal["晴", "曇", "雨"] = Field("晴", description="天候 (晴/曇/雨)")
     wind_speed: float = Field(0.0, ge=0.0, le=60.0, description="風速 (m/s)")
     water_temp: float = Field(20.0, ge=-5.0, le=45.0, description="水温 (℃)")
-
-
-_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 class RaceRequest(BaseModel):

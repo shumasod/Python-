@@ -25,6 +25,16 @@ from app.utils.logger import get_logger, sanitize_for_log
 logger = get_logger(__name__)
 router = APIRouter()
 
+_RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+
+
+def _validate_race_id(race_id: str) -> None:
+    if not _RACE_ID_RE.match(race_id):
+        raise HTTPException(
+            status_code=422,
+            detail="race_id は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）",
+        )
+
 RESULT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 _RACE_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")

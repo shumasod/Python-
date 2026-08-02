@@ -700,7 +700,7 @@ class TestTotalStorage:
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
 
-class TestConnectionRatio:
+class TestMemoryPressure:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
         _instance_store.clear()
@@ -712,22 +712,22 @@ class TestConnectionRatio:
         _instance_store.clear()
         _metrics_store.clear()
 
-    def test_connection_ratio_200(self):
-        assert self._client.get("/api/v1/rds/test-instance-001/connection-ratio").status_code == 200
+    def test_memory_pressure_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 200
 
-    def test_connection_ratio_structure(self):
-        data = self._client.get("/api/v1/rds/test-instance-001/connection-ratio").json()
-        for k in ("instance_id", "avg_connections", "max_connections_observed", "peak_ratio"):
+    def test_memory_pressure_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        for k in ("instance_id", "total_memory_gb", "free_memory_avg_gb",
+                  "used_memory_gb", "memory_pressure_pct", "pressure_level"):
             assert k in data
 
-    def test_connection_ratio_peak_gte_one(self):
-        data = self._client.get("/api/v1/rds/test-instance-001/connection-ratio").json()
-        if data["avg_connections"] > 0:
-            assert data["peak_ratio"] >= 1.0
+    def test_memory_pressure_level_valid(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        assert data["pressure_level"] in ("normal", "high", "critical")
 
-    def test_connection_ratio_instance_404(self):
-        assert self._client.get("/api/v1/rds/nonexistent/connection-ratio").status_code == 404
+    def test_memory_pressure_instance_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/memory-pressure").status_code == 404
 
-    def test_connection_ratio_metrics_404(self):
+    def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
-        assert self._client.get("/api/v1/rds/test-instance-001/connection-ratio").status_code == 404
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404

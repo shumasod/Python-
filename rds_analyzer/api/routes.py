@@ -980,24 +980,33 @@ async def total_storage_summary() -> dict:
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
 
 @router.get(
-    "/rds/{instance_id}/connection-ratio",
+    "/rds/{instance_id}/memory-pressure",
     response_model=dict,
     tags=["metrics"],
-    summary="インスタンスの接続数比率を取得",
+    summary="インスタンスのメモリプレッシャーを取得",
 )
-async def connection_ratio(instance_id: str) -> dict:
-    """現在の接続数を最大接続数上限で割った比率を返す。"""
+async def memory_pressure(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+) -> dict:
+    """フリーメモリから総メモリに対する使用率とプレッシャーレベルを返す。"""
     instance = _instance_store.get(instance_id)
     if instance is None:
         raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
     metrics = _metrics_store.get(instance_id)
     if metrics is None:
         raise HTTPException(status_code=404, detail=f"Metrics for {instance_id!r} not found")
-    avg_conn = metrics.database_connections.avg
-    max_conn = metrics.database_connections.max
+    specs = cost_analyzer.get_instance_specs(instance.instance_class)
+    total_memory_gb = specs.get("memory_gb", 8)
+    free_avg_gb = metrics.freeable_memory_bytes.avg / (1024 ** 3)
+    used_gb = max(0.0, total_memory_gb - free_avg_gb)
+    pressure_pct = round(used_gb / total_memory_gb * 100, 1) if total_memory_gb > 0 else 0.0
+    level = "critical" if pressure_pct >= 90 else ("high" if pressure_pct >= 75 else "normal")
     return {
         "instance_id": instance_id,
-        "avg_connections": round(avg_conn, 2),
-        "max_connections_observed": round(max_conn, 2),
-        "peak_ratio": round(max_conn / avg_conn, 3) if avg_conn > 0 else 0.0,
+        "total_memory_gb": total_memory_gb,
+        "free_memory_avg_gb": round(free_avg_gb, 2),
+        "used_memory_gb": round(used_gb, 2),
+        "memory_pressure_pct": pressure_pct,
+        "pressure_level": level,
     }

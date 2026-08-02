@@ -700,7 +700,7 @@ class TestTotalStorage:
         data = self._client.get("/api/v1/rds/total-storage").json()
         assert data["total_instances"] == 0 and data["total_allocated_storage_gb"] == 0
 
-class TestRecommendationsByType:
+class TestMemoryPressure:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):
         _instance_store.clear()
@@ -712,24 +712,22 @@ class TestRecommendationsByType:
         _instance_store.clear()
         _metrics_store.clear()
 
-    def test_by_type_200(self):
-        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").status_code == 200
+    def test_memory_pressure_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 200
 
-    def test_by_type_structure(self):
-        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
-        assert "instance_id" in data
-        assert "total" in data
-        assert "by_type" in data
+    def test_memory_pressure_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        for k in ("instance_id", "total_memory_gb", "free_memory_avg_gb",
+                  "used_memory_gb", "memory_pressure_pct", "pressure_level"):
+            assert k in data
 
-    def test_by_type_totals_match(self):
-        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
-        assert data["total"] == sum(data["by_type"].values())
+    def test_memory_pressure_level_valid(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/memory-pressure").json()
+        assert data["pressure_level"] in ("normal", "high", "critical")
 
-    def test_by_type_404(self):
-        assert self._client.get("/api/v1/rds/nonexistent/recommendations/by-type").status_code == 404
+    def test_memory_pressure_instance_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/memory-pressure").status_code == 404
 
-    def test_by_type_no_metrics(self):
+    def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
-        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/by-type").json()
-        assert data["total"] == 0
-        assert data["by_type"] == {}
+        assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404

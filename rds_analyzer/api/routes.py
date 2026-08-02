@@ -980,29 +980,33 @@ async def total_storage_summary() -> dict:
             "total_snapshot_storage_gb": round(total_snapshot_gb, 2), "avg_allocated_storage_gb": avg_allocated_gb}
 
 @router.get(
-    "/rds/{instance_id}/recommendations/by-type",
+    "/rds/{instance_id}/memory-pressure",
     response_model=dict,
-    tags=["recommendations"],
-    summary="推奨事項をタイプ別に取得",
+    tags=["metrics"],
+    summary="インスタンスのメモリプレッシャーを取得",
 )
-async def recommendations_by_type(
+async def memory_pressure(
     instance_id: str,
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
-    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
-    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
 ) -> dict:
-    """推奨事項をタイプ（rightsizing/storage_type_change等）でグループ化して返す。"""
+    """フリーメモリから総メモリに対する使用率とプレッシャーレベルを返す。"""
     instance = _instance_store.get(instance_id)
     if instance is None:
         raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
     metrics = _metrics_store.get(instance_id)
     if metrics is None:
-        return {"instance_id": instance_id, "total": 0, "by_type": {}}
-    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
-    perf_result = perf_analyzer.analyze(instance, metrics)
-    recs = rec_engine.generate(instance, breakdown, perf_result)
-    by_type: dict[str, int] = {}
-    for r in recs:
-        t = r.type.value if hasattr(r.type, "value") else str(r.type)
-        by_type[t] = by_type.get(t, 0) + 1
-    return {"instance_id": instance_id, "total": len(recs), "by_type": by_type}
+        raise HTTPException(status_code=404, detail=f"Metrics for {instance_id!r} not found")
+    specs = cost_analyzer.get_instance_specs(instance.instance_class)
+    total_memory_gb = specs.get("memory_gb", 8)
+    free_avg_gb = metrics.freeable_memory_bytes.avg / (1024 ** 3)
+    used_gb = max(0.0, total_memory_gb - free_avg_gb)
+    pressure_pct = round(used_gb / total_memory_gb * 100, 1) if total_memory_gb > 0 else 0.0
+    level = "critical" if pressure_pct >= 90 else ("high" if pressure_pct >= 75 else "normal")
+    return {
+        "instance_id": instance_id,
+        "total_memory_gb": total_memory_gb,
+        "free_memory_avg_gb": round(free_avg_gb, 2),
+        "used_memory_gb": round(used_gb, 2),
+        "memory_pressure_pct": pressure_pct,
+        "pressure_level": level,
+    }

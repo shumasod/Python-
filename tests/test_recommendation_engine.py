@@ -224,3 +224,75 @@ class TestImpactSummary:
         recs = engine.generate_recommendations(inst, perf, bd)
         ids = [r.recommendation_id for r in recs]
         assert len(ids) == len(set(ids))
+
+
+class TestReservedInstanceRecommendation:
+    """リザーブドインスタンス推奨のテスト"""
+
+    def test_high_cost_instance_returns_recommendation(self, engine):
+        """月額コストが $30 超のインスタンスはリザーブドインスタンス推奨を返す"""
+        # db.m5.large は月額 $30 超のコストが想定される
+        inst = make_instance(instance_class="db.m5.large", multi_az=False, storage_type=StorageType.GP3)
+        perf = make_perf(inst, cpu_avg=40.0, cpu_max=60.0)
+        bd = make_cost_breakdown(inst)
+        recs = engine.generate_recommendations(inst, perf, bd)
+        types = [r.type for r in recs]
+        assert RecommendationType.COST_OPTIMIZATION in types
+
+    def test_low_cost_instance_returns_none(self, engine):
+        """月額コストが $30 以下のインスタンスはリザーブドインスタンス推奨を返さない"""
+        from rds_analyzer.models.costs import CostBreakdown
+
+        # compute_cost_usd を $30 以下に設定した低コストの CostBreakdown を直接作成
+        low_breakdown = CostBreakdown(compute_cost_usd=20.0, storage_cost_usd=5.0)
+        inst = make_instance(instance_class="db.t3.micro", multi_az=False, storage_type=StorageType.GP3)
+        result = engine._recommend_reserved_instance(inst, low_breakdown)
+        assert result is None
+
+    def test_recommendation_includes_1yr_and_3yr_savings(self, engine):
+        """推奨内容に1年・3年の節約額が含まれる"""
+        from rds_analyzer.models.costs import CostBreakdown
+
+        high_breakdown = CostBreakdown(compute_cost_usd=200.0, storage_cost_usd=10.0)
+        inst = make_instance(instance_class="db.m5.xlarge", multi_az=False, storage_type=StorageType.GP3)
+        rec = engine._recommend_reserved_instance(inst, high_breakdown)
+        assert rec is not None
+        # 1年節約額と3年節約額が説明文に含まれることを確認
+        assert "1年" in rec.description
+        assert "3年" in rec.description
+        # 推定値の注記が含まれることを確認
+        assert "推定" in rec.description
+
+    def test_estimated_monthly_savings_is_35_pct_of_instance_cost(self, engine):
+        """estimated_monthly_savings_usd がインスタンスコストの 35% であることを確認"""
+        from rds_analyzer.models.costs import CostBreakdown
+
+        compute_cost = 150.0
+        breakdown = CostBreakdown(compute_cost_usd=compute_cost, storage_cost_usd=10.0)
+        inst = make_instance(instance_class="db.r5.large", multi_az=False, storage_type=StorageType.GP3)
+        rec = engine._recommend_reserved_instance(inst, breakdown)
+        assert rec is not None
+        expected_savings = compute_cost * 0.35
+        assert abs(rec.estimated_monthly_savings_usd - expected_savings) < 0.001
+
+    def test_high_annual_savings_gets_high_priority(self, engine):
+        """年間節約額 $500 以上は HIGH 優先度になる"""
+        from rds_analyzer.models.costs import CostBreakdown
+
+        # monthly_1yr_savings = 200 * 0.35 = 70, annual = 840 >= 500 → HIGH
+        breakdown = CostBreakdown(compute_cost_usd=200.0, storage_cost_usd=10.0)
+        inst = make_instance(instance_class="db.m5.xlarge", multi_az=False, storage_type=StorageType.GP3)
+        rec = engine._recommend_reserved_instance(inst, breakdown)
+        assert rec is not None
+        assert rec.priority == RecommendationPriority.HIGH
+
+    def test_low_annual_savings_gets_medium_priority(self, engine):
+        """年間節約額 $500 未満は MEDIUM 優先度になる"""
+        from rds_analyzer.models.costs import CostBreakdown
+
+        # monthly_1yr_savings = 50 * 0.35 = 17.5, annual = 210 < 500 → MEDIUM
+        breakdown = CostBreakdown(compute_cost_usd=50.0, storage_cost_usd=5.0)
+        inst = make_instance(instance_class="db.t3.medium", multi_az=False, storage_type=StorageType.GP3)
+        rec = engine._recommend_reserved_instance(inst, breakdown)
+        assert rec is not None
+        assert rec.priority == RecommendationPriority.MEDIUM

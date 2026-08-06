@@ -31,7 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from app.config import AB_LOG_DIR
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
@@ -167,7 +167,7 @@ class ABTestRouter:
             "true_winner": None,
         }
 
-        logger.debug(f"A/B選択: {variant.name} (race_id={race_id})")
+        logger.debug(f"A/B選択: {variant.name} (race_id={sanitize_for_log(race_id)})")
         return variant.name, proba
 
     def record_result(self, race_id: str, true_winner: int) -> None:
@@ -179,7 +179,7 @@ class ABTestRouter:
             true_winner: 実際の1着艇番（1〜6）
         """
         if race_id not in self._race_log:
-            logger.warning(f"predict() が呼ばれていないレースです: {race_id}")
+            logger.warning(f"predict() が呼ばれていないレースです: {sanitize_for_log(race_id)}")
             return
 
         log = self._race_log[race_id]

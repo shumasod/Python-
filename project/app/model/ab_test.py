@@ -116,7 +116,7 @@ class ABTestRouter:
             選択された VariantRecord
         """
         # ハッシュ値を 0.0〜1.0 に変換
-        h = int(hashlib.md5(race_id.encode()).hexdigest(), 16)
+        h = int(hashlib.sha256(race_id.encode()).hexdigest(), 16)
         normalized = (h % 10000) / 10000.0
 
         # 重みを正規化して累積区間を作成

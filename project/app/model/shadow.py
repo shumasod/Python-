@@ -26,7 +26,7 @@ from typing import Any
 import numpy as np
 
 from app.config import SHADOW_LOG_DIR
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
@@ -71,7 +71,7 @@ class ShadowRunner:
 
     def _should_run(self, race_id: str) -> bool:
         """決定論的サンプリング: race_id のハッシュでサンプリング判定"""
-        h = int(hashlib.md5(race_id.encode()).hexdigest(), 16)
+        h = int(hashlib.sha256(race_id.encode()).hexdigest(), 16)
         return (h % 10000) / 10000.0 < self.sample_rate
 
     @staticmethod
@@ -134,13 +134,13 @@ class ShadowRunner:
             self._save_record(record)
 
             logger.debug(
-                f"[Shadow] race={race_id} match={record.top1_match} "
+                f"[Shadow] race={sanitize_for_log(race_id)} match={record.top1_match} "
                 f"KL={kl:.4f} latency={latency_ms:.1f}ms"
             )
             return record
 
         except Exception as e:
-            logger.error(f"[Shadow] 実行エラー race={race_id}: {e}")
+            logger.error(f"[Shadow] 実行エラー race={sanitize_for_log(race_id)}: {e}")
             return None
 
     def get_stats(self) -> dict[str, Any]:

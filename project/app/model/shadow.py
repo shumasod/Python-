@@ -19,6 +19,7 @@
 """
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,8 @@ from app.config import SHADOW_LOG_DIR
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 @dataclass
@@ -60,6 +63,10 @@ class ShadowRunner:
         sample_rate: float = 0.1,
         name: str = "shadow",
     ) -> None:
+        if not _SAFE_NAME_RE.match(name):
+            raise ValueError(
+                f"name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）: {name!r}"
+            )
         self.shadow_model = shadow_model
         self.sample_rate = sample_rate
         self.name = name

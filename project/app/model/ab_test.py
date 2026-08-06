@@ -98,6 +98,8 @@ class ABTestRouter:
             model: 予測モデル（predict_proba メソッドを持つ）
             traffic_weight: トラフィック配分の重み（合計は自動正規化）
         """
+        if traffic_weight <= 0:
+            raise ValueError(f"traffic_weight は正の値で指定してください: {traffic_weight}")
         self._variants.append(VariantRecord(
             name=name,
             model=model,

@@ -60,6 +60,8 @@ class ShadowRunner:
         sample_rate: float = 0.1,
         name: str = "shadow",
     ) -> None:
+        if not 0.0 <= sample_rate <= 1.0:
+            raise ValueError(f"sample_rate は 0.0〜1.0 の範囲で指定してください: {sample_rate}")
         self.shadow_model = shadow_model
         self.sample_rate = sample_rate
         self.name = name

@@ -27,6 +27,7 @@
 """
 import json
 import pickle
+import re
 import shutil
 from datetime import date
 from pathlib import Path
@@ -34,9 +35,11 @@ from typing import Any
 
 import lightgbm as lgb
 
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
+
+_SAFE_VERSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
 MODEL_DIR = Path("models")
 REGISTRY_FILE = MODEL_DIR / "registry.json"
@@ -128,7 +131,7 @@ class ModelRegistry:
         })
         self._save_registry()
 
-        logger.info(f"モデルを登録しました: {version}")
+        logger.info(f"モデルを登録しました: {sanitize_for_log(version)}")
         return version
 
     # ---- 本番昇格 ----
@@ -144,6 +147,10 @@ class ModelRegistry:
         Raises:
             FileNotFoundError: バージョンファイルが存在しない場合
         """
+        if not _SAFE_VERSION_RE.match(version):
+            raise ValueError(
+                f"version は英数字・アンダースコア・ハイフンのみ使用できます: {version!r}"
+            )
         src = MODEL_DIR / "versions" / f"{version}.pkl"
         if not src.exists():
             raise FileNotFoundError(f"バージョンが見つかりません: {src}")
@@ -177,7 +184,7 @@ class ModelRegistry:
         except Exception:
             pass
 
-        logger.info(f"本番モデルを更新しました: {version}")
+        logger.info(f"本番モデルを更新しました: {sanitize_for_log(version)}")
 
     # ---- ロード ----
 
@@ -196,12 +203,16 @@ class ModelRegistry:
         Returns:
             LGBMClassifier
         """
+        if not _SAFE_VERSION_RE.match(version):
+            raise ValueError(
+                f"version は英数字・アンダースコア・ハイフンのみ使用できます: {version!r}"
+            )
         path = MODEL_DIR / "versions" / f"{version}.pkl"
         if not path.exists():
             raise FileNotFoundError(f"バージョンが見つかりません: {path}")
         with open(path, "rb") as f:
             model = pickle.load(f)
-        logger.info(f"バージョンをロードしました: {version}")
+        logger.info(f"バージョンをロードしました: {sanitize_for_log(version)}")
         return model
 
     # ---- 一覧・情報表示 ----

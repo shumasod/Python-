@@ -31,6 +31,9 @@ from .schemas import (
     BulkRegisterRequest,
     BulkRegisterResponse,
     CompareInstancesRequest,
+    CostHistoryEntry,
+    CostHistoryRequest,
+    CostHistoryResponse,
     CostSummaryResponse,
     CoveringIndexRecommendationResponse,
     ExistingIndexRequest,
@@ -621,17 +624,46 @@ def _build_status_summary(perf: PerformanceAnalysisResult) -> str:
 )
 async def add_cost_history(
     instance_id: str,
-    history: list[dict],
+    body: CostHistoryRequest,
 ) -> dict:
     """
     月次コスト履歴を登録する（コスト予測 API で使用）
 
-    body: [{"month": "2024-01", "cost_usd": 450.0}, ...]
+    既存の履歴は上書きされます。
     """
     get_instance_or_404(instance_id)
-    entries = [(item["month"], float(item["cost_usd"])) for item in history]
+    entries = [(e.month, e.cost_usd) for e in body.entries]
     _cost_history_store[instance_id] = sorted(entries, key=lambda x: x[0])
     return {"message": f"{len(entries)} 件の履歴を登録しました"}
+
+
+@router.get(
+    "/rds/{instance_id}/cost-history",
+    response_model=CostHistoryResponse,
+    tags=["analysis"],
+    summary="月次コスト履歴を取得",
+)
+async def get_cost_history(instance_id: str) -> CostHistoryResponse:
+    """登録済みの月次コスト履歴を返す"""
+    get_instance_or_404(instance_id)
+    raw = _cost_history_store.get(instance_id, [])
+    return CostHistoryResponse(
+        instance_id=instance_id,
+        total_months=len(raw),
+        entries=[CostHistoryEntry(month=m, cost_usd=c) for m, c in raw],
+    )
+
+
+@router.delete(
+    "/rds/{instance_id}/cost-history",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["analysis"],
+    summary="月次コスト履歴を削除",
+)
+async def delete_cost_history(instance_id: str) -> None:
+    """登録済みの月次コスト履歴を全件削除する"""
+    get_instance_or_404(instance_id)
+    _cost_history_store.pop(instance_id, None)
 
 
 @router.get(
@@ -750,8 +782,6 @@ async def generate_report(
 async def analyze_covering_indexes(
     instance_id: str,
     body: IndexAnalysisApiRequest,
-    ratio_medium: float = Query(default=10.0, ge=1.0, description="medium 優先度のスキャン比率閾値"),
-    min_exec_count: float = Query(default=0.0, ge=0.0, description="分析対象とする最小実行頻度（1日あたり）"),
 ) -> IndexAnalysisResponse:
     """
     クエリパターンと既存インデックスを分析してカバリングインデックスを推奨する
@@ -784,7 +814,7 @@ async def analyze_covering_indexes(
         ],
     )
 
-    analyzer = CoveringIndexAnalyzer(ratio_medium=ratio_medium, min_exec_count_per_day=min_exec_count)
+    analyzer = CoveringIndexAnalyzer()
     result = analyzer.analyze(request)
 
     # 分析結果をキャッシュ

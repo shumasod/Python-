@@ -188,23 +188,80 @@ class TestSummary:
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api import routes as _routes
+        _routes._cost_history_store.clear()
         client.post("/api/v1/rds", json=sample_instance_payload)
 
+    def _history_body(self, n: int = 6) -> dict:
+        return {
+            "entries": [
+                {"month": f"2024-{i:02d}", "cost_usd": 400.0 + i * 10}
+                for i in range(1, n + 1)
+            ]
+        }
+
     def test_post_cost_history_success(self, client):
-        history = [
-            {"month": f"2024-{i:02d}", "cost_usd": 400.0 + i * 10}
-            for i in range(1, 7)
-        ]
         resp = client.post(
-            "/api/v1/rds/test-api-mysql-001/cost-history", json=history
+            "/api/v1/rds/test-api-mysql-001/cost-history",
+            json=self._history_body(6),
         )
         assert resp.status_code == 200
         assert "6 件" in resp.json()["message"]
 
     def test_post_cost_history_not_found(self, client):
         resp = client.post(
-            "/api/v1/rds/no-such-instance/cost-history", json=[]
+            "/api/v1/rds/no-such-instance/cost-history",
+            json={"entries": [{"month": "2024-01", "cost_usd": 100.0}]},
         )
+        assert resp.status_code == 404
+
+    def test_post_cost_history_invalid_month_format(self, client):
+        body = {"entries": [{"month": "Jan-2024", "cost_usd": 100.0}]}
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/cost-history", json=body
+        )
+        assert resp.status_code == 422
+
+    def test_post_cost_history_negative_cost(self, client):
+        body = {"entries": [{"month": "2024-01", "cost_usd": -10.0}]}
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/cost-history", json=body
+        )
+        assert resp.status_code == 422
+
+    def test_get_cost_history_empty(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["instance_id"] == "test-api-mysql-001"
+        assert data["total_months"] == 0
+        assert data["entries"] == []
+
+    def test_get_cost_history_after_post(self, client):
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/cost-history",
+            json=self._history_body(3),
+        )
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_months"] == 3
+        assert len(data["entries"]) == 3
+        assert data["entries"][0]["month"] == "2024-01"
+
+    def test_delete_cost_history(self, client):
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/cost-history",
+            json=self._history_body(4),
+        )
+        resp = client.delete("/api/v1/rds/test-api-mysql-001/cost-history")
+        assert resp.status_code == 204
+        # GET returns empty after delete
+        resp2 = client.get("/api/v1/rds/test-api-mysql-001/cost-history")
+        assert resp2.json()["total_months"] == 0
+
+    def test_delete_cost_history_not_found(self, client):
+        resp = client.delete("/api/v1/rds/no-such-instance/cost-history")
         assert resp.status_code == 404
 
 
@@ -212,10 +269,12 @@ class TestForecast:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
         client.post("/api/v1/rds", json=sample_instance_payload)
-        history = [
-            {"month": f"2024-{i:02d}", "cost_usd": 400.0 + i * 20}
-            for i in range(1, 7)
-        ]
+        history = {
+            "entries": [
+                {"month": f"2024-{i:02d}", "cost_usd": 400.0 + i * 20}
+                for i in range(1, 7)
+            ]
+        }
         client.post(
             "/api/v1/rds/test-api-mysql-001/cost-history", json=history
         )

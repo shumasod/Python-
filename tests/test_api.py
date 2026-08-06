@@ -208,6 +208,60 @@ class TestCostHistory:
         assert resp.status_code == 404
 
 
+class TestCostHistoryStats:
+    """GET /rds/{id}/cost-history/stats エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api import routes as _routes
+        _routes._cost_history_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_stats_with_history(self, client):
+        history = [
+            {"month": f"2024-{i:02d}", "cost_usd": float(400 + i * 10)}
+            for i in range(1, 7)
+        ]
+        client.post("/api/v1/rds/test-api-mysql-001/cost-history", json=history)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_months"] == 6
+        assert data["min_cost_usd"] == 410.0
+        assert data["max_cost_usd"] == 460.0
+
+    def test_stats_no_history_returns_nulls(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_months"] == 0
+        assert data["avg_cost_usd"] is None
+
+    def test_stats_has_first_and_last_month(self, client):
+        history = [
+            {"month": "2024-01", "cost_usd": 400.0},
+            {"month": "2024-06", "cost_usd": 500.0},
+        ]
+        client.post("/api/v1/rds/test-api-mysql-001/cost-history", json=history)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/stats")
+        data = resp.json()
+        assert data["first_month"] == "2024-01"
+        assert data["last_month"] == "2024-06"
+
+    def test_stats_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such/cost-history/stats")
+        assert resp.status_code == 404
+
+    def test_stats_total_cost_is_sum(self, client):
+        history = [
+            {"month": "2024-01", "cost_usd": 100.0},
+            {"month": "2024-02", "cost_usd": 200.0},
+        ]
+        client.post("/api/v1/rds/test-api-mysql-001/cost-history", json=history)
+        resp = client.get("/api/v1/rds/test-api-mysql-001/cost-history/stats")
+        assert resp.json()["total_cost_usd"] == 300.0
+
+
 class TestForecast:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

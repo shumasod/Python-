@@ -635,6 +635,48 @@ async def add_cost_history(
 
 
 @router.get(
+    "/rds/{instance_id}/cost-history/stats",
+    response_model=dict,
+    tags=["analysis"],
+    summary="月次コスト履歴の統計サマリーを取得",
+)
+async def get_cost_history_stats(instance_id: str) -> dict:
+    """
+    登録済み月次コスト履歴の統計サマリーを返す。
+
+    - 平均・最大・最小・合計コスト
+    - 最初/最後の月
+    - 先に POST /rds/{id}/cost-history でデータを登録してください
+    """
+    get_instance_or_404(instance_id)
+    history = _cost_history_store.get(instance_id, [])
+    if not history:
+        return {
+            "instance_id": instance_id,
+            "total_months": 0,
+            "avg_cost_usd": None,
+            "max_cost_usd": None,
+            "min_cost_usd": None,
+            "total_cost_usd": None,
+            "first_month": None,
+            "last_month": None,
+        }
+
+    costs = [c for _, c in history]
+    months = [m for m, _ in history]
+    return {
+        "instance_id": instance_id,
+        "total_months": len(history),
+        "avg_cost_usd": round(sum(costs) / len(costs), 2),
+        "max_cost_usd": round(max(costs), 2),
+        "min_cost_usd": round(min(costs), 2),
+        "total_cost_usd": round(sum(costs), 2),
+        "first_month": min(months),
+        "last_month": max(months),
+    }
+
+
+@router.get(
     "/rds/{instance_id}/forecast",
     response_model=dict,
     tags=["analysis"],

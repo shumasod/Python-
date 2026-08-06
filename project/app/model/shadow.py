@@ -71,7 +71,7 @@ class ShadowRunner:
 
     def _should_run(self, race_id: str) -> bool:
         """決定論的サンプリング: race_id のハッシュでサンプリング判定"""
-        h = int(hashlib.md5(race_id.encode()).hexdigest(), 16)
+        h = int(hashlib.sha256(race_id.encode()).hexdigest(), 16)
         return (h % 10000) / 10000.0 < self.sample_rate
 
     @staticmethod

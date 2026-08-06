@@ -4,6 +4,7 @@ LightGBMを使った競艇1着予測モデルの学習・保存を担当する
 """
 import json
 import pickle
+import re
 from pathlib import Path
 
 import lightgbm as lgb
@@ -13,12 +14,14 @@ from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import StratifiedKFold
 
 from app.model.features import FEATURE_COLUMNS, N_BOATS
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
 # モデル保存ディレクトリ
 MODEL_DIR = Path("models")
+
+_SAFE_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 # LightGBM ハイパーパラメータ
 LGBM_PARAMS = {
@@ -60,7 +63,7 @@ def train_model(
     Returns:
         (学習済みモデル, 評価メトリクス辞書) のタプル
     """
-    logger.info(f"モデル学習を開始します: {model_name}")
+    logger.info(f"モデル学習を開始します: {sanitize_for_log(model_name)}")
 
     # 特徴量・ラベル分離（DataFrameのまま保持して feature_names_in_ を正しく設定）
     X = df[FEATURE_COLUMNS]
@@ -136,6 +139,10 @@ def save_model(
         model_name: 保存ファイル名（拡張子なし）
         metrics: 評価メトリクス辞書（任意）
     """
+    if not _SAFE_MODEL_NAME_RE.match(model_name):
+        raise ValueError(
+            f"model_name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）: {model_name!r}"
+        )
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     model_path = MODEL_DIR / f"{model_name}.pkl"
@@ -163,6 +170,10 @@ def load_model(model_name: str = "boat_race_model") -> lgb.LGBMClassifier:
     Raises:
         FileNotFoundError: モデルファイルが存在しない場合
     """
+    if not _SAFE_MODEL_NAME_RE.match(model_name):
+        raise ValueError(
+            f"model_name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）: {model_name!r}"
+        )
     model_path = MODEL_DIR / f"{model_name}.pkl"
     if not model_path.exists():
         raise FileNotFoundError(

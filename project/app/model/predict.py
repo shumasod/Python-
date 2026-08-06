@@ -9,7 +9,7 @@ import numpy as np
 
 from app.model.features import N_BOATS, build_features
 from app.model.train import load_model
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
 
@@ -41,7 +41,7 @@ def predict_race(race_data: dict[str, Any]) -> dict[str, Any]:
             - trifecta: 三連単上位10点 [{"combination": [1,2,3], "probability": 0.05}, ...]
             - recommendations: 買い目推奨リスト（期待値 > 1 の組み合わせ）
     """
-    logger.info(f"予測開始: race_id={race_data.get('race_id', 'unknown')}")
+    logger.info(f"予測開始: race_id={sanitize_for_log(race_data.get('race_id', 'unknown'))}")
 
     # 特徴量行列を構築（shape: 6 × n_features）
     feature_df = build_features(race_data)

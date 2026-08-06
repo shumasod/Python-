@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from .analyzers.recommendation_engine import Recommendation, RecommendationPriority
+from .analyzers.recommendation_engine import Recommendation, RecommendationPriority, RecommendationType
 from .models.costs import CostBreakdown, CostEfficiencyScore
 from .models.metrics import PerformanceAnalysisResult, PerformanceStatus
 from .models.rds import RDSInstance
@@ -42,6 +42,21 @@ PRIORITY_EMOJI = {
     RecommendationPriority.HIGH: "🟠",
     RecommendationPriority.MEDIUM: "🟡",
     RecommendationPriority.LOW: "⚪",
+}
+
+# 提案種別ごとのセクション見出し（日本語）
+TYPE_LABEL = {
+    RecommendationType.SCALE_UP: "スケールアップ",
+    RecommendationType.SCALE_DOWN: "スケールダウン（コスト最適化）",
+    RecommendationType.STORAGE_TYPE_CHANGE: "ストレージ最適化",
+    RecommendationType.ADD_READ_REPLICA: "読み取り負荷分散",
+    RecommendationType.AURORA_MIGRATION: "Aurora 移行",
+    RecommendationType.AURORA_SERVERLESS: "Aurora Serverless 化",
+    RecommendationType.ENABLE_MULTI_AZ: "可用性向上",
+    RecommendationType.OPTIMIZE_BACKUP: "バックアップ最適化",
+    RecommendationType.UPGRADE_GRAVITON: "Graviton インスタンス移行",
+    RecommendationType.REDUCE_CONNECTIONS: "コネクション管理",
+    RecommendationType.ADD_COVERING_INDEX: "インデックス最適化",
 }
 
 
@@ -221,23 +236,33 @@ class ReportGenerator:
             max(0, r.estimated_monthly_savings_usd) for r in recommendations
         )
 
+        # 提案種別でグループ化
+        from collections import defaultdict
+        groups: dict[RecommendationType, list[Recommendation]] = defaultdict(list)
+        for rec in recommendations:
+            groups[rec.type].append(rec)
+
         recs_md = ""
-        for i, rec in enumerate(recommendations, 1):
-            priority_emoji = PRIORITY_EMOJI[rec.priority]
-            savings_str = (
-                f"💰 ${rec.estimated_monthly_savings_usd:.1f}/月 節約"
-                if rec.estimated_monthly_savings_usd > 0
-                else f"📈 ${abs(rec.estimated_monthly_savings_usd):.1f}/月 追加コスト"
-                if rec.estimated_monthly_savings_usd < 0
-                else "効果: パフォーマンス改善"
-            )
+        item_num = 1
+        for rec_type, group_recs in groups.items():
+            group_label = TYPE_LABEL.get(rec_type, rec_type.value)
+            recs_md += f"\n### カテゴリ: {group_label}\n"
+            for rec in group_recs:
+                priority_emoji = PRIORITY_EMOJI[rec.priority]
+                savings_str = (
+                    f"💰 ${rec.estimated_monthly_savings_usd:.1f}/月 節約"
+                    if rec.estimated_monthly_savings_usd > 0
+                    else f"📈 ${abs(rec.estimated_monthly_savings_usd):.1f}/月 追加コスト"
+                    if rec.estimated_monthly_savings_usd < 0
+                    else "効果: パフォーマンス改善"
+                )
 
-            steps_md = "\n".join(
-                f"   {j}. {step}" for j, step in enumerate(rec.action_steps, 1)
-            ) if rec.action_steps else ""
+                steps_md = "\n".join(
+                    f"   {j}. {step}" for j, step in enumerate(rec.action_steps, 1)
+                ) if rec.action_steps else ""
 
-            recs_md += f"""
-### {i}. {priority_emoji} {rec.title}
+                recs_md += f"""
+#### {item_num}. {priority_emoji} {rec.title}
 
 - **優先度**: {rec.priority.value.upper()} | **種別**: {rec.type.value}
 - **効果**: {savings_str}
@@ -253,6 +278,7 @@ class ReportGenerator:
 
 {steps_md}
 """
+                item_num += 1
 
         return f"""## 改善提案 ({len(recommendations)} 件)
 

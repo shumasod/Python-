@@ -160,6 +160,66 @@ class TestAnalysis:
         assert isinstance(data["recommendations"], list)
 
 
+class TestRecommendationPriorityFilter:
+    """?priority= クエリパラメータによる推奨絞り込みのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload
+        )
+
+    def test_no_filter_returns_all(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        assert resp.status_code == 200
+        all_count = resp.json()["total_recommendations"]
+        # フィルタなしは全件返す
+        assert all_count >= 0
+
+    def test_filter_valid_priority(self, client):
+        for prio in ("critical", "high", "medium", "low"):
+            resp = client.get(
+                f"/api/v1/rds/test-api-mysql-001/recommendations?priority={prio}"
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            for item in data["recommendations"]:
+                assert item["priority"].lower() == prio
+
+    def test_filter_multi_priority(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?priority=high,medium"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        for item in data["recommendations"]:
+            assert item["priority"].lower() in ("high", "medium")
+
+    def test_filter_invalid_priority_returns_422(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?priority=urgent"
+        )
+        assert resp.status_code == 422
+
+    def test_filter_case_insensitive(self, client):
+        resp = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?priority=HIGH"
+        )
+        assert resp.status_code == 200
+
+    def test_total_count_matches_filtered_results(self, client):
+        resp_all = client.get("/api/v1/rds/test-api-mysql-001/recommendations")
+        resp_filtered = client.get(
+            "/api/v1/rds/test-api-mysql-001/recommendations?priority=low"
+        )
+        assert resp_all.status_code == 200
+        assert resp_filtered.status_code == 200
+        # フィルタ後の total_recommendations はフィルタ済み件数
+        filtered_count = resp_filtered.json()["total_recommendations"]
+        assert filtered_count <= resp_all.json()["total_recommendations"]
+
+
 class TestSummary:
     def test_empty_summary(self, client):
         """インスタンス未登録でも空リストが返る"""

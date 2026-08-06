@@ -16,14 +16,17 @@
 
   proba = ens.predict_proba(X)   # shape: (n_samples, 6)
 """
+import re
 from dataclasses import dataclass
 
 import lightgbm as lgb
 import numpy as np
 
-from app.utils.logger import get_logger
+from app.utils.logger import get_logger, sanitize_for_log
 
 logger = get_logger(__name__)
+
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
 @dataclass
@@ -70,12 +73,18 @@ class EnsemblePredictor:
             weight: 重み（weighted モード時に使用）
             cv_logloss: CV Log Loss（weighted モードで自動重み計算に使用）
         """
+        if not _SAFE_NAME_RE.match(name):
+            raise ValueError(
+                f"name は英数字・アンダースコア・ハイフンのみ使用できます（最大64文字）: {name!r}"
+            )
         if cv_logloss is not None:
             # Log Loss が小さいほど重みを大きく（逆数比例）
             weight = 1.0 / max(cv_logloss, 1e-6)
+        elif weight <= 0:
+            raise ValueError(f"weight は正の値で指定してください: {weight}")
 
         self._models.append(ModelEntry(name=name, model=model, weight=weight, cv_logloss=cv_logloss))
-        logger.info(f"モデルを追加しました: {name} (weight={weight:.4f})")
+        logger.info(f"モデルを追加しました: {sanitize_for_log(name)} (weight={weight:.4f})")
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
@@ -182,7 +191,7 @@ class EnsemblePredictor:
                     cv_logloss=v.get("cv_logloss"),
                 )
             except FileNotFoundError:
-                logger.warning(f"バージョンファイルが見つかりません: {v['version']}")
+                logger.warning(f"バージョンファイルが見つかりません: {sanitize_for_log(v['version'])}")
 
         ensemble.summary()
         return ensemble

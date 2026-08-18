@@ -731,3 +731,30 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestPatchInstanceTags:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_patch_tags_200(self):
+        resp = self._client.patch("/api/v1/rds/test-instance-001/tags", json={"env": "prod"})
+        assert resp.status_code == 200
+
+    def test_patch_tags_merges(self):
+        self._client.put("/api/v1/rds/test-instance-001/tags", json={"env": "dev", "team": "db"})
+        resp = self._client.patch("/api/v1/rds/test-instance-001/tags", json={"env": "prod"})
+        data = resp.json()
+        assert data["tags"]["env"] == "prod"
+        assert data["tags"]["team"] == "db"
+
+    def test_patch_tags_count(self):
+        resp = self._client.patch("/api/v1/rds/test-instance-001/tags", json={"k": "v"})
+        assert resp.json()["tag_count"] >= 1
+
+    def test_patch_tags_404(self):
+        assert self._client.patch("/api/v1/rds/nonexistent/tags", json={"k": "v"}).status_code == 404

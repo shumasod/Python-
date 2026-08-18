@@ -1010,3 +1010,18 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.patch(
+    "/rds/{instance_id}/tags",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスのタグを部分更新（マージ）",
+)
+async def patch_instance_tags(instance_id: str, tags: dict[str, str]) -> dict:
+    """既存タグに指定タグをマージする（既存キーは上書き、未指定キーは保持）。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    merged = {**instance.tags, **tags}
+    _instance_store[instance_id] = instance.model_copy(update={"tags": merged})
+    return {"instance_id": instance_id, "tags": merged, "tag_count": len(merged)}

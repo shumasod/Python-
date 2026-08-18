@@ -1010,3 +1010,21 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/tag-keys",
+    response_model=dict,
+    tags=["instances"],
+    summary="フリートで使用中のタグキー一覧を取得",
+)
+async def fleet_tag_keys() -> dict:
+    """全インスタンスにわたるタグキーの使用状況を集計して返す。"""
+    key_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        for k in instance.tags:
+            key_counts[k] = key_counts.get(k, 0) + 1
+    return {
+        "total_instances": len(_instance_store),
+        "unique_tag_keys": len(key_counts),
+        "tag_keys": key_counts,
+    }

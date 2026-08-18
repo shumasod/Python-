@@ -731,3 +731,31 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestFleetTagKeys:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_tag_keys_200(self):
+        assert self._client.get("/api/v1/rds/fleet/tag-keys").status_code == 200
+
+    def test_tag_keys_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert "total_instances" in data
+        assert "unique_tag_keys" in data
+        assert "tag_keys" in data
+
+    def test_tag_keys_count_consistent(self):
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert data["unique_tag_keys"] == len(data["tag_keys"])
+
+    def test_tag_keys_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert data["unique_tag_keys"] == 0
+        assert data["tag_keys"] == {}

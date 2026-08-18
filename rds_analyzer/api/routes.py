@@ -1010,3 +1010,32 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/{instance_id}/config",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスの設定スナップショットを取得",
+)
+async def instance_config(instance_id: str) -> dict:
+    """インスタンスの全設定パラメータをまとめて返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    engine = instance.engine.value if hasattr(instance.engine, "value") else str(instance.engine)
+    storage_type = instance.storage_type.value if hasattr(instance.storage_type, "value") else str(instance.storage_type)
+    return {
+        "instance_id": instance_id,
+        "engine": engine,
+        "engine_version": instance.engine_version,
+        "instance_class": instance.instance_class,
+        "region": instance.region,
+        "multi_az": instance.multi_az,
+        "storage_type": storage_type,
+        "allocated_storage_gb": instance.allocated_storage_gb,
+        "provisioned_iops": instance.provisioned_iops,
+        "read_replica_count": instance.read_replica_count,
+        "backup_retention_days": instance.backup_retention_days,
+        "snapshot_storage_gb": instance.snapshot_storage_gb,
+        "tags": instance.tags,
+    }

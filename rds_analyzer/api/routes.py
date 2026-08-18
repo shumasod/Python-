@@ -1010,3 +1010,28 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/iops",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のIOPS統計を取得",
+)
+async def fleet_iops_summary() -> dict:
+    """全インスタンスの読み書きIOPSを集計して返す。"""
+    read_avgs, write_avgs = [], []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        read_avgs.append(metrics.read_iops.avg)
+        write_avgs.append(metrics.write_iops.avg)
+    count = len(read_avgs)
+    if count == 0:
+        return {"instances_with_metrics": 0, "fleet_avg_read_iops": 0.0,
+                "fleet_avg_write_iops": 0.0, "fleet_total_iops": 0.0}
+    return {
+        "instances_with_metrics": count,
+        "fleet_avg_read_iops": round(sum(read_avgs) / count, 2),
+        "fleet_avg_write_iops": round(sum(write_avgs) / count, 2),
+        "fleet_total_iops": round(sum(read_avgs) + sum(write_avgs), 2),
+    }

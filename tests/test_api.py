@@ -731,3 +731,34 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestFleetIopsSummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_fleet_iops_200(self):
+        assert self._client.get("/api/v1/rds/fleet/iops").status_code == 200
+
+    def test_fleet_iops_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/iops").json()
+        for k in ("instances_with_metrics", "fleet_avg_read_iops",
+                  "fleet_avg_write_iops", "fleet_total_iops"):
+            assert k in data
+
+    def test_fleet_iops_total_positive(self):
+        data = self._client.get("/api/v1/rds/fleet/iops").json()
+        assert data["fleet_total_iops"] >= 0
+
+    def test_fleet_iops_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/iops").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_total_iops"] == 0.0

@@ -1010,3 +1010,27 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/memory",
+    response_model=dict,
+    tags=["metrics"],
+    summary="フリート全体のメモリ統計を取得",
+)
+async def fleet_memory_summary() -> dict:
+    """全インスタンスのフリーメモリを集計して返す（GB単位）。"""
+    free_avgs = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        free_avgs.append(metrics.freeable_memory_bytes.avg / (1024 ** 3))
+    count = len(free_avgs)
+    if count == 0:
+        return {"instances_with_metrics": 0, "fleet_avg_free_memory_gb": 0.0,
+                "fleet_min_free_memory_gb": 0.0, "fleet_total_free_memory_gb": 0.0}
+    return {
+        "instances_with_metrics": count,
+        "fleet_avg_free_memory_gb": round(sum(free_avgs) / count, 3),
+        "fleet_min_free_memory_gb": round(min(free_avgs), 3),
+        "fleet_total_free_memory_gb": round(sum(free_avgs), 3),
+    }

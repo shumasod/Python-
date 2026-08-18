@@ -1010,3 +1010,23 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/snapshot-summary",
+    response_model=dict,
+    tags=["costs"],
+    summary="フリート全体のスナップショットストレージサマリーを取得",
+)
+async def fleet_snapshot_summary() -> dict:
+    """全インスタンスのスナップショットストレージを集計して返す。"""
+    total = len(_instance_store)
+    snapshot_gbs = [i.snapshot_storage_gb for i in _instance_store.values()]
+    instances_with_snapshots = sum(1 for g in snapshot_gbs if g > 0)
+    total_gb = sum(snapshot_gbs)
+    avg_gb = round(total_gb / total, 2) if total > 0 else 0.0
+    return {
+        "total_instances": total,
+        "instances_with_snapshots": instances_with_snapshots,
+        "total_snapshot_storage_gb": round(total_gb, 2),
+        "avg_snapshot_storage_gb": avg_gb,
+    }

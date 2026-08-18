@@ -1010,3 +1010,30 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/provisioned-iops",
+    response_model=dict,
+    tags=["instances"],
+    summary="プロビジョニングIOPS設定のインスタンス一覧を取得",
+)
+async def fleet_provisioned_iops_instances() -> dict:
+    """provisioned_iopsが設定されたインスタンスを一覧返す。"""
+    provisioned = []
+    total_provisioned_iops = 0
+    for iid, instance in _instance_store.items():
+        if instance.provisioned_iops:
+            st = instance.storage_type.value if hasattr(instance.storage_type, "value") else str(instance.storage_type)
+            provisioned.append({
+                "instance_id": iid,
+                "instance_class": instance.instance_class,
+                "storage_type": st,
+                "provisioned_iops": instance.provisioned_iops,
+            })
+            total_provisioned_iops += instance.provisioned_iops
+    return {
+        "total_instances": len(_instance_store),
+        "provisioned_iops_instances": len(provisioned),
+        "total_provisioned_iops": total_provisioned_iops,
+        "instances": provisioned,
+    }

@@ -1010,3 +1010,43 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/fleet/cost-efficiency-ranking",
+    response_model=dict,
+    tags=["costs"],
+    summary="コスト効率スコア順のインスタンスランキングを取得",
+)
+async def cost_efficiency_ranking(
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> dict:
+    """コスト効率スコアでランク付けしたインスタンス一覧を返す（昇順＝非効率な順）。"""
+    ranked = []
+    for iid, instance in _instance_store.items():
+        metrics = _metrics_store.get(iid)
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        if metrics is not None:
+            avg_cpu = metrics.cpu_utilization.avg
+            avg_iops = metrics.read_iops.avg + metrics.write_iops.avg
+            storage_used_gb = max(
+                0.0, instance.allocated_storage_gb - metrics.free_storage_bytes.avg / (1024 ** 3)
+            )
+            score_obj = cost_analyzer.calculate_efficiency_score(
+                instance, breakdown, avg_cpu, avg_iops, storage_used_gb
+            )
+            score = score_obj.score
+        else:
+            score = 0
+        ranked.append({
+            "instance_id": iid,
+            "instance_class": instance.instance_class,
+            "monthly_cost_usd": round(breakdown.total_cost_usd, 2),
+            "efficiency_score": score,
+        })
+    ranked.sort(key=lambda x: x["efficiency_score"])
+    return {
+        "total_instances": len(_instance_store),
+        "ranking": ranked[:limit],
+    }

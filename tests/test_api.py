@@ -731,3 +731,34 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestCostEfficiencyRanking:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_ranking_200(self):
+        assert self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").status_code == 200
+
+    def test_ranking_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").json()
+        assert "total_instances" in data
+        assert "ranking" in data
+
+    def test_ranking_item_fields(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").json()
+        if data["ranking"]:
+            item = data["ranking"][0]
+            for k in ("instance_id", "instance_class", "monthly_cost_usd", "efficiency_score"):
+                assert k in item
+
+    def test_ranking_limit(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking?limit=1").json()
+        assert len(data["ranking"]) <= 1

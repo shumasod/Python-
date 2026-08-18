@@ -731,3 +731,29 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestInstanceConfig:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_instance_config_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/config").status_code == 200
+
+    def test_instance_config_fields(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/config").json()
+        for k in ("instance_id", "engine", "engine_version", "instance_class",
+                  "region", "multi_az", "storage_type", "allocated_storage_gb",
+                  "backup_retention_days", "tags"):
+            assert k in data
+
+    def test_instance_config_id_matches(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/config").json()
+        assert data["instance_id"] == "test-instance-001"
+
+    def test_instance_config_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/config").status_code == 404

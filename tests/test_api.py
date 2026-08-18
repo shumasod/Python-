@@ -731,3 +731,35 @@ class TestMemoryPressure:
     def test_memory_pressure_metrics_404(self):
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
+
+class TestRecommendationsSavings:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_savings_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").status_code == 200
+
+    def test_savings_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        for k in ("instance_id", "total_recommendations", "total_potential_savings_usd", "top_saving_usd"):
+            assert k in data
+
+    def test_savings_top_lte_total(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        assert data["top_saving_usd"] <= data["total_potential_savings_usd"]
+
+    def test_savings_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/recommendations/savings").status_code == 404
+
+    def test_savings_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        assert data["total_potential_savings_usd"] == 0.0

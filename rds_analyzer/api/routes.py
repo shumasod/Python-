@@ -1010,3 +1010,34 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/{instance_id}/recommendations/savings",
+    response_model=dict,
+    tags=["recommendations"],
+    summary="推奨事項の削減可能コスト合計を取得",
+)
+async def recommendations_savings(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    """全推奨事項の推定月額削減額を集計して返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        return {"instance_id": instance_id, "total_recommendations": 0,
+                "total_potential_savings_usd": 0.0, "top_saving_usd": 0.0}
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recs = rec_engine.generate(instance, breakdown, perf_result)
+    savings = [r.estimated_monthly_savings_usd for r in recs]
+    return {
+        "instance_id": instance_id,
+        "total_recommendations": len(recs),
+        "total_potential_savings_usd": round(sum(savings), 2),
+        "top_saving_usd": round(max(savings), 2) if savings else 0.0,
+    }

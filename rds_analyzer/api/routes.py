@@ -1010,3 +1010,28 @@ async def memory_pressure(
         "memory_pressure_pct": pressure_pct,
         "pressure_level": level,
     }
+
+@router.get(
+    "/rds/{instance_id}/cost-history/summary",
+    response_model=dict,
+    tags=["costs"],
+    summary="コスト履歴のサマリーを取得",
+)
+async def cost_history_summary(instance_id: str) -> dict:
+    """記録済みコスト履歴から傾向サマリーを返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    history = _cost_history_store.get(instance_id, [])
+    if not history:
+        return {"instance_id": instance_id, "months_recorded": 0,
+                "avg_monthly_cost_usd": 0.0, "min_monthly_cost_usd": 0.0,
+                "max_monthly_cost_usd": 0.0, "latest_month": None}
+    costs = [cost for _, cost in history]
+    return {
+        "instance_id": instance_id,
+        "months_recorded": len(history),
+        "avg_monthly_cost_usd": round(sum(costs) / len(costs), 2),
+        "min_monthly_cost_usd": round(min(costs), 2),
+        "max_monthly_cost_usd": round(max(costs), 2),
+        "latest_month": history[-1][0] if history else None,
+    }

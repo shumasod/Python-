@@ -762,3 +762,30 @@ class TestCostEfficiencyRanking:
     def test_ranking_limit(self):
         data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking?limit=1").json()
         assert len(data["ranking"]) <= 1
+class TestFleetSnapshotSummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_snapshot_summary_200(self):
+        assert self._client.get("/api/v1/rds/fleet/snapshot-summary").status_code == 200
+
+    def test_snapshot_summary_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        for k in ("total_instances", "instances_with_snapshots",
+                  "total_snapshot_storage_gb", "avg_snapshot_storage_gb"):
+            assert k in data
+
+    def test_snapshot_instances_lte_total(self):
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        assert data["instances_with_snapshots"] <= data["total_instances"]
+
+    def test_snapshot_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        assert data["total_instances"] == 0
+        assert data["total_snapshot_storage_gb"] == 0.0

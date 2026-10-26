@@ -737,6 +737,11 @@ class TestCostHistorySummary:
     def setup(self, client, sample_instance_payload):
         _instance_store.clear()
         _cost_history_store.clear()
+class TestRecommendationsSavings:
+class TestFleetTagKeys:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
         self._client = client
         client.post("/api/v1/rds", json=sample_instance_payload)
         yield
@@ -759,3 +764,134 @@ class TestCostHistorySummary:
         for k in ("instance_id", "months_recorded", "avg_monthly_cost_usd",
                   "min_monthly_cost_usd", "max_monthly_cost_usd", "latest_month"):
             assert k in data
+
+    def test_tag_keys_200(self):
+        assert self._client.get("/api/v1/rds/fleet/tag-keys").status_code == 200
+
+    def test_tag_keys_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert "total_instances" in data
+        assert "unique_tag_keys" in data
+        assert "tag_keys" in data
+
+    def test_tag_keys_count_consistent(self):
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert data["unique_tag_keys"] == len(data["tag_keys"])
+
+    def test_tag_keys_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/tag-keys").json()
+        assert data["unique_tag_keys"] == 0
+        assert data["tag_keys"] == {}
+class TestInstanceConfig:
+class TestFleetProvisionedIops:
+class TestCostEfficiencyRanking:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_savings_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").status_code == 200
+
+    def test_savings_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        for k in ("instance_id", "total_recommendations", "total_potential_savings_usd", "top_saving_usd"):
+            assert k in data
+
+    def test_savings_top_lte_total(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        assert data["top_saving_usd"] <= data["total_potential_savings_usd"]
+
+    def test_savings_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/recommendations/savings").status_code == 404
+
+    def test_savings_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").json()
+        assert data["total_potential_savings_usd"] == 0.0
+    def test_ranking_200(self):
+        assert self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").status_code == 200
+
+    def test_ranking_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").json()
+        assert "total_instances" in data
+        assert "ranking" in data
+
+    def test_ranking_item_fields(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking").json()
+        if data["ranking"]:
+            item = data["ranking"][0]
+            for k in ("instance_id", "instance_class", "monthly_cost_usd", "efficiency_score"):
+                assert k in item
+
+    def test_ranking_limit(self):
+        data = self._client.get("/api/v1/rds/fleet/cost-efficiency-ranking?limit=1").json()
+        assert len(data["ranking"]) <= 1
+class TestFleetSnapshotSummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_instance_config_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/config").status_code == 200
+
+    def test_instance_config_fields(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/config").json()
+        for k in ("instance_id", "engine", "engine_version", "instance_class",
+                  "region", "multi_az", "storage_type", "allocated_storage_gb",
+                  "backup_retention_days", "tags"):
+            assert k in data
+
+    def test_instance_config_id_matches(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/config").json()
+        assert data["instance_id"] == "test-instance-001"
+
+    def test_instance_config_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/config").status_code == 404
+    def test_provisioned_iops_200(self):
+        assert self._client.get("/api/v1/rds/fleet/provisioned-iops").status_code == 200
+
+    def test_provisioned_iops_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/provisioned-iops").json()
+        for k in ("total_instances", "provisioned_iops_instances",
+                  "total_provisioned_iops", "instances"):
+            assert k in data
+
+    def test_provisioned_iops_count_lte_total(self):
+        data = self._client.get("/api/v1/rds/fleet/provisioned-iops").json()
+        assert data["provisioned_iops_instances"] <= data["total_instances"]
+
+    def test_provisioned_iops_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/provisioned-iops").json()
+        assert data["total_instances"] == 0
+        assert data["provisioned_iops_instances"] == 0
+    def test_snapshot_summary_200(self):
+        assert self._client.get("/api/v1/rds/fleet/snapshot-summary").status_code == 200
+
+    def test_snapshot_summary_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        for k in ("total_instances", "instances_with_snapshots",
+                  "total_snapshot_storage_gb", "avg_snapshot_storage_gb"):
+            assert k in data
+
+    def test_snapshot_instances_lte_total(self):
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        assert data["instances_with_snapshots"] <= data["total_instances"]
+
+    def test_snapshot_empty_store(self):
+        _instance_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
+        assert data["total_instances"] == 0
+        assert data["total_snapshot_storage_gb"] == 0.0

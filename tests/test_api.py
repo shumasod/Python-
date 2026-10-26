@@ -592,7 +592,7 @@ class TestNotify:
         resp = client.post("/api/v1/rds/no-such/notify")
         assert resp.status_code == 404
 
-from rds_analyzer.api.routes import _instance_store, _metrics_store
+from rds_analyzer.api.routes import _instance_store, _metrics_store, _cost_history_store
 
 
 class TestIopsFleetStats:
@@ -732,6 +732,11 @@ class TestMemoryPressure:
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
 
+class TestCostHistorySummary:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        _cost_history_store.clear()
 class TestRecommendationsSavings:
 class TestFleetTagKeys:
     @pytest.fixture(autouse=True)
@@ -741,6 +746,24 @@ class TestFleetTagKeys:
         client.post("/api/v1/rds", json=sample_instance_payload)
         yield
         _instance_store.clear()
+        _cost_history_store.clear()
+
+    def test_cost_history_summary_200(self):
+        assert self._client.get("/api/v1/rds/test-instance-001/cost-history/summary").status_code == 200
+
+    def test_cost_history_summary_empty(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/cost-history/summary").json()
+        assert data["months_recorded"] == 0
+        assert data["latest_month"] is None
+
+    def test_cost_history_summary_404(self):
+        assert self._client.get("/api/v1/rds/nonexistent/cost-history/summary").status_code == 404
+
+    def test_cost_history_summary_structure(self):
+        data = self._client.get("/api/v1/rds/test-instance-001/cost-history/summary").json()
+        for k in ("instance_id", "months_recorded", "avg_monthly_cost_usd",
+                  "min_monthly_cost_usd", "max_monthly_cost_usd", "latest_month"):
+            assert k in data
 
     def test_tag_keys_200(self):
         assert self._client.get("/api/v1/rds/fleet/tag-keys").status_code == 200

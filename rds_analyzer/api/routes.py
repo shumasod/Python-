@@ -1033,4 +1033,173 @@ async def fleet_memory_summary() -> dict:
         "fleet_avg_free_memory_gb": round(sum(free_avgs) / count, 3),
         "fleet_min_free_memory_gb": round(min(free_avgs), 3),
         "fleet_total_free_memory_gb": round(sum(free_avgs), 3),
+    "/rds/{instance_id}/cost-history/summary",
+    response_model=dict,
+    tags=["costs"],
+    summary="コスト履歴のサマリーを取得",
+)
+async def cost_history_summary(instance_id: str) -> dict:
+    """記録済みコスト履歴から傾向サマリーを返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    history = _cost_history_store.get(instance_id, [])
+    if not history:
+        return {"instance_id": instance_id, "months_recorded": 0,
+                "avg_monthly_cost_usd": 0.0, "min_monthly_cost_usd": 0.0,
+                "max_monthly_cost_usd": 0.0, "latest_month": None}
+    costs = [cost for _, cost in history]
+    return {
+        "instance_id": instance_id,
+        "months_recorded": len(history),
+        "avg_monthly_cost_usd": round(sum(costs) / len(costs), 2),
+        "min_monthly_cost_usd": round(min(costs), 2),
+        "max_monthly_cost_usd": round(max(costs), 2),
+        "latest_month": history[-1][0] if history else None,
+    "/rds/{instance_id}/recommendations/savings",
+    response_model=dict,
+    tags=["recommendations"],
+    summary="推奨事項の削減可能コスト合計を取得",
+)
+async def recommendations_savings(
+    instance_id: str,
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
+) -> dict:
+    """全推奨事項の推定月額削減額を集計して返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    metrics = _metrics_store.get(instance_id)
+    if metrics is None:
+        return {"instance_id": instance_id, "total_recommendations": 0,
+                "total_potential_savings_usd": 0.0, "top_saving_usd": 0.0}
+    breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+    perf_result = perf_analyzer.analyze(instance, metrics)
+    recs = rec_engine.generate(instance, breakdown, perf_result)
+    savings = [r.estimated_monthly_savings_usd for r in recs]
+    return {
+        "instance_id": instance_id,
+        "total_recommendations": len(recs),
+        "total_potential_savings_usd": round(sum(savings), 2),
+        "top_saving_usd": round(max(savings), 2) if savings else 0.0,
+    "/rds/fleet/tag-keys",
+    response_model=dict,
+    tags=["instances"],
+    summary="フリートで使用中のタグキー一覧を取得",
+)
+async def fleet_tag_keys() -> dict:
+    """全インスタンスにわたるタグキーの使用状況を集計して返す。"""
+    key_counts: dict[str, int] = {}
+    for instance in _instance_store.values():
+        for k in instance.tags:
+            key_counts[k] = key_counts.get(k, 0) + 1
+    return {
+        "total_instances": len(_instance_store),
+        "unique_tag_keys": len(key_counts),
+        "tag_keys": key_counts,
+    "/rds/{instance_id}/config",
+    response_model=dict,
+    tags=["instances"],
+    summary="インスタンスの設定スナップショットを取得",
+)
+async def instance_config(instance_id: str) -> dict:
+    """インスタンスの全設定パラメータをまとめて返す。"""
+    instance = _instance_store.get(instance_id)
+    if instance is None:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    engine = instance.engine.value if hasattr(instance.engine, "value") else str(instance.engine)
+    storage_type = instance.storage_type.value if hasattr(instance.storage_type, "value") else str(instance.storage_type)
+    return {
+        "instance_id": instance_id,
+        "engine": engine,
+        "engine_version": instance.engine_version,
+        "instance_class": instance.instance_class,
+        "region": instance.region,
+        "multi_az": instance.multi_az,
+        "storage_type": storage_type,
+        "allocated_storage_gb": instance.allocated_storage_gb,
+        "provisioned_iops": instance.provisioned_iops,
+        "read_replica_count": instance.read_replica_count,
+        "backup_retention_days": instance.backup_retention_days,
+        "snapshot_storage_gb": instance.snapshot_storage_gb,
+        "tags": instance.tags,
+    "/rds/fleet/provisioned-iops",
+    response_model=dict,
+    tags=["instances"],
+    summary="プロビジョニングIOPS設定のインスタンス一覧を取得",
+)
+async def fleet_provisioned_iops_instances() -> dict:
+    """provisioned_iopsが設定されたインスタンスを一覧返す。"""
+    provisioned = []
+    total_provisioned_iops = 0
+    for iid, instance in _instance_store.items():
+        if instance.provisioned_iops:
+            st = instance.storage_type.value if hasattr(instance.storage_type, "value") else str(instance.storage_type)
+            provisioned.append({
+                "instance_id": iid,
+                "instance_class": instance.instance_class,
+                "storage_type": st,
+                "provisioned_iops": instance.provisioned_iops,
+            })
+            total_provisioned_iops += instance.provisioned_iops
+    return {
+        "total_instances": len(_instance_store),
+        "provisioned_iops_instances": len(provisioned),
+        "total_provisioned_iops": total_provisioned_iops,
+        "instances": provisioned,
+    "/rds/fleet/cost-efficiency-ranking",
+    response_model=dict,
+    tags=["costs"],
+    summary="コスト効率スコア順のインスタンスランキングを取得",
+)
+async def cost_efficiency_ranking(
+    cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
+    perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> dict:
+    """コスト効率スコアでランク付けしたインスタンス一覧を返す（昇順＝非効率な順）。"""
+    ranked = []
+    for iid, instance in _instance_store.items():
+        metrics = _metrics_store.get(iid)
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        if metrics is not None:
+            avg_cpu = metrics.cpu_utilization.avg
+            avg_iops = metrics.read_iops.avg + metrics.write_iops.avg
+            storage_used_gb = max(
+                0.0, instance.allocated_storage_gb - metrics.free_storage_bytes.avg / (1024 ** 3)
+            )
+            score_obj = cost_analyzer.calculate_efficiency_score(
+                instance, breakdown, avg_cpu, avg_iops, storage_used_gb
+            )
+            score = score_obj.score
+        else:
+            score = 0
+        ranked.append({
+            "instance_id": iid,
+            "instance_class": instance.instance_class,
+            "monthly_cost_usd": round(breakdown.total_cost_usd, 2),
+            "efficiency_score": score,
+        })
+    ranked.sort(key=lambda x: x["efficiency_score"])
+    return {
+        "total_instances": len(_instance_store),
+        "ranking": ranked[:limit],
+    "/rds/fleet/snapshot-summary",
+    response_model=dict,
+    tags=["costs"],
+    summary="フリート全体のスナップショットストレージサマリーを取得",
+)
+async def fleet_snapshot_summary() -> dict:
+    """全インスタンスのスナップショットストレージを集計して返す。"""
+    total = len(_instance_store)
+    snapshot_gbs = [i.snapshot_storage_gb for i in _instance_store.values()]
+    instances_with_snapshots = sum(1 for g in snapshot_gbs if g > 0)
+    total_gb = sum(snapshot_gbs)
+    avg_gb = round(total_gb / total, 2) if total > 0 else 0.0
+    return {
+        "total_instances": total,
+        "instances_with_snapshots": instances_with_snapshots,
+        "total_snapshot_storage_gb": round(total_gb, 2),
+        "avg_snapshot_storage_gb": avg_gb,
     }

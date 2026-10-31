@@ -732,6 +732,7 @@ class TestMemoryPressure:
         _metrics_store.clear()
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
 
+class TestFleetMemorySummary:
 class TestCostHistorySummary:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
@@ -797,6 +798,24 @@ class TestCostEfficiencyRanking:
         _instance_store.clear()
         _metrics_store.clear()
 
+    def test_fleet_memory_200(self):
+        assert self._client.get("/api/v1/rds/fleet/memory").status_code == 200
+
+    def test_fleet_memory_structure(self):
+        data = self._client.get("/api/v1/rds/fleet/memory").json()
+        for k in ("instances_with_metrics", "fleet_avg_free_memory_gb",
+                  "fleet_min_free_memory_gb", "fleet_total_free_memory_gb"):
+            assert k in data
+
+    def test_fleet_memory_min_lte_avg(self):
+        data = self._client.get("/api/v1/rds/fleet/memory").json()
+        assert data["fleet_min_free_memory_gb"] <= data["fleet_avg_free_memory_gb"]
+
+    def test_fleet_memory_no_metrics(self):
+        _metrics_store.clear()
+        data = self._client.get("/api/v1/rds/fleet/memory").json()
+        assert data["instances_with_metrics"] == 0
+        assert data["fleet_total_free_memory_gb"] == 0.0
     def test_savings_200(self):
         assert self._client.get("/api/v1/rds/test-instance-001/recommendations/savings").status_code == 200
 

@@ -1231,3 +1231,26 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/data-quality/missing-metrics",
+    response_model=dict,
+    tags=["security"],
+    summary="メトリクス未収集インスタンスの検出",
+)
+async def missing_metrics() -> dict:
+    """メトリクスが一度も収集されていないインスタンスを返す。"""
+    missing = [
+        {"instance_id": iid, "instance_class": inst.instance_class,
+         "engine": inst.engine}
+        for iid, inst in _instance_store.items()
+        if iid not in _metrics_store
+    ]
+    total = len(_instance_store)
+    return {
+        "total_instances": total,
+        "missing_metrics_count": len(missing),
+        "coverage_pct": round((total - len(missing)) / total * 100, 1) if total > 0 else 0.0,
+        "missing_instances": missing,
+    }

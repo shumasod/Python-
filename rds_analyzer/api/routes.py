@@ -1231,3 +1231,24 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/gp2-instances",
+    response_model=dict,
+    tags=["security"],
+    summary="gp2ストレージ使用インスタンスの一覧",
+)
+async def gp2_instances() -> dict:
+    """旧世代ストレージgp2を使用しているインスタンスを検出。"""
+    gp2_list = [
+        {"instance_id": iid, "allocated_storage_gb": inst.allocated_storage_gb,
+         "instance_class": inst.instance_class}
+        for iid, inst in _instance_store.items()
+        if inst.storage_type.value == "gp2"
+    ]
+    return {
+        "total_instances": len(_instance_store),
+        "gp2_count": len(gp2_list),
+        "gp2_instances": gp2_list,
+    }

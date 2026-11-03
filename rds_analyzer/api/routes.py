@@ -1231,3 +1231,35 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/iops-saturation",
+    response_model=dict,
+    tags=["security"],
+    summary="IOPS飽和アラート",
+)
+async def iops_saturation_alert() -> dict:
+    """IOPS使用率が高いインスタンスを検出する。"""
+    from rds_analyzer.analyzers.performance_analyzer import PerformanceAnalyzer
+    perf = PerformanceAnalyzer()
+    alerts = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        inst = _instance_store[iid]
+        iops_limit = perf.get_iops_limit(inst)
+        total_iops = metrics.read_iops.avg + metrics.write_iops.avg
+        usage_pct = round(total_iops / iops_limit * 100, 1) if iops_limit > 0 else 0.0
+        if usage_pct > 80:
+            alerts.append({
+                "instance_id": iid,
+                "iops_usage_pct": usage_pct,
+                "iops_limit": iops_limit,
+                "avg_total_iops": round(total_iops, 0),
+                "severity": "critical" if usage_pct > 95 else "high",
+            })
+    return {
+        "alert_count": len(alerts),
+        "alerts": sorted(alerts, key=lambda x: x["iops_usage_pct"], reverse=True),
+    }

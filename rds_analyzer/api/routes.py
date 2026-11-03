@@ -1231,3 +1231,38 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/posture",
+    response_model=dict,
+    tags=["security"],
+    summary="フリートのセキュリティポスチャを取得",
+)
+async def fleet_security_posture() -> dict:
+    """フリート全体のセキュリティ態勢サマリーを返す。"""
+    if not _instance_store:
+        return {"total_instances": 0, "posture": "unknown", "overall_score": 0}
+    scores = []
+    for inst in _instance_store.values():
+        s = 100
+        if not inst.multi_az:
+            s -= 25
+        if inst.backup_retention_days == 0:
+            s -= 30
+        elif inst.backup_retention_days < 7:
+            s -= 15
+        if not inst.tags:
+            s -= 10
+        scores.append(max(0, s))
+    avg = round(sum(scores) / len(scores), 1)
+    posture = ("excellent" if avg >= 90 else
+               "good" if avg >= 75 else
+               "fair" if avg >= 60 else
+               "poor" if avg >= 40 else "critical")
+    return {
+        "total_instances": len(scores),
+        "overall_score": avg,
+        "posture": posture,
+        "below_threshold_count": sum(1 for s in scores if s < 60),
+    }

@@ -918,3 +918,23 @@ class TestFleetSnapshotSummary:
         data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
         assert data["total_instances"] == 0
         assert data["total_snapshot_storage_gb"] == 0.0
+
+
+class TestOrphanedMetrics:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        _instance_store.clear()
+        _metrics_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post("/api/v1/rds/test-instance-001/metrics", json=sample_metrics_payload)
+        yield
+        _instance_store.clear()
+        _metrics_store.clear()
+
+    def test_orphaned_metrics_no_orphans(self):
+        r = self._client.get("/api/v1/rds/data-quality/orphaned-metrics")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["orphaned_count"] == 0
+        assert isinstance(data["orphaned_instance_ids"], list)

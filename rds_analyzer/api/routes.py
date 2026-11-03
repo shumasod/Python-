@@ -1231,3 +1231,34 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/exposure-profile",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのセキュリティ露出プロファイルを取得",
+)
+async def instance_exposure_profile(instance_id: str) -> dict:
+    """インスタンスのセキュリティ露出要因を詳細に返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    exposure_factors = {
+        "no_multi_az": not inst.multi_az,
+        "no_backup": inst.backup_retention_days == 0,
+        "low_backup_retention": 0 < inst.backup_retention_days < 7,
+        "no_tags": not inst.tags,
+        "legacy_storage": inst.storage_type.value in ("gp2", "standard"),
+    }
+    exposure_count = sum(exposure_factors.values())
+    level = ("critical" if exposure_count >= 4 else
+             "high" if exposure_count >= 3 else
+             "medium" if exposure_count >= 2 else
+             "low" if exposure_count >= 1 else "minimal")
+    return {
+        "instance_id": instance_id,
+        "exposure_level": level,
+        "exposure_factor_count": exposure_count,
+        "exposure_factors": exposure_factors,
+    }

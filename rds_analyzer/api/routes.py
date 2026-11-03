@@ -1231,3 +1231,31 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/fleet/hardening-score",
+    response_model=dict,
+    tags=["security"],
+    summary="フリート全体のハードニングスコアを取得",
+)
+async def fleet_hardening_score() -> dict:
+    """全インスタンスのハードニングスコア平均を返す。"""
+    if not _instance_store:
+        return {"instance_count": 0, "avg_hardening_score": 0.0}
+    scores = []
+    for inst in _instance_store.values():
+        checks = [
+            inst.multi_az,
+            inst.backup_retention_days >= 7,
+            bool(inst.tags),
+            inst.storage_type.value != "standard",
+            inst.storage_type.value == "gp3",
+        ]
+        scores.append(round(sum(checks) / len(checks) * 100))
+    return {
+        "instance_count": len(scores),
+        "avg_hardening_score": round(sum(scores) / len(scores), 1),
+        "min_score": min(scores),
+        "max_score": max(scores),
+    }

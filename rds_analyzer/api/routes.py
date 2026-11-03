@@ -1231,3 +1231,24 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/ha-risk",
+    response_model=dict,
+    tags=["security"],
+    summary="HA（高可用性）リスク評価",
+)
+async def ha_risk_assessment() -> dict:
+    """フリート全体のHA設定リスクを評価する。"""
+    ha_enabled = sum(1 for inst in _instance_store.values() if inst.multi_az)
+    total = len(_instance_store)
+    ha_rate = round(ha_enabled / total * 100, 1) if total > 0 else 0.0
+    risk_level = "low" if ha_rate >= 80 else ("medium" if ha_rate >= 50 else "high")
+    return {
+        "total_instances": total,
+        "ha_enabled_count": ha_enabled,
+        "ha_disabled_count": total - ha_enabled,
+        "ha_enablement_rate_pct": ha_rate,
+        "fleet_ha_risk_level": risk_level,
+    }

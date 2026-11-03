@@ -1231,3 +1231,34 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/latency-anomaly",
+    response_model=dict,
+    tags=["security"],
+    summary="レイテンシ異常アラート",
+)
+async def latency_anomaly_alert() -> dict:
+    """読み書きレイテンシが異常に高いインスタンスを検出する。"""
+    HIGH_LATENCY_MS = 20.0
+    alerts = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        read_lat = metrics.read_latency_ms.avg
+        write_lat = metrics.write_latency_ms.avg
+        max_lat = max(read_lat, write_lat)
+        if max_lat > HIGH_LATENCY_MS:
+            alerts.append({
+                "instance_id": iid,
+                "read_latency_avg_ms": round(read_lat, 2),
+                "write_latency_avg_ms": round(write_lat, 2),
+                "max_latency_ms": round(max_lat, 2),
+                "threshold_ms": HIGH_LATENCY_MS,
+                "severity": "critical" if max_lat > 50 else "high",
+            })
+    return {
+        "alert_count": len(alerts),
+        "alerts": sorted(alerts, key=lambda x: x["max_latency_ms"], reverse=True),
+    }

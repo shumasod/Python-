@@ -1231,3 +1231,29 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/compliance/ha",
+    response_model=dict,
+    tags=["security"],
+    summary="HA（高可用性）コンプライアンスチェック",
+)
+async def compliance_ha() -> dict:
+    """Multi-AZが有効かどうかのコンプライアンス状態を返す。"""
+    compliant = []
+    non_compliant = []
+    for iid, inst in _instance_store.items():
+        entry = {"instance_id": iid, "multi_az": inst.multi_az}
+        if inst.multi_az:
+            compliant.append(entry)
+        else:
+            non_compliant.append(entry)
+    total = len(_instance_store)
+    rate = round(len(compliant) / total * 100, 1) if total > 0 else 0.0
+    return {
+        "total": total,
+        "ha_compliance_rate_pct": rate,
+        "compliant": compliant,
+        "non_compliant": non_compliant,
+    }

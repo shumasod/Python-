@@ -1231,3 +1231,29 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/cpu-anomaly",
+    response_model=dict,
+    tags=["security"],
+    summary="CPU異常検知アラート",
+)
+async def cpu_anomaly_alert() -> dict:
+    """CPU使用率が異常に高いインスタンスを検出する。"""
+    high_cpu = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        avg_cpu = metrics.cpu_utilization.avg
+        if avg_cpu > 85:
+            high_cpu.append({
+                "instance_id": iid,
+                "avg_cpu_pct": round(avg_cpu, 1),
+                "max_cpu_pct": round(metrics.cpu_utilization.max, 1),
+                "severity": "critical" if avg_cpu > 95 else "high",
+            })
+    return {
+        "anomaly_count": len(high_cpu),
+        "anomalies": sorted(high_cpu, key=lambda x: x["avg_cpu_pct"], reverse=True),
+    }

@@ -1231,3 +1231,22 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/data-quality/orphaned-metrics",
+    response_model=dict,
+    tags=["security"],
+    summary="孤立メトリクスの検出",
+)
+async def orphaned_metrics() -> dict:
+    """対応するインスタンスが存在しないメトリクスを検出する。"""
+    orphaned = [
+        iid for iid in _metrics_store
+        if iid not in _instance_store
+    ]
+    return {
+        "total_metric_records": len(_metrics_store),
+        "orphaned_count": len(orphaned),
+        "orphaned_instance_ids": orphaned,
+    }

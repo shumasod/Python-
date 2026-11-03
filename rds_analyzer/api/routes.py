@@ -1231,3 +1231,31 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/hardening",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのハードニング状態を取得",
+)
+async def instance_hardening(instance_id: str) -> dict:
+    """セキュリティハードニングのチェックリストを返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    checks = {
+        "multi_az_enabled": inst.multi_az,
+        "backup_retention_7d": inst.backup_retention_days >= 7,
+        "tags_present": bool(inst.tags),
+        "modern_storage": inst.storage_type.value != "standard",
+        "gp3_storage": inst.storage_type.value == "gp3",
+    }
+    passed = sum(checks.values())
+    return {
+        "instance_id": instance_id,
+        "hardening_score": round(passed / len(checks) * 100),
+        "checks": checks,
+        "passed": passed,
+        "total_checks": len(checks),
+    }

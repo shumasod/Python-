@@ -1231,3 +1231,35 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/vulnerability-scan",
+    response_model=dict,
+    tags=["security"],
+    summary="脆弱性スキャンサマリー",
+)
+async def vulnerability_scan_summary() -> dict:
+    """設定上の脆弱性パターンをスキャンして返す。"""
+    findings = []
+    for iid, inst in _instance_store.items():
+        inst_findings = []
+        if not inst.multi_az:
+            inst_findings.append({"cve_type": "AVAIL-001", "severity": "high",
+                                   "description": "Single-AZ構成による可用性リスク"})
+        if inst.backup_retention_days == 0:
+            inst_findings.append({"cve_type": "DATA-001", "severity": "critical",
+                                   "description": "バックアップ未設定によるデータ損失リスク"})
+        if inst.storage_type.value == "standard":
+            inst_findings.append({"cve_type": "PERF-001", "severity": "medium",
+                                   "description": "旧世代Magneticストレージ使用"})
+        if inst_findings:
+            findings.append({"instance_id": iid, "findings": inst_findings,
+                              "finding_count": len(inst_findings)})
+    total_findings = sum(f["finding_count"] for f in findings)
+    return {
+        "scanned_instances": len(_instance_store),
+        "instances_with_findings": len(findings),
+        "total_findings": total_findings,
+        "findings": findings,
+    }

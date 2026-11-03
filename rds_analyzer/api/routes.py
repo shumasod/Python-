@@ -1231,3 +1231,34 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/fleet-risk",
+    response_model=dict,
+    tags=["security"],
+    summary="フリートリスクサマリーを取得",
+)
+async def fleet_risk_summary() -> dict:
+    """フリート全体のリスク分布サマリーを返す。"""
+    risk_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for inst in _instance_store.values():
+        risk_score = 0
+        if not inst.multi_az:
+            risk_score += 30
+        if inst.backup_retention_days == 0:
+            risk_score += 40
+        elif inst.backup_retention_days < 7:
+            risk_score += 20
+        if not inst.tags:
+            risk_score += 10
+        level = ("critical" if risk_score >= 60 else
+                 "high" if risk_score >= 40 else
+                 "medium" if risk_score >= 20 else "low")
+        risk_counts[level] += 1
+    total = len(_instance_store)
+    return {
+        "total_instances": total,
+        "risk_distribution": risk_counts,
+        "high_risk_pct": round((risk_counts["critical"] + risk_counts["high"]) / total * 100, 1) if total > 0 else 0.0,
+    }

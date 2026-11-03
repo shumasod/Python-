@@ -1231,3 +1231,39 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/risk-level",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのリスクレベルを取得",
+)
+async def instance_risk_level(instance_id: str) -> dict:
+    """インスタンスのリスクレベル（critical/high/medium/low）を返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    risk_score = 0
+    factors = []
+    if not inst.multi_az:
+        risk_score += 30
+        factors.append("single_az")
+    if inst.backup_retention_days == 0:
+        risk_score += 40
+        factors.append("no_backup")
+    elif inst.backup_retention_days < 7:
+        risk_score += 20
+        factors.append("low_backup_retention")
+    if not inst.tags:
+        risk_score += 10
+        factors.append("untagged")
+    level = ("critical" if risk_score >= 60 else
+             "high" if risk_score >= 40 else
+             "medium" if risk_score >= 20 else "low")
+    return {
+        "instance_id": instance_id,
+        "risk_score": risk_score,
+        "risk_level": level,
+        "risk_factors": factors,
+    }

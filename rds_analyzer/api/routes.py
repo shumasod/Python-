@@ -1231,3 +1231,37 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/memory-pressure",
+    response_model=dict,
+    tags=["security"],
+    summary="メモリプレッシャーアラート",
+)
+async def memory_pressure_alert() -> dict:
+    """メモリプレッシャーが高いインスタンスを検出する。"""
+    from rds_analyzer.analyzers.cost_analyzer import CostAnalyzer
+    cost_analyzer = CostAnalyzer()
+    alerts = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        inst = _instance_store[iid]
+        specs = cost_analyzer.get_instance_specs(inst.instance_class)
+        total_gb = specs.get("memory_gb", 8)
+        free_gb = metrics.freeable_memory_bytes.avg / (1024 ** 3)
+        used_gb = max(0.0, total_gb - free_gb)
+        pressure_pct = round(used_gb / total_gb * 100, 1) if total_gb > 0 else 0.0
+        if pressure_pct > 80:
+            alerts.append({
+                "instance_id": iid,
+                "memory_pressure_pct": pressure_pct,
+                "free_memory_gb": round(free_gb, 2),
+                "total_memory_gb": total_gb,
+                "severity": "critical" if pressure_pct > 95 else "high",
+            })
+    return {
+        "alert_count": len(alerts),
+        "alerts": sorted(alerts, key=lambda x: x["memory_pressure_pct"], reverse=True),
+    }

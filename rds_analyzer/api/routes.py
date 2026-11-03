@@ -1231,3 +1231,38 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/monitoring/alert-coverage",
+    response_model=dict,
+    tags=["security"],
+    summary="アラートカバレッジを取得",
+)
+async def alert_coverage() -> dict:
+    """各種セキュリティアラートが発動できる状態かのカバレッジを返す。"""
+    total = len(_instance_store)
+    with_metrics = sum(1 for iid in _instance_store if iid in _metrics_store)
+    without_metrics = total - with_metrics
+
+    alert_types = {
+        "cpu_anomaly": with_metrics,
+        "storage_exhaustion": with_metrics,
+        "high_connections": with_metrics,
+        "latency_anomaly": with_metrics,
+        "memory_pressure": with_metrics,
+        "backup_compliance": total,
+        "ha_compliance": total,
+        "tag_compliance": total,
+    }
+    total_coverage = round(
+        sum(alert_types.values()) / (len(alert_types) * total) * 100, 1
+    ) if total > 0 else 0.0
+
+    return {
+        "total_instances": total,
+        "instances_with_metrics": with_metrics,
+        "instances_without_metrics": without_metrics,
+        "alert_type_coverage": alert_types,
+        "overall_alert_coverage_pct": total_coverage,
+    }

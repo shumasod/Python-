@@ -1231,3 +1231,27 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/deprecated-storage",
+    response_model=dict,
+    tags=["security"],
+    summary="非推奨ストレージタイプの検出",
+)
+async def deprecated_storage_check() -> dict:
+    """非推奨のMagneticストレージを使用しているインスタンスを検出。"""
+    deprecated = [
+        {"instance_id": iid,
+         "storage_type": inst.storage_type.value,
+         "allocated_storage_gb": inst.allocated_storage_gb,
+         "instance_class": inst.instance_class}
+        for iid, inst in _instance_store.items()
+        if inst.storage_type.value == "standard"
+    ]
+    return {
+        "total_instances": len(_instance_store),
+        "deprecated_count": len(deprecated),
+        "deprecated_instances": deprecated,
+        "recommendation": "Magnetic(standard)はgp3への移行が推奨されます。",
+    }

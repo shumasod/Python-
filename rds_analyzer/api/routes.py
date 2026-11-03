@@ -1231,3 +1231,36 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/security-score",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのセキュリティスコアを取得",
+)
+async def instance_security_score(instance_id: str) -> dict:
+    """インスタンスごとのセキュリティスコアを0-100で返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    score = 100
+    deductions = []
+    if not inst.multi_az:
+        score -= 20
+        deductions.append("multi_az_disabled (-20)")
+    if inst.backup_retention_days < 7:
+        score -= 15
+        deductions.append("low_backup_retention (-15)")
+    if not inst.tags:
+        score -= 10
+        deductions.append("no_tags (-10)")
+    if inst.storage_type.value == "gp2":
+        score -= 5
+        deductions.append("legacy_storage_gp2 (-5)")
+    return {
+        "instance_id": instance_id,
+        "security_score": max(0, score),
+        "deductions": deductions,
+        "grade": "A" if score >= 90 else ("B" if score >= 70 else ("C" if score >= 50 else "D")),
+    }

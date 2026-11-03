@@ -1231,3 +1231,24 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/no-backup",
+    response_model=dict,
+    tags=["security"],
+    summary="バックアップ未設定インスタンスの一覧",
+)
+async def no_backup_instances() -> dict:
+    """バックアップ保持期間が0のインスタンスを返す（最高リスク）。"""
+    no_backup = [
+        {"instance_id": iid, "instance_class": inst.instance_class,
+         "engine": inst.engine, "multi_az": inst.multi_az}
+        for iid, inst in _instance_store.items()
+        if inst.backup_retention_days == 0
+    ]
+    return {
+        "total_instances": len(_instance_store),
+        "no_backup_count": len(no_backup),
+        "no_backup_instances": no_backup,
+    }

@@ -1231,3 +1231,28 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/compliance/summary",
+    response_model=dict,
+    tags=["security"],
+    summary="コンプライアンスサマリーを取得",
+)
+async def compliance_summary() -> dict:
+    """バックアップ・HA・タグのコンプライアンス集計を返す。"""
+    total = len(_instance_store)
+    if total == 0:
+        return {"total": 0, "backup_compliant": 0, "ha_compliant": 0, "tagging_compliant": 0}
+    backup_ok = sum(1 for inst in _instance_store.values() if inst.backup_retention_days >= 7)
+    ha_ok = sum(1 for inst in _instance_store.values() if inst.multi_az)
+    tag_ok = sum(1 for inst in _instance_store.values() if inst.tags)
+    return {
+        "total": total,
+        "backup_compliant": backup_ok,
+        "backup_compliance_rate_pct": round(backup_ok / total * 100, 1),
+        "ha_compliant": ha_ok,
+        "ha_compliance_rate_pct": round(ha_ok / total * 100, 1),
+        "tagging_compliant": tag_ok,
+        "tagging_compliance_rate_pct": round(tag_ok / total * 100, 1),
+    }

@@ -918,3 +918,25 @@ class TestFleetSnapshotSummary:
         data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
         assert data["total_instances"] == 0
         assert data["total_snapshot_storage_gb"] == 0.0
+
+
+class TestSecurityScoreTrend:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_score_trend_200(self):
+        r = self._client.get("/api/v1/rds/test-instance-001/security-score-trend")
+        assert r.status_code == 200
+        data = r.json()
+        assert "current_score" in data
+        assert "potential_score" in data
+        assert data["potential_score"] >= data["current_score"]
+
+    def test_score_trend_404(self):
+        r = self._client.get("/api/v1/rds/nonexistent/security-score-trend")
+        assert r.status_code == 404

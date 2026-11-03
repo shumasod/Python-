@@ -1231,3 +1231,29 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/critical-instances",
+    response_model=dict,
+    tags=["security"],
+    summary="クリティカルリスクインスタンス一覧",
+)
+async def critical_instances() -> dict:
+    """複数のリスクを持つクリティカルインスタンスを返す。"""
+    critical = []
+    for iid, inst in _instance_store.items():
+        risks = []
+        if not inst.multi_az:
+            risks.append("no_multi_az")
+        if inst.backup_retention_days < 3:
+            risks.append("very_low_backup")
+        if inst.storage_type.value == "standard":
+            risks.append("magnetic_storage")
+        if len(risks) >= 2:
+            critical.append({"instance_id": iid, "risks": risks, "risk_count": len(risks)})
+    critical.sort(key=lambda x: x["risk_count"], reverse=True)
+    return {
+        "critical_count": len(critical),
+        "critical_instances": critical,
+    }

@@ -1231,3 +1231,34 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/exposure-heatmap",
+    response_model=dict,
+    tags=["security"],
+    summary="フリートの露出ヒートマップを取得",
+)
+async def fleet_exposure_heatmap() -> dict:
+    """インスタンスの露出レベルを集計したヒートマップデータを返す。"""
+    level_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "minimal": 0}
+    instance_levels = []
+    for iid, inst in _instance_store.items():
+        factors = sum([
+            not inst.multi_az,
+            inst.backup_retention_days == 0,
+            0 < inst.backup_retention_days < 7,
+            not inst.tags,
+            inst.storage_type.value in ("gp2", "standard"),
+        ])
+        level = ("critical" if factors >= 4 else
+                 "high" if factors >= 3 else
+                 "medium" if factors >= 2 else
+                 "low" if factors >= 1 else "minimal")
+        level_counts[level] += 1
+        instance_levels.append({"instance_id": iid, "exposure_level": level, "factor_count": factors})
+    return {
+        "total_instances": len(_instance_store),
+        "exposure_distribution": level_counts,
+        "instance_levels": sorted(instance_levels, key=lambda x: x["factor_count"], reverse=True),
+    }

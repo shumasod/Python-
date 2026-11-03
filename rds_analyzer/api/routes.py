@@ -1231,3 +1231,24 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/monitoring/coverage",
+    response_model=dict,
+    tags=["security"],
+    summary="メトリクス収集カバレッジを取得",
+)
+async def monitoring_coverage() -> dict:
+    """メトリクスが収集されているインスタンスの割合を返す。"""
+    total = len(_instance_store)
+    with_metrics = sum(1 for iid in _instance_store if iid in _metrics_store)
+    without = total - with_metrics
+    coverage = round(with_metrics / total * 100, 1) if total > 0 else 0.0
+    return {
+        "total_instances": total,
+        "instances_with_metrics": with_metrics,
+        "instances_without_metrics": without,
+        "coverage_pct": coverage,
+        "coverage_level": "good" if coverage >= 90 else ("partial" if coverage >= 50 else "poor"),
+    }

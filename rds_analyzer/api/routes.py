@@ -1231,3 +1231,30 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/risk-heatmap",
+    response_model=dict,
+    tags=["security"],
+    summary="フリートリスクヒートマップを取得",
+)
+async def fleet_risk_heatmap() -> dict:
+    """フリート全体の4軸リスク分布ヒートマップを返す。"""
+    risk_axes = {
+        "availability": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+        "data": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+        "security": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+        "cost": {"critical": 0, "high": 0, "medium": 0, "low": 0},
+    }
+    for inst in _instance_store.values():
+        risk_axes["availability"]["high" if not inst.multi_az else "low"] += 1
+        data_risk = ("critical" if inst.backup_retention_days == 0 else
+                     "high" if inst.backup_retention_days < 7 else "low")
+        risk_axes["data"][data_risk] += 1
+        risk_axes["security"]["medium" if not inst.tags else "low"] += 1
+        risk_axes["cost"]["medium" if inst.storage_type.value == "gp2" else "low"] += 1
+    return {
+        "total_instances": len(_instance_store),
+        "risk_heatmap": risk_axes,
+    }

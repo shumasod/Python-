@@ -1231,3 +1231,23 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/untagged",
+    response_model=dict,
+    tags=["security"],
+    summary="タグなしインスタンスの一覧",
+)
+async def untagged_instances() -> dict:
+    """タグが設定されていないインスタンスを返す。"""
+    untagged = [
+        {"instance_id": iid, "instance_class": inst.instance_class}
+        for iid, inst in _instance_store.items()
+        if not inst.tags
+    ]
+    return {
+        "total_instances": len(_instance_store),
+        "untagged_count": len(untagged),
+        "untagged": untagged,
+    }

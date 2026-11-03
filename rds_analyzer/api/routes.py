@@ -1231,3 +1231,34 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/cost-spike",
+    response_model=dict,
+    tags=["security"],
+    summary="コストスパイク検出チェック",
+)
+async def cost_spike_check() -> dict:
+    """コスト変動が大きいインスタンスを検出する。"""
+    spikes = []
+    for iid, history in _cost_history_store.items():
+        if iid not in _instance_store or len(history) < 2:
+            continue
+        costs = [c for _, c in history]
+        avg = sum(costs) / len(costs)
+        latest = costs[-1]
+        if avg > 0:
+            delta_pct = round((latest - avg) / avg * 100, 1)
+            if abs(delta_pct) > 20:
+                spikes.append({
+                    "instance_id": iid,
+                    "latest_cost_usd": round(latest, 2),
+                    "avg_cost_usd": round(avg, 2),
+                    "change_pct": delta_pct,
+                    "direction": "increase" if delta_pct > 0 else "decrease",
+                })
+    return {
+        "spike_count": len(spikes),
+        "spikes": sorted(spikes, key=lambda x: abs(x["change_pct"]), reverse=True),
+    }

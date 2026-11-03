@@ -1231,3 +1231,27 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/backup-compliance",
+    response_model=dict,
+    tags=["security"],
+    summary="バックアップ設定のコンプライアンスチェック",
+)
+async def backup_compliance() -> dict:
+    """バックアップ保持期間が7日未満のインスタンスを検出する。"""
+    non_compliant = []
+    for iid, inst in _instance_store.items():
+        if inst.backup_retention_days < 7:
+            non_compliant.append({
+                "instance_id": iid,
+                "backup_retention_days": inst.backup_retention_days,
+                "risk": "low_retention",
+            })
+    return {
+        "total_instances": len(_instance_store),
+        "non_compliant_count": len(non_compliant),
+        "compliant": len(_instance_store) - len(non_compliant),
+        "non_compliant": non_compliant,
+    }

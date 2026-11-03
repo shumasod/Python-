@@ -1231,3 +1231,36 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/security-score-trend",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのセキュリティスコア推移を取得",
+)
+async def security_score_trend(instance_id: str) -> dict:
+    """セキュリティスコアの現在値と改善余地を返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    score = 100
+    improvements = []
+    if not inst.multi_az:
+        score -= 20
+        improvements.append({"action": "enable_multi_az", "score_gain": 20})
+    if inst.backup_retention_days < 7:
+        score -= 15
+        improvements.append({"action": "increase_backup_retention", "score_gain": 15})
+    if not inst.tags:
+        score -= 10
+        improvements.append({"action": "add_tags", "score_gain": 10})
+    score = max(0, score)
+    potential = score + sum(i["score_gain"] for i in improvements)
+    return {
+        "instance_id": instance_id,
+        "current_score": score,
+        "potential_score": min(100, potential),
+        "improvement_potential": min(100, potential) - score,
+        "recommended_actions": improvements,
+    }

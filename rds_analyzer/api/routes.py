@@ -1231,3 +1231,24 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/single-az-risk",
+    response_model=dict,
+    tags=["security"],
+    summary="シングルAZ構成のリスク一覧",
+)
+async def single_az_risk() -> dict:
+    """Multi-AZ未使用のインスタンスをリスクとして返す。"""
+    at_risk = [
+        {"instance_id": iid, "instance_class": inst.instance_class,
+         "engine": inst.engine}
+        for iid, inst in _instance_store.items()
+        if not inst.multi_az
+    ]
+    return {
+        "total_instances": len(_instance_store),
+        "single_az_count": len(at_risk),
+        "at_risk": at_risk,
+    }

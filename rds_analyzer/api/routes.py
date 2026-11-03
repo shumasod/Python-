@@ -1231,3 +1231,35 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/fleet/security-score",
+    response_model=dict,
+    tags=["security"],
+    summary="フリート全体のセキュリティスコアを取得",
+)
+async def fleet_security_score() -> dict:
+    """全インスタンスのセキュリティスコア平均を返す。"""
+    if not _instance_store:
+        return {"instance_count": 0, "avg_security_score": 0.0, "fleet_grade": "N/A"}
+    scores = []
+    for inst in _instance_store.values():
+        s = 100
+        if not inst.multi_az:
+            s -= 20
+        if inst.backup_retention_days < 7:
+            s -= 15
+        if not inst.tags:
+            s -= 10
+        if inst.storage_type.value == "gp2":
+            s -= 5
+        scores.append(max(0, s))
+    avg = round(sum(scores) / len(scores), 1)
+    return {
+        "instance_count": len(scores),
+        "avg_security_score": avg,
+        "min_score": min(scores),
+        "max_score": max(scores),
+        "fleet_grade": "A" if avg >= 90 else ("B" if avg >= 70 else ("C" if avg >= 50 else "D")),
+    }

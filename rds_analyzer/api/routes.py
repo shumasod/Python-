@@ -1231,3 +1231,30 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/compliance/tagging",
+    response_model=dict,
+    tags=["security"],
+    summary="タグ付けコンプライアンスチェック",
+)
+async def compliance_tagging() -> dict:
+    """必須タグが設定されているかのコンプライアンス状態を返す。"""
+    required_keys = {"env", "team", "project"}
+    results = []
+    for iid, inst in _instance_store.items():
+        tag_keys = set((inst.tags or {}).keys())
+        missing = required_keys - tag_keys
+        results.append({
+            "instance_id": iid,
+            "compliant": len(missing) == 0,
+            "missing_tags": sorted(missing),
+        })
+    compliant_count = sum(1 for r in results if r["compliant"])
+    return {
+        "total": len(results),
+        "compliant_count": compliant_count,
+        "tagging_compliance_rate_pct": round(compliant_count / len(results) * 100, 1) if results else 0.0,
+        "details": results,
+    }

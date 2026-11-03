@@ -1231,3 +1231,36 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/risk-matrix",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのリスクマトリクスを取得",
+)
+async def instance_risk_matrix(instance_id: str) -> dict:
+    """インスタンスの可用性・データ・セキュリティ・コストリスクのマトリクスを返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    availability_risk = "high" if not inst.multi_az else "low"
+    data_risk = ("critical" if inst.backup_retention_days == 0 else
+                 "high" if inst.backup_retention_days < 7 else "low")
+    security_risk = "medium" if not inst.tags else "low"
+    cost_risk = "medium" if inst.storage_type.value == "gp2" else "low"
+    risk_map = {
+        "availability": availability_risk,
+        "data": data_risk,
+        "security": security_risk,
+        "cost": cost_risk,
+    }
+    levels = list(risk_map.values())
+    overall = ("critical" if "critical" in levels else
+               "high" if "high" in levels else
+               "medium" if "medium" in levels else "low")
+    return {
+        "instance_id": instance_id,
+        "risk_matrix": risk_map,
+        "overall_risk": overall,
+    }

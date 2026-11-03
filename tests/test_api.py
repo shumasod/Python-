@@ -918,3 +918,25 @@ class TestFleetSnapshotSummary:
         data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
         assert data["total_instances"] == 0
         assert data["total_snapshot_storage_gb"] == 0.0
+
+
+class TestInstanceRiskMatrix:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_risk_matrix_200(self):
+        r = self._client.get("/api/v1/rds/test-instance-001/risk-matrix")
+        assert r.status_code == 200
+        data = r.json()
+        assert "risk_matrix" in data
+        assert "overall_risk" in data
+        assert data["overall_risk"] in ("critical", "high", "medium", "low")
+
+    def test_risk_matrix_404(self):
+        r = self._client.get("/api/v1/rds/nonexistent/risk-matrix")
+        assert r.status_code == 404

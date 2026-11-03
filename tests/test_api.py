@@ -918,3 +918,21 @@ class TestFleetSnapshotSummary:
         data = self._client.get("/api/v1/rds/fleet/snapshot-summary").json()
         assert data["total_instances"] == 0
         assert data["total_snapshot_storage_gb"] == 0.0
+
+
+class TestSensitiveTagAudit:
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        _instance_store.clear()
+        self._client = client
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        yield
+        _instance_store.clear()
+
+    def test_sensitive_tag_audit_ok(self):
+        r = self._client.get("/api/v1/rds/security/sensitive-tags")
+        assert r.status_code == 200
+        data = r.json()
+        assert "flagged_count" in data
+        assert "audited_instances" in data
+        assert isinstance(data["flagged_instances"], list)

@@ -1231,3 +1231,32 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/sensitive-tags",
+    response_model=dict,
+    tags=["security"],
+    summary="センシティブタグの監査",
+)
+async def sensitive_tag_audit() -> dict:
+    """センシティブな値がタグに含まれていないか監査する。"""
+    SENSITIVE_PATTERNS = ["password", "secret", "key", "token", "credential"]
+    flagged = []
+    for iid, inst in _instance_store.items():
+        if not inst.tags:
+            continue
+        suspicious = []
+        for k, v in inst.tags.items():
+            combined = f"{k} {v}".lower()
+            for pattern in SENSITIVE_PATTERNS:
+                if pattern in combined:
+                    suspicious.append({"key": k, "pattern_matched": pattern})
+                    break
+        if suspicious:
+            flagged.append({"instance_id": iid, "suspicious_tags": suspicious})
+    return {
+        "audited_instances": len(_instance_store),
+        "flagged_count": len(flagged),
+        "flagged_instances": flagged,
+    }

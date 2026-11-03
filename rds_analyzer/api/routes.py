@@ -1231,3 +1231,26 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/low-retention",
+    response_model=dict,
+    tags=["security"],
+    summary="バックアップ保持期間が短いインスタンスのアラート",
+)
+async def low_retention_alert() -> dict:
+    """バックアップ保持期間が3日未満のクリティカルインスタンスを返す。"""
+    critical = []
+    warning = []
+    for iid, inst in _instance_store.items():
+        if inst.backup_retention_days < 3:
+            critical.append({"instance_id": iid, "backup_retention_days": inst.backup_retention_days})
+        elif inst.backup_retention_days < 7:
+            warning.append({"instance_id": iid, "backup_retention_days": inst.backup_retention_days})
+    return {
+        "critical_count": len(critical),
+        "warning_count": len(warning),
+        "critical": critical,
+        "warning": warning,
+    }

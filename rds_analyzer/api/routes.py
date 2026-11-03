@@ -1231,3 +1231,35 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/oversized-storage",
+    response_model=dict,
+    tags=["security"],
+    summary="オーバーサイズストレージ検出",
+)
+async def oversized_storage() -> dict:
+    """ストレージが過剰にプロビジョンされているインスタンスを検出。"""
+    oversized = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        inst = _instance_store[iid]
+        allocated_bytes = inst.allocated_storage_gb * 1024 ** 3
+        if allocated_bytes <= 0:
+            continue
+        free_bytes = metrics.free_storage_bytes.avg
+        free_pct = round(free_bytes / allocated_bytes * 100, 1)
+        if free_pct > 70:
+            oversized.append({
+                "instance_id": iid,
+                "allocated_storage_gb": inst.allocated_storage_gb,
+                "free_storage_pct": free_pct,
+                "free_storage_gb": round(free_bytes / 1024 ** 3, 2),
+                "waste_estimate_gb": round(free_bytes * 0.5 / 1024 ** 3, 2),
+            })
+    return {
+        "oversized_count": len(oversized),
+        "oversized_instances": sorted(oversized, key=lambda x: x["free_storage_pct"], reverse=True),
+    }

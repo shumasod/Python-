@@ -1231,3 +1231,30 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/high-connections",
+    response_model=dict,
+    tags=["security"],
+    summary="DB接続数異常アラート",
+)
+async def high_connection_alert() -> dict:
+    """DB接続数が異常に多いインスタンスを検出する。"""
+    HIGH_CONN_THRESHOLD = 100
+    alerts = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        avg_conn = metrics.database_connections.avg
+        if avg_conn > HIGH_CONN_THRESHOLD:
+            alerts.append({
+                "instance_id": iid,
+                "avg_connections": round(avg_conn, 0),
+                "max_connections": round(metrics.database_connections.max, 0),
+                "threshold": HIGH_CONN_THRESHOLD,
+            })
+    return {
+        "alert_count": len(alerts),
+        "alerts": sorted(alerts, key=lambda x: x["avg_connections"], reverse=True),
+    }

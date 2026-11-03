@@ -1231,3 +1231,40 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/audit-report",
+    response_model=dict,
+    tags=["security"],
+    summary="セキュリティ監査レポートを取得",
+)
+async def security_audit_report() -> dict:
+    """フリート全体のセキュリティ監査レポートを返す。"""
+    total = len(_instance_store)
+    if total == 0:
+        return {"total_instances": 0, "audit_status": "no_instances", "findings": []}
+    findings_summary = {
+        "no_multi_az": sum(1 for i in _instance_store.values() if not i.multi_az),
+        "no_backup": sum(1 for i in _instance_store.values() if i.backup_retention_days == 0),
+        "low_backup": sum(1 for i in _instance_store.values()
+                          if 0 < i.backup_retention_days < 7),
+        "no_tags": sum(1 for i in _instance_store.values() if not i.tags),
+        "gp2_storage": sum(1 for i in _instance_store.values()
+                            if i.storage_type.value == "gp2"),
+        "standard_storage": sum(1 for i in _instance_store.values()
+                                  if i.storage_type.value == "standard"),
+    }
+    critical_count = findings_summary["no_backup"]
+    high_count = findings_summary["no_multi_az"] + findings_summary["low_backup"]
+    overall_status = ("critical" if critical_count > 0 else
+                      "high" if high_count > 0 else
+                      "medium" if any(findings_summary.values()) else "compliant")
+    return {
+        "total_instances": total,
+        "audit_status": overall_status,
+        "findings_summary": findings_summary,
+        "critical_findings": critical_count,
+        "high_findings": high_count,
+        "audit_note": "推定値：定期的なセキュリティ監査を推奨します。",
+    }

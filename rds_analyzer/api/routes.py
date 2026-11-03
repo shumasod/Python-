@@ -1231,3 +1231,46 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/{instance_id}/security-recommendations",
+    response_model=dict,
+    tags=["security"],
+    summary="インスタンスのセキュリティ推奨事項を取得",
+)
+async def instance_security_recommendations(instance_id: str) -> dict:
+    """インスタンスのセキュリティ改善推奨事項リストを返す。"""
+    if instance_id not in _instance_store:
+        raise HTTPException(status_code=404, detail=f"Instance {instance_id!r} not found")
+    inst = _instance_store[instance_id]
+    recommendations = []
+    if not inst.multi_az:
+        recommendations.append({
+            "priority": "high",
+            "action": "enable_multi_az",
+            "description": "Multi-AZを有効化して可用性を向上させる",
+        })
+    if inst.backup_retention_days < 7:
+        recommendations.append({
+            "priority": "high",
+            "action": "increase_backup_retention",
+            "description": "バックアップ保持期間を7日以上に設定する",
+        })
+    if not inst.tags:
+        recommendations.append({
+            "priority": "medium",
+            "action": "add_required_tags",
+            "description": "env/team/projectタグを追加してガバナンスを強化する",
+        })
+    if inst.storage_type.value == "gp2":
+        recommendations.append({
+            "priority": "low",
+            "action": "migrate_to_gp3",
+            "description": "gp3ストレージに移行してコストとパフォーマンスを改善する",
+        })
+    return {
+        "instance_id": instance_id,
+        "recommendation_count": len(recommendations),
+        "recommendations": recommendations,
+    }

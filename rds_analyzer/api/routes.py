@@ -1033,6 +1033,10 @@ async def fleet_memory_summary() -> dict:
         "fleet_avg_free_memory_gb": round(sum(free_avgs) / count, 3),
         "fleet_min_free_memory_gb": round(min(free_avgs), 3),
         "fleet_total_free_memory_gb": round(sum(free_avgs), 3),
+    }
+
+
+@router.get(
     "/rds/{instance_id}/cost-history/summary",
     response_model=dict,
     tags=["costs"],
@@ -1055,6 +1059,10 @@ async def cost_history_summary(instance_id: str) -> dict:
         "min_monthly_cost_usd": round(min(costs), 2),
         "max_monthly_cost_usd": round(max(costs), 2),
         "latest_month": history[-1][0] if history else None,
+    }
+
+
+@router.get(
     "/rds/{instance_id}/recommendations/savings",
     response_model=dict,
     tags=["recommendations"],
@@ -1083,6 +1091,10 @@ async def recommendations_savings(
         "total_recommendations": len(recs),
         "total_potential_savings_usd": round(sum(savings), 2),
         "top_saving_usd": round(max(savings), 2) if savings else 0.0,
+    }
+
+
+@router.get(
     "/rds/fleet/tag-keys",
     response_model=dict,
     tags=["instances"],
@@ -1098,6 +1110,10 @@ async def fleet_tag_keys() -> dict:
         "total_instances": len(_instance_store),
         "unique_tag_keys": len(key_counts),
         "tag_keys": key_counts,
+    }
+
+
+@router.get(
     "/rds/{instance_id}/config",
     response_model=dict,
     tags=["instances"],
@@ -1124,6 +1140,10 @@ async def instance_config(instance_id: str) -> dict:
         "backup_retention_days": instance.backup_retention_days,
         "snapshot_storage_gb": instance.snapshot_storage_gb,
         "tags": instance.tags,
+    }
+
+
+@router.get(
     "/rds/fleet/provisioned-iops",
     response_model=dict,
     tags=["instances"],
@@ -1148,6 +1168,10 @@ async def fleet_provisioned_iops_instances() -> dict:
         "provisioned_iops_instances": len(provisioned),
         "total_provisioned_iops": total_provisioned_iops,
         "instances": provisioned,
+    }
+
+
+@router.get(
     "/rds/fleet/cost-efficiency-ranking",
     response_model=dict,
     tags=["costs"],
@@ -1185,6 +1209,10 @@ async def cost_efficiency_ranking(
     return {
         "total_instances": len(_instance_store),
         "ranking": ranked[:limit],
+    }
+
+
+@router.get(
     "/rds/fleet/snapshot-summary",
     response_model=dict,
     tags=["costs"],

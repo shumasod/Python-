@@ -733,12 +733,14 @@ class TestMemoryPressure:
         assert self._client.get("/api/v1/rds/test-instance-001/memory-pressure").status_code == 404
 
 class TestFleetMemorySummary:
+    pass
 class TestCostHistorySummary:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
         _instance_store.clear()
         _cost_history_store.clear()
 class TestRecommendationsSavings:
+    pass
 class TestFleetTagKeys:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):
@@ -785,7 +787,9 @@ class TestFleetTagKeys:
         assert data["unique_tag_keys"] == 0
         assert data["tag_keys"] == {}
 class TestInstanceConfig:
+    pass
 class TestFleetProvisionedIops:
+    pass
 class TestCostEfficiencyRanking:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload, sample_metrics_payload):

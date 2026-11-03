@@ -1231,3 +1231,33 @@ async def fleet_snapshot_summary() -> dict:
         "total_snapshot_storage_gb": round(total_gb, 2),
         "avg_snapshot_storage_gb": avg_gb,
     }
+
+
+@router.get(
+    "/rds/security/storage-exhaustion",
+    response_model=dict,
+    tags=["security"],
+    summary="ストレージ枯渇リスクアラート",
+)
+async def storage_exhaustion_risk() -> dict:
+    """空きストレージが少ないインスタンスを検出する。"""
+    at_risk = []
+    for iid, metrics in _metrics_store.items():
+        if iid not in _instance_store:
+            continue
+        inst = _instance_store[iid]
+        allocated_bytes = inst.allocated_storage_gb * 1024 ** 3
+        free_bytes = metrics.free_storage_bytes.avg
+        if allocated_bytes > 0:
+            used_pct = round((allocated_bytes - free_bytes) / allocated_bytes * 100, 1)
+            if used_pct > 80:
+                at_risk.append({
+                    "instance_id": iid,
+                    "used_storage_pct": used_pct,
+                    "free_storage_gb": round(free_bytes / 1024 ** 3, 2),
+                    "severity": "critical" if used_pct > 95 else "high",
+                })
+    return {
+        "at_risk_count": len(at_risk),
+        "at_risk": sorted(at_risk, key=lambda x: x["used_storage_pct"], reverse=True),
+    }

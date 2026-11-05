@@ -177,6 +177,8 @@ class HealthCheckResponse(BaseModel):
     """ヘルスチェックレスポンス"""
     status: str = "ok"
     version: str
+    instance_count: int = 0
+    metrics_count: int = 0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 

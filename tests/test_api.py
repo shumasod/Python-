@@ -185,6 +185,61 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestBulkAnalysis:
+    """POST /rds/bulk-analysis エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api import routes as _routes
+        _routes._instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        payload2 = {**sample_instance_payload, "instance_id": "test-bulk-002"}
+        client.post("/api/v1/rds", json=payload2)
+
+    def test_bulk_analysis_all_found(self, client):
+        resp = client.post(
+            "/api/v1/rds/bulk-analysis",
+            json=["test-api-mysql-001", "test-bulk-002"],
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["analyzed"] == 2
+        assert data["skipped"] == []
+
+    def test_bulk_analysis_skips_missing(self, client):
+        resp = client.post(
+            "/api/v1/rds/bulk-analysis",
+            json=["test-api-mysql-001", "no-such-inst"],
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["analyzed"] == 1
+        assert "no-such-inst" in data["skipped"]
+
+    def test_bulk_analysis_results_have_cost(self, client):
+        resp = client.post(
+            "/api/v1/rds/bulk-analysis",
+            json=["test-api-mysql-001"],
+        )
+        results = resp.json()["results"]
+        assert len(results) == 1
+        assert results[0]["total_cost_usd"] > 0
+
+    def test_bulk_analysis_empty_ids(self, client):
+        resp = client.post("/api/v1/rds/bulk-analysis", json=[])
+        assert resp.status_code == 200
+        assert resp.json()["analyzed"] == 0
+
+    def test_bulk_analysis_all_missing(self, client):
+        resp = client.post(
+            "/api/v1/rds/bulk-analysis",
+            json=["ghost-1", "ghost-2"],
+        )
+        data = resp.json()
+        assert data["analyzed"] == 0
+        assert len(data["skipped"]) == 2
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

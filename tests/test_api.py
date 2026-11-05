@@ -185,6 +185,53 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestInstanceClone:
+    """POST /rds/{id}/clone エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload):
+        from rds_analyzer.api import routes as _routes
+        _routes._instance_store.clear()
+        client.post("/api/v1/rds", json=sample_instance_payload)
+
+    def test_clone_success(self, client):
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/clone?new_instance_id=cloned-001"
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["new_instance_id"] == "cloned-001"
+        assert data["source_instance_id"] == "test-api-mysql-001"
+
+    def test_clone_registers_new_instance(self, client):
+        client.post("/api/v1/rds/test-api-mysql-001/clone?new_instance_id=cloned-reg")
+        resp = client.get("/api/v1/rds/summary")
+        ids = [i["instance_id"] for i in resp.json()["instances"]]
+        assert "cloned-reg" in ids
+
+    def test_clone_conflict_returns_409(self, client, sample_instance_payload):
+        payload = {**sample_instance_payload, "instance_id": "already-exists"}
+        client.post("/api/v1/rds", json=payload)
+        resp = client.post(
+            "/api/v1/rds/test-api-mysql-001/clone?new_instance_id=already-exists"
+        )
+        assert resp.status_code == 409
+
+    def test_clone_source_not_found(self, client):
+        resp = client.post(
+            "/api/v1/rds/no-such-inst/clone?new_instance_id=cloned-x"
+        )
+        assert resp.status_code == 404
+
+    def test_clone_preserves_engine(self, client):
+        client.post("/api/v1/rds/test-api-mysql-001/clone?new_instance_id=cloned-eng")
+        resp = client.get("/api/v1/rds/summary")
+        cloned = next(
+            i for i in resp.json()["instances"] if i["instance_id"] == "cloned-eng"
+        )
+        assert cloned["engine"] == "mysql"
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

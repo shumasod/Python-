@@ -353,3 +353,75 @@ class TestCostModelProperties:
             optimized_cost_usd=None,
         )
         assert report.potential_savings_usd == 0.0
+
+
+class TestAuroraPricing:
+    """Aurora MySQL / Aurora PostgreSQL の料金計算テスト"""
+
+    @pytest.fixture
+    def aurora_mysql_instance(self):
+        return RDSInstance(
+            instance_id="aurora-mysql-001",
+            engine=EngineType.AURORA_MYSQL,
+            engine_version="8.0.mysql_aurora.3.04.0",
+            instance_class="db.r5.large",
+            allocated_storage_gb=100,
+            storage_type=StorageType.GP3,
+            multi_az=False,
+        )
+
+    @pytest.fixture
+    def aurora_pg_instance(self):
+        return RDSInstance(
+            instance_id="aurora-pg-001",
+            engine=EngineType.AURORA_POSTGRESQL,
+            engine_version="15.4",
+            instance_class="db.r6g.xlarge",
+            allocated_storage_gb=200,
+            storage_type=StorageType.GP3,
+            multi_az=False,
+        )
+
+    def test_aurora_mysql_uses_aurora_hourly_rate(self, aurora_mysql_instance):
+        """Aurora MySQL は専用 Aurora 料金を使用する"""
+        from rds_analyzer.analyzers.cost_analyzer import INSTANCE_HOURLY_RATES, AURORA_STORAGE_RATE
+        analyzer = CostAnalyzer(monthly_hours=730.0)
+        breakdown, details = analyzer.calculate_monthly_cost(aurora_mysql_instance)
+        # db.r5.large.aurora = $0.285/hr → 0.285 * 730 = $208.05
+        expected_compute = INSTANCE_HOURLY_RATES["db.r5.large.aurora"] * 730.0
+        assert breakdown.compute_cost_usd == pytest.approx(expected_compute, abs=0.01)
+
+    def test_aurora_uses_aurora_storage_rate(self, aurora_mysql_instance):
+        """Aurora はクラスターストレージ料金 ($0.11/GB-月) を使用する"""
+        from rds_analyzer.analyzers.cost_analyzer import AURORA_STORAGE_RATE
+        analyzer = CostAnalyzer(monthly_hours=730.0)
+        breakdown, _ = analyzer.calculate_monthly_cost(aurora_mysql_instance)
+        expected_storage = aurora_mysql_instance.allocated_storage_gb * AURORA_STORAGE_RATE
+        assert breakdown.storage_cost_usd == pytest.approx(expected_storage, abs=0.01)
+
+    def test_aurora_pg_uses_aurora_rate(self, aurora_pg_instance):
+        """Aurora PostgreSQL も Aurora 専用料金で計算される"""
+        from rds_analyzer.analyzers.cost_analyzer import INSTANCE_HOURLY_RATES
+        analyzer = CostAnalyzer(monthly_hours=730.0)
+        breakdown, _ = analyzer.calculate_monthly_cost(aurora_pg_instance)
+        expected_compute = INSTANCE_HOURLY_RATES["db.r6g.xlarge.aurora"] * 730.0
+        assert breakdown.compute_cost_usd == pytest.approx(expected_compute, abs=0.01)
+
+    def test_aurora_cheaper_than_rds_for_same_class(self):
+        """Aurora 専用料金は同クラスの RDS 料金より安い（r5.large の場合）"""
+        rds_rate = INSTANCE_HOURLY_RATES.get("db.r5.large", 0.0)
+        aurora_rate = INSTANCE_HOURLY_RATES.get("db.r5.large.aurora", 0.0)
+        assert aurora_rate > 0, "Aurora レートが定義されていない"
+        assert aurora_rate < rds_rate, "Aurora は RDS より安価なはず"
+
+    def test_aurora_storage_rate_lower_than_gp2(self):
+        """Aurora ストレージは RDS gp2 より安価"""
+        from rds_analyzer.analyzers.cost_analyzer import AURORA_STORAGE_RATE
+        assert AURORA_STORAGE_RATE < STORAGE_RATES[StorageType.GP2]
+
+    def test_aurora_instance_rates_all_positive(self):
+        """追加した全 Aurora レートが正の値"""
+        aurora_keys = [k for k in INSTANCE_HOURLY_RATES if k.endswith(".aurora")]
+        assert len(aurora_keys) >= 10, "少なくとも10種の Aurora レートが必要"
+        for key in aurora_keys:
+            assert INSTANCE_HOURLY_RATES[key] > 0, f"{key} のレートが不正"

@@ -185,6 +185,48 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestAnalysisWarnings:
+    """GET /rds/{id}/warnings エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client, sample_instance_payload, sample_metrics_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics",
+            json=sample_metrics_payload,
+        )
+
+    def test_warnings_success(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/warnings")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "warnings" in data
+        assert isinstance(data["warnings"], list)
+
+    def test_single_az_produces_warning(self, client, sample_instance_payload):
+        payload = {**sample_instance_payload, "instance_id": "single-az-inst", "multi_az": False}
+        client.post("/api/v1/rds", json=payload)
+        resp = client.get("/api/v1/rds/single-az-inst/warnings")
+        codes = [w["code"] for w in resp.json()["warnings"]]
+        assert "NO_MULTI_AZ" in codes
+
+    def test_total_warnings_matches_list_length(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/warnings")
+        data = resp.json()
+        assert data["total_warnings"] == len(data["warnings"])
+
+    def test_warnings_has_level_and_message(self, client):
+        resp = client.get("/api/v1/rds/test-api-mysql-001/warnings")
+        for w in resp.json()["warnings"]:
+            assert "level" in w
+            assert "message" in w
+            assert w["level"] in ("critical", "warning", "info")
+
+    def test_warnings_not_found(self, client):
+        resp = client.get("/api/v1/rds/no-such-instance/warnings")
+        assert resp.status_code == 404
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

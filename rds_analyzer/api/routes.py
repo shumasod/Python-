@@ -39,6 +39,7 @@ from .schemas import (
     IndexAnalysisResponse,
     InstanceCostDiff,
     InstanceSummaryItem,
+    InstanceUpdateRequest,
     MetricsInputRequest,
     PerformanceSummaryResponse,
     QueryPatternRequest,
@@ -182,6 +183,36 @@ async def register_instance(request: RDSInstanceRequest) -> dict:
     logger.info("インスタンス登録: %s (%s)", instance.instance_id, instance.engine)
 
     return {"message": "登録しました", "instance_id": instance.instance_id}
+
+
+@router.patch(
+    "/rds/{instance_id}",
+    response_model=dict,
+    tags=["instances"],
+    summary="RDS インスタンス設定を部分更新",
+)
+async def update_instance(instance_id: str, body: InstanceUpdateRequest) -> dict:
+    """
+    指定したフィールドのみを更新する（PATCH セマンティクス）。
+
+    変更可能フィールド: instance_class, engine_version, multi_az, storage_type,
+    allocated_storage_gb, provisioned_iops, backup_retention_days,
+    read_replica_count, tags
+    """
+    instance = get_instance_or_404(instance_id)
+    update_fields = body.model_dump(exclude_none=True)
+
+    if "storage_type" in update_fields:
+        try:
+            update_fields["storage_type"] = StorageType(update_fields["storage_type"])
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    updated = instance.model_copy(update=update_fields)
+    _instance_store[instance_id] = updated
+    logger.info("インスタンス更新: %s fields=%s", instance_id, list(update_fields.keys()))
+
+    return {"message": "更新しました", "instance_id": instance_id, "updated_fields": list(update_fields.keys())}
 
 
 @router.post(

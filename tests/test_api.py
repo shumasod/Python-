@@ -185,6 +185,51 @@ class TestSummary:
         assert data["total_monthly_cost_usd"] > 0
 
 
+class TestInstanceCount:
+    """GET /rds/count エンドポイントのテスト"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, client):
+        from rds_analyzer.api import routes as _routes
+        _routes._instance_store.clear()
+        _routes._metrics_store.clear()
+
+    def test_count_empty(self, client):
+        resp = client.get("/api/v1/rds/count")
+        assert resp.status_code == 200
+        assert resp.json()["total"] == 0
+
+    def test_count_with_instance(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/count")
+        assert resp.json()["total"] == 1
+
+    def test_count_with_and_without_metrics(
+        self, client, sample_instance_payload, sample_metrics_payload
+    ):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        client.post(
+            "/api/v1/rds/test-api-mysql-001/metrics", json=sample_metrics_payload
+        )
+        resp = client.get("/api/v1/rds/count")
+        data = resp.json()
+        assert data["with_metrics"] == 1
+        assert data["without_metrics"] == 0
+
+    def test_count_by_engine(self, client, sample_instance_payload):
+        client.post("/api/v1/rds", json=sample_instance_payload)
+        resp = client.get("/api/v1/rds/count")
+        data = resp.json()
+        assert "by_engine" in data
+        assert data["by_engine"].get("mysql", 0) >= 1
+
+    def test_count_response_has_required_keys(self, client):
+        resp = client.get("/api/v1/rds/count")
+        data = resp.json()
+        for key in ("total", "with_metrics", "without_metrics", "by_engine"):
+            assert key in data
+
+
 class TestCostHistory:
     @pytest.fixture(autouse=True)
     def setup(self, client, sample_instance_payload):

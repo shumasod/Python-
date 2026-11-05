@@ -67,21 +67,54 @@ pg_env() {
 compress_file() {
     local f="$1"
     [[ "${COMPRESS}" != "true" || ! -f "${f}" ]] && return 0
+
+    local fmt="${COMPRESS_FORMAT:-gzip}"
+
+    if [[ "${fmt}" == "zstd" ]]; then
+        if command -v zstd &>/dev/null; then
+            zstd -"${COMPRESS_LEVEL}" --rm -q "${f}"
+            log_info "圧縮完了 (zstd): ${f}.zst"
+            return 0
+        fi
+        log_warn "zstd が見つかりません。gzip にフォールバックします。"
+    fi
+
     gzip -"${COMPRESS_LEVEL}" "${f}"
-    log_info "圧縮完了: ${f}.gz"
+    log_info "圧縮完了 (gzip): ${f}.gz"
+}
+
+# 圧縮後のファイル拡張子を返す
+compress_ext() {
+    local fmt="${COMPRESS_FORMAT:-gzip}"
+    if [[ "${fmt}" == "zstd" ]] && command -v zstd &>/dev/null; then
+        echo "zst"
+    else
+        echo "gz"
+    fi
 }
 
 # ─── バックアップ整合性検証 ───────────────────────────────────
+# 圧縮形式を自動判別してテストする
+_verify_compressed_file() {
+    local f="$1"
+    case "${f}" in
+        *.zst) zstd -t -q "${f}" 2>/dev/null ;;
+        *.gz)  gzip -t "${f}" 2>/dev/null ;;
+        *)     return 0 ;;
+    esac
+}
+
 verify_backup_files() {
     local dir="$1"
-    local pattern="${2:-*.sql.gz}"
+    local ext; ext="$(compress_ext)"
+    local pattern="${2:-*.sql.${ext}}"
     local failed=0
     local checked=0
 
     log_info "バックアップ整合性検証: ${dir}/${pattern}"
 
     while IFS= read -r f; do
-        if gzip -t "${f}" 2>/dev/null; then
+        if _verify_compressed_file "${f}"; then
             log_info "  OK: $(basename "${f}")"
         else
             log_error "  NG (破損): $(basename "${f}")"

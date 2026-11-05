@@ -190,3 +190,90 @@ class TestReportSave:
         out = tmp_path / "nested" / "dir" / "report.md"
         generator.save(md, out)
         assert out.exists()
+
+
+class TestRecommendationGroups:
+    """提案のグループ化テスト"""
+
+    def test_recommendations_grouped_by_type(self, generator, instance):
+        """同種別の提案が同じカテゴリ見出し配下にまとめられる"""
+        from rds_analyzer.analyzers.recommendation_engine import (
+            Recommendation, RecommendationPriority, RecommendationType,
+        )
+        recs = [
+            Recommendation(
+                recommendation_id="rec_001",
+                type=RecommendationType.SCALE_DOWN,
+                priority=RecommendationPriority.MEDIUM,
+                title="インスタンスクラス縮小",
+                description="CPU利用率が低い",
+                current_config="db.r5.xlarge",
+                recommended_config="db.r5.large",
+                estimated_monthly_savings_usd=150.0,
+                implementation_complexity=2,
+            ),
+            Recommendation(
+                recommendation_id="rec_002",
+                type=RecommendationType.STORAGE_TYPE_CHANGE,
+                priority=RecommendationPriority.LOW,
+                title="gp3 への移行",
+                description="コスト削減",
+                current_config="gp2",
+                recommended_config="gp3",
+                estimated_monthly_savings_usd=20.0,
+                implementation_complexity=1,
+            ),
+            Recommendation(
+                recommendation_id="rec_003",
+                type=RecommendationType.SCALE_DOWN,
+                priority=RecommendationPriority.LOW,
+                title="バックアップ期間短縮",
+                description="30日から7日へ",
+                current_config="30日",
+                recommended_config="7日",
+                estimated_monthly_savings_usd=10.0,
+                implementation_complexity=1,
+            ),
+        ]
+        from rds_analyzer.analyzers.cost_analyzer import CostAnalyzer
+        from rds_analyzer.analyzers.performance_analyzer import PerformanceAnalyzer
+        from tests.rds_conftest import make_metrics
+        cost_analyzer = CostAnalyzer()
+        perf_analyzer = PerformanceAnalyzer()
+        metrics = make_metrics(instance.instance_id, cpu_avg=40.0, cpu_max=65.0)
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        cost_score = cost_analyzer.calculate_efficiency_score(
+            instance, breakdown,
+            avg_cpu_pct=metrics.cpu_utilization.avg,
+            avg_iops_used=metrics.read_iops.avg + metrics.write_iops.avg,
+            storage_used_gb=instance.allocated_storage_gb - metrics.free_storage_bytes.avg / (1024**3),
+        )
+        perf_result = perf_analyzer.analyze(instance, metrics)
+
+        md = generator.generate(instance, breakdown, cost_score, perf_result, recs)
+        # カテゴリ見出しが含まれることを確認
+        assert "### カテゴリ:" in md
+        # SCALE_DOWN が1グループにまとまること（2件）
+        scale_down_idx = md.index("スケールダウン")
+        assert "インスタンスクラス縮小" in md[scale_down_idx:]
+
+    def test_empty_recommendations_no_category_headers(self, generator, instance):
+        """提案なしのとき カテゴリ見出しが出力されない"""
+        from rds_analyzer.analyzers.cost_analyzer import CostAnalyzer
+        from rds_analyzer.analyzers.performance_analyzer import PerformanceAnalyzer
+        from tests.rds_conftest import make_metrics
+        cost_analyzer = CostAnalyzer()
+        perf_analyzer = PerformanceAnalyzer()
+        metrics = make_metrics(instance.instance_id, cpu_avg=40.0, cpu_max=65.0)
+        breakdown, _ = cost_analyzer.calculate_monthly_cost(instance)
+        cost_score = cost_analyzer.calculate_efficiency_score(
+            instance, breakdown,
+            avg_cpu_pct=metrics.cpu_utilization.avg,
+            avg_iops_used=metrics.read_iops.avg + metrics.write_iops.avg,
+            storage_used_gb=instance.allocated_storage_gb - metrics.free_storage_bytes.avg / (1024**3),
+        )
+        perf_result = perf_analyzer.analyze(instance, metrics)
+
+        md = generator.generate(instance, breakdown, cost_score, perf_result, [])
+        assert "### カテゴリ:" not in md
+        assert "現時点での改善提案はありません" in md

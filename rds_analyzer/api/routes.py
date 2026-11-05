@@ -539,6 +539,7 @@ async def get_recommendations(
     data_transfer_gb: float = Query(default=0.0, ge=0),
     limit: int = Query(default=20, ge=1, le=100, description="1ページあたりの件数"),
     offset: int = Query(default=0, ge=0, description="スキップする件数"),
+    sort: Optional[str] = Query(default=None, description="ソートキー: savings (推定節約額降順) / complexity (複雑度昇順) / priority (デフォルト)"),
     cost_analyzer: CostAnalyzer = Depends(get_cost_analyzer),
     perf_analyzer: PerformanceAnalyzer = Depends(get_performance_analyzer),
     rec_engine: RecommendationEngine = Depends(get_recommendation_engine),
@@ -557,6 +558,14 @@ async def get_recommendations(
     )
     perf_result = perf_analyzer.analyze(instance, metrics)
     recommendations = rec_engine.generate_recommendations(instance, perf_result, breakdown)
+
+    # sort バリデーション
+    allowed_sorts = {"savings", "complexity", "priority"}
+    if sort and sort not in allowed_sorts:
+        raise HTTPException(
+            status_code=422,
+            detail=f"無効な sort 値: '{sort}'。有効値: {', '.join(sorted(allowed_sorts))}",
+        )
 
     total_savings = sum(
         max(0, r.estimated_monthly_savings_usd) for r in recommendations
@@ -579,6 +588,12 @@ async def get_recommendations(
         )
         for r in recommendations
     ]
+
+    # ソート適用
+    if sort == "savings":
+        rec_items = sorted(rec_items, key=lambda r: r.estimated_monthly_savings_usd, reverse=True)
+    elif sort == "complexity":
+        rec_items = sorted(rec_items, key=lambda r: r.implementation_complexity)
 
     paginated_items = rec_items[offset: offset + limit]
     return RecommendationResponse(
